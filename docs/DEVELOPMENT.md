@@ -1,0 +1,123 @@
+# Toth: notas de desenvolvimento
+
+Documentação técnica (estrutura, comandos, testes, opções de teste). Para as funcionalidades e a instalação, ver o [README](../README.md).
+
+App nativa para macOS (Swift puro) de captura e anotação de ecrã, 100% local: sem contas, sem nuvem, sem telemetria. Windows: futuro. Funcionalidades e âmbito em [docs/functional-spec.md](functional-spec.md).
+
+## Estrutura
+- `Sources/CaptureCore` modelo do documento e pacote `.capture` (só Foundation, sem UI)
+- `Sources/CaptureApp` app de barra de menus (AppKit): captura (ScreenCaptureKit), editor (canvas AppKit + barra SwiftUI), renderer partilhado entre ecrã e exportação
+- `Tests/CaptureCoreTests` testes (Swift Testing; XCTest não existe sem Xcode)
+- `docs/` especificação funcional, formato de ficheiro, pesquisa do nome, lista antes de publicar, símbolo (`docs/brand/`)
+
+## Comandos
+`swift build` · `swift run Toth`
+**Gerar o `.app`:** `./scripts/build-app.sh` → `dist/Toth.app` e `dist/Toth-<versão>.zip` (binário universal, assinatura *ad hoc*; com `SIGN_IDENTITY` e `NOTARY_PROFILE` assina com Developer ID e notariza).
+Testes (com só Command Line Tools é preciso indicar o plugin do Swift Testing):
+`swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing`
+
+## Idioma (português / inglês)
+Em **Preferências → Idioma**: Automático (segue o sistema: português se o macOS estiver em português, inglês nos outros casos), Português ou English. Muda **na hora**, sem reiniciar (janela, menus e mensagens), e fica guardado. Os diálogos do próprio macOS (como o de abrir ficheiros) seguem o idioma do sistema.
+- Os textos estão em `Sources/CaptureApp/Translations.swift` (chave = texto em português → inglês) e usam-se com `L("…")`. Texto sem tradução aparece em português. Para acrescentar um idioma, basta nova tabela e um valor em `AppLanguage`.
+- `--language-selftest check` confere que todas as traduções existem, com os mesmos marcadores (`%@`, `%d`); `write`/`verify` (2 execuções) confere que a escolha sobrevive a fechar a app. `--lang pt|en` força o idioma numa execução; `--render-main <saida.png> <captura>` desenha a janela sem tocar no ecrã.
+
+## Memória das ferramentas
+Cada ferramenta lembra a **última personalização** (cor da linha e do preenchimento, espessura, opacidade, sombra, fonte e formato do texto, formato de numeração das etapas, tamanho da letra, tamanho da pixelização, intensidade do blur…) **mesmo depois de fechar a app**, e vale para qualquer captura. Muda-se escolhendo outra coisa com a ferramenta ativa e nada selecionado, ou **editando um elemento selecionado** (atualiza o padrão da ferramenta que o criou, p. ex. editar um retângulo atualiza o Retângulo). Uma ferramenta nunca usada tem o estilo inicial. Guarda-se em `ToolDefaults` (preferências do utilizador). `--defaults-selftest write|verify <pasta>` (2 execuções) confere a persistência.
+
+## Atalho de captura (configurável)
+O atalho global para capturar uma região é **⌃⇧4** por omissão e pode ser mudado em **Preferências** (ícone de engrenagem no rodapé, menu da barra de menus ou ⌘,): clique no campo, carregue na combinação que quer (Esc cancela) e passa a valer logo, sem reiniciar. Fica guardado nas preferências.
+- Exige ⌘, ⌃ ou ⌥ (ou uma tecla de função, como F5), para não disparar ao escrever.
+- Recusa combinações que o macOS usa (⇧⌘3/4/5/6, ⌘Espaço, ⌘Tab, ⌘Q, ⌘W, ⌘H, ⌘M) e combinações já em uso por outra app; em caso de erro o atalho anterior continua a valer.
+- "Repor padrão" volta a ⌃⇧4. Se o atalho guardado deixar de estar livre ao arrancar, a app volta ao padrão.
+
+## Captura de região
+1. O ecrã é **congelado** no instante do atalho: é desse instantâneo que se mostra e recorta, por isso a captura corresponde a esse momento, mesmo que o ecrã mude depois (testado: uma janela aberta depois do atalho não aparece no recorte).
+2. Arraste para escolher a área; depois pode **mover** a seleção (arrastando por dentro) e **redimensioná-la** pelas 8 alças. Aparecem as dimensões em pixels.
+3. Só ao **confirmar** (botão **Capturar** ou **Enter**) a imagem recortada vai para o editor. **Esc** (ou **Cancelar**) cancela. Começar a arrastar fora da seleção cria uma nova.
+4. Com vários monitores todos são congelados, e a seleção é num só.
+
+## Uso da captura
+A app corre na barra de menus (ícone de câmara). Atalho global ⌃⇧4 ou menu: "Capturar região" / "Capturar ecrã inteiro".
+Depois de confirmada, cada captura é guardada em `~/Pictures/Capture/Toth <data>.capture` (ficheiro único) e copiada para a área de transferência.
+Na primeira vez, autorize a gravação de ecrã (Definições do Sistema > Privacidade e Segurança). Se correr com `swift run`, a permissão vai para o Terminal/VS Code.
+
+## Ambiente
+Só há Command Line Tools (sem Xcode.app). Suficiente para SPM; para assinar/empacotar .app, extensões QuickLook ou ScreenCaptureKit com permissões estáveis será preciso o Xcode.
+Ver docs/SETUP-AND-UNDO.md para as ferramentas de análise instaladas.
+
+## Formato do ficheiro `.capture`
+Cada captura é **um só ficheiro `.capture`**, que é um **ZIP normal** (abre com qualquer ferramenta de ZIP, partilha-se por email e serve no Windows):
+
+```
+Toth 2026-10-15 17.43.28.capture   (ZIP)
+├── document.json        anotações, área de trabalho, etc.
+├── assets/original.png  imagem original (imutável)
+├── assets/<uuid>.png    imagens coladas
+└── preview.png          miniatura (atualizada a cada gravação)
+```
+- Sem compressão adicional (os PNG já vão comprimidos); cada entrada tem CRC-32, que se confere ao abrir, e a gravação é atómica (o ficheiro nunca fica meio-escrito).
+- Leitura/escrita em `Sources/CaptureCore` (`ZipArchive`, `CaptureContainer`), só com Foundation. Zips de outras ferramentas só abrem se não estiverem comprimidos (`zip -0`).
+- **Capturas antigas (pastas `.capture`) continuam a abrir.** "Compactar N antigas" (na biblioteca) converte cada pasta num ficheiro: cria o arquivo ao lado, confere-o entrada a entrada, e só então move a pasta para o **Lixo** (recuperável) e põe o ficheiro no lugar. Se algo falhar, a captura fica como estava.
+
+## Nome e símbolo
+O programa chama-se **Toth**. O símbolo está em `docs/brand/` (`TothLogo.png` 1254×1254 e `Toth.icns`, pronto para o futuro pacote `.app`); a versão usada na interface é `Sources/CaptureApp/Resources/toth-logo.png`. Por agora mantêm-se por compatibilidade: a pasta `~/Pictures/Capture`, a extensão `.capture` e os nomes internos dos módulos (`CaptureCore`, `CaptureApp`). As capturas antigas chamadas "Capture …" continuam a aparecer na biblioteca. Pesquisa do nome em [docs/name-research.md](name-research.md).
+
+## Licença
+Software livre sob a **licença MIT**, © 2026 **Alex Felizardo**: ver [LICENSE](../LICENSE) ([tradução de cortesia](../LICENSE.pt.md)), [PRIVACY.md](../PRIVACY.md) (um único pedido à internet, para atualizações), [SECURITY.md](../SECURITY.md) e [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) (sem código de terceiros). O nome e o logótipo não estão abrangidos pela MIT (ver [TRADEMARKS.md](../TRADEMARKS.md)).
+
+## Interface (janela única)
+- **Barra superior:** Capturar, Abrir, Salvar como (PNG) · ferramentas (Mover, Seta, Linha, Texto, Balão, Retângulo, Elipse, Etapa, Marcador, Pixelização, Blur, Tela) · Desfazer, Refazer, Copiar tudo, Colar.
+- **Painel direito (Propriedades):** secções **Linha** (cor, ligar/desligar, espessura), **Preenchimento** (cor, ligar/desligar), **Texto** (fonte, tamanho, negrito/itálico/sublinhado, cor do texto, alinhamento horizontal e vertical, lista de marcadores ou numerada), **Geral** (opacidade, sombra, ordem frente/trás) e **Camadas** (mostrar/ocultar, remover, selecionar). Sem seleção, edita o padrão para novos elementos.
+- **Texto, balão, retângulo e elipse** editam-se diretamente no objeto (retângulo/elipse: duplo clique ou Return; na elipse o texto ocupa o retângulo inscrito) (clique ou arraste com a ferramenta Texto/Balão, duplo clique ou Return num objeto existente; Esc ou ⌘↩ ou clicar fora terminam). Texto vazio é descartado. O texto é formatado por objeto (não por palavra).
+- O contorno do balão é um único caminho (caixa + ponteiro), sem linha de junção.
+- **Rodapé:** zoom (−/+/1:1/Ajustar), dimensões da área, botão Propriedades.
+- **Faixa de miniaturas:** pode ocultar-se (botão no rodapé ou ⌥⌘L; preferência `libraryStripVisible`). Capturas de `~/Pictures/Capture`; clique abre; o botão fixo à direita (**Abrir imagens**) abre a **biblioteca**: uma grelha com a pré-visualização atual de cada captura (com as anotações), onde se escolhe clicando. Na biblioteca há também **Importar imagem…** (capturas `.capture` e ficheiros PNG, JPEG, HEIC, TIFF, GIF, BMP; cada imagem solta vira uma captura nova e o ficheiro original não é tocado) e **Compactar N antigas**; menu de contexto: Mostrar no Finder / Mover para o Lixo. A miniatura é o `preview.png` do pacote, atualizado a cada gravação.
+- Gestos: pinça = zoom; duas dedos = deslocar (com zoom); duplo clique em texto/callout = editar; alças = redimensionar (o callout tem uma alça no ponteiro).
+- Atalhos: ⌘Z / ⇧⌘Z, Delete, Esc.
+
+Cada alteração é gravada logo em `document.json`; `assets/original.png` nunca é tocado, por isso qualquer elemento pode ser removido mais tarde. A área de trabalho só se aplica ao exportar.
+
+Fora de escopo (por decisão): contas/login, partilha por link, IA/narração, assets, carimbos.
+
+## Opções de linha de comando (testes)
+`--fullscreen` captura o ecrã inteiro e sai · `--open <pacote>` abre a janela com essa captura · `--render-demo <pacote> <saida.png>` anota exemplos (texto centrado, listas, callouts) e exporta (altera o pacote; usar cópia) · `--select <n>` com `--open` seleciona um elemento · `--edit-selftest` testa a edição de texto em linha e sai (imprime SELFTEST: OK) · `--edit-hold` deixa o editor em linha aberto (para capturas de ecrã) · `--paste-selftest` testa copiar/colar (repõe a área de transferência) · `--shortcut-selftest` testa o atalho (recusas, gravação, persistência, registo no sistema, gravador) · `--show-prefs` / `--render-prefs <saida.png>` abrem/desenham as Preferências · `--tool <nome>` escolhe a ferramenta · `--effects-selftest` (blur/pixelização sobre camadas) · `--selection-selftest <pasta>` (cliques do rato) · `--dock-selftest` (Dock e menus) · `--newimage-selftest <pasta>` (imagem nova) · `--no-window` (não abre o editor ao arrancar) · `--openfiles-selftest <pasta>` (abrir imagens, orientação EXIF, nomes sem espaços, formatos de gravação) · `--shapes-selftest` (seta sem junção, pixelização sem faixas, ponteiro do balão) · `--layout-selftest <pasta>` (a área de trabalho não invade a barra) · `--panel-selftest` (painel de Propriedades) · `--scroll-live x,y,w,h <saida.png> [passos] [delta] [intervalo]` (fluxo real sobre uma região do ecrã, com rolagem automática só para o teste: usar com uma página pública e uma região que fique toda dentro da janela do navegador, sem outras janelas por cima; precisa da permissão de gravação de ecrã) · `--scroll-bench` (tempo de juntar uma captura Retina; usar com o build release) · `--scroll-selftest` (captura por rolagem sobre páginas sintéticas: idas e voltas, dois eixos, depressa demais, concluir/cancelar; usar com `--no-window`) · `--render-hud <saida.png>` (barra da captura com rolagem) · `--render-selector <saida.png>` (desenha o seletor de região com o botão Rolagem) · `--tools-selftest` (deslize contínuo das ferramentas: clique, premir, roda; e pega do painel) · `--librarystrip-selftest <pasta>` (ocultar/mostrar a faixa de miniaturas, persistência) · `--tools-scroll a,b` (desvios em px) e `--library-hidden` e `--click x,y` em `--render-main` (testes visuais) · `--render-shapes <saida.png>` · `--render-main … --size LxA [--panel-hidden]` · `--steps-selftest <pasta>` (centragem do número e redimensionar etapas) · `--render-steps <saida.png>` · `--assoc-check <ficheiro>` (app predefinida para um ficheiro) · `--perm-check [--perm-out <ficheiro>]` (permissão de gravação de ecrã). Diagnóstico: `defaults write io.github.lestatpirate.toth debugLogOpensTo <ficheiro>` regista o que o macOS entrega à app. · `--library <pasta>` usa outra pasta de capturas · `--make-demo-library <pasta>` cria uma biblioteca sintética · `--show-browser` abre a biblioteca · `--archive-selftest <pasta>` testa o ciclo do arquivo (criar, anotar, colar, reabrir, `unzip -t`) · `--compact-selftest <pasta>` testa a compactação · `--capture-hold` abre a seleção de região sobre uma imagem sintética, já com uma área escolhida · `--capture-selftest <saida.png> [segundos]` congela o ecrã, confirma uma área (com 2.º argumento: o ecrã todo, após a espera) e grava o recorte.
+
+## Nota de build
+Sem Xcode, o plugin de macros do SwiftUI não existe: não usar `@State`/`@Environment` (usar `ObservableObject`/`@StateObject`).
+
+## Ainda não feito
+Captura de janela/vídeo/GIF, temporizador, cursor na captura, carimbos, "Eliminar" (apagar área), empacotar `.app` (precisa do Xcode).
+
+Cada ferramenta lembra o seu último estilo (cor, espessura…). O Marcador tem cor escolhível (amarelo a 40% por omissão); a Pixelização tem o tamanho dos blocos ajustável.
+
+## Blur, Pixelização e Tela (área de trabalho)
+- **Blur** desfoca (gaussiano) a região escolhida; **Intensidade** no painel (1–60). **Pixelização** tem o tamanho dos blocos. Ambos atuam sobre a imagem original, não sobre outros objetos.
+- **Tela** (substitui o antigo Recorte): mostra 8 alças na área de trabalho; arrastar **aumenta** (acrescenta espaço) ou **diminui** (esconde o que fica de fora). Também se escreve a largura/altura no painel. Há cor de fundo (ou transparente), "Ajustar ao conteúdo" e "Restaurar original". A imagem original nunca é alterada.
+- **Expandir automaticamente** (ligado por omissão): ao criar, mover, redimensionar ou colar um objeto que sai da área, a área cresce para o conter. Só o objeto em causa conta: encolher a área de propósito não é desfeito ao mexer noutro objeto. Capturas antigas com recorte abrem como área de trabalho.
+
+## Copiar e colar
+⌘C copia o objeto selecionado (sem seleção, copia a imagem toda), ⌘X corta, ⌘V cola, ⌘D duplica. Cola também de fora do Toth: **imagens** (de qualquer app ou ficheiros de imagem copiados no Finder; ficam dentro do pacote, em `assets/`) e **texto** (vira uma caixa de texto). Cola no centro da zona visível; imagens grandes entram a 70% da área. Objetos copiados no Toth levam consigo a imagem e podem ser colados noutro documento. Sem captura aberta, "Colar imagem" cria uma captura nova.
+
+## Etapas (numeração)
+Cada etapa é um círculo numerado. No painel: cor do círculo, cor do número, fonte, formato (1,2,3 · I,II,III · i,ii,iii · A,B,C · a,b,c), número da etapa selecionada e **Próxima etapa** com o botão **Reiniciar sequência** (a próxima volta a 1; o reinício fica guardado no ficheiro). Numerais largos (XVIII, AA) encolhem para caber no círculo.
+
+## Captura por rolagem
+Modelo: o utilizador rola a janela como quiser (qualquer eixo e sentido, com idas e voltas) e o Toth captura a região continuamente; **não envia rolagem nem usa Acessibilidade**. A imagem só se fecha em «Concluir».
+- `Sources/CaptureCore/ScrollStitch.swift`: `PixelFrame`, `ScrollMatcher` e `MosaicStitcher`. **Alinhamento** (`ScrollMatcher.estimate`): erro médio por deslocamento, em imagens reduzidas (a média apaga meios píxeis e ruído, o que um navegador produz ao compor camadas), depois refinamento ao píxel com todas as linhas; só aceita se o melhor for claramente melhor do que o típico (razão ≤ 0,28 face a deslocamentos errados) e concordar em ≥ 75% das linhas da sobreposição (evita falsos alinhamentos em gradientes lisos ou texto parecido). Linhas escolhidas por contraste **e** variação vertical (um gradiente horizontal liso alinha com tudo). Empates de conteúdo repetido: continuidade do movimento. **Tela** que cresce para todos os lados (`MosaicCanvas`), faixas fixas com prioridade baixa. **Âncoras**: as últimas 6 capturas (só cinzentos) permitem retomar noutro ponto (pausa, rolar depressa demais, voltar atrás). Testes em `Tests/CaptureCoreTests`: `ScrollStitchTests` (blocos), `RealisticScrollTests` (texto CoreText com texto e «fotografias» únicos, barra fixa, saltos), `BrowserLikeScrollTests` (meios píxeis + ruído) e `ResumeTests`.
+- `Sources/CaptureApp/ScrollCapture.swift`: `ScrollRecorder` (ciclo: captura → junta → estado; o trabalho pesado corre num `actor`), `ScreenRegionSource` (SCStream a 30 imagens/s, só guarda a mais recente; um ciclo de capturas avulsas demorava ~0,2 s por imagem e perdia a sobreposição quando se rola depressa), `ScrollHUD` (barra flutuante que nunca fica ativa, com «Concluir»/«Cancelar») e `ScrollCaptureSession` (com Pausar/Retomar e «Tentar de novo»). O gravador fala com um `FrameSource`, por isso `--scroll-selftest` testa-o com um «utilizador» simulado (`ScrollSelfTest.swift`: começa a meio, sobe, desce, volta atrás, troca de eixo, salto demasiado grande, cancelar) sem tocar no ecrã real.
+- Falhas de alinhamento nunca se escondem: a barra avisa e, se nada se juntar, há um aviso em vez de gravar a captura simples em silêncio. `NSLog` «Toth rolagem: …» (Console.app) resume juntas/sem alinhar/iguais e ms por imagem. Conteúdo repetido (tabelas, listas): entre dois alinhamentos perfeitos vale a continuidade do movimento.
+- **Causa do «o Brave some e aparece o Toth»**: o seletor ativa o Toth (para ter o teclado) e o macOS traz então TODAS as janelas do Toth para a frente, incluindo o editor aberto atrás da app a capturar, ou muda de Espaço. `MainWindow.hideForCapture()` esconde as janelas normais do Toth antes de ativar (o editor volta com `show()` quando a captura termina; ao cancelar não volta, para não tapar a app em uso). Testes: `--scroll-focus-selftest` (sem a correção: 1 janela do Toth fica no ecrã) e `--scroll-e2e x,y,w,h <app> <saida.png>` (seletor real + sessão real, com o editor aberto e a app à frente; vigia de 0,3 em 0,3 s qual é a janela de topo sobre a área: sem a correção 40 de 75 verificações eram do Toth).
+- Ao escolher «Rolagem» **nada é trazido para a frente nem se muda de Espaço** (versões anteriores reativavam a app anterior, o que trocava de aplicação): as janelas do seletor, a barra e a moldura têm `canJoinAllSpaces`/`fullScreenAuxiliary`. A **1.ª imagem é o recorte exato do instantâneo congelado** (o momento em que se clicou), e o tamanho em píxeis da corrente de capturas é o desse recorte. O utilizador rola a janela que já está no ecrã (a rolagem chega a janelas inativas).
+- Verificado ao vivo no Edge (página pública, ecrã 3440×1440): 38 capturas, 0 falhas, página inteira com emendas invisíveis; para cima, para baixo, devagar e depressa dão a mesma imagem.
+- **Não verificado com apps reais** (só com páginas sintéticas): a captura ao vivo e o desempenho com ecrãs Retina grandes têm de ser experimentados em Safari, Notas, etc.
+
+## Atualizações automáticas
+- `Sources/CaptureCore/UpdateInfo.swift`: `AppVersion` (comparação de versões com qualquer número de componentes), `ReleaseInfo.parse` (resposta de `GET /repos/LestatPirate/toth/releases/latest`: tag, notas, ficheiro `Toth-….zip`, SHA-256 do `digest` do ficheiro ou da nota) e `UpdateSchedule` (no máximo uma vez por dia). Testes em `UpdateInfoTests`.
+- `Sources/CaptureApp/Updater.swift`: `UpdateEngine` (descarrega, **confere o SHA-256**, descomprime com `ditto`, valida o identificador, que é mais recente e a assinatura com `codesign --verify`, e lança um script `sh` que espera que a app feche, troca-a e reabre; se a cópia falhar repõe a anterior) e `Updater` (interface: procura ao abrir e ao voltar à app se já passou um dia; aviso com *Atualizar agora / Mais tarde / Ignorar esta versão*; menu *Procurar atualizações…*; Preferências). Nada se instala sem confirmação. Único pedido à internet da app (ver PRIVACY.md).
+- Testes: `--update-selftest <pasta>` (release falsa em ficheiros locais: feed, descarga, SHA-256 errado, sem SHA-256, versão não mais recente, outra app, instalação, reposição se a cópia falhar, espera pelo fecho). Ponta a ponta: duas apps reais assinadas numa pasta temporária, com `--update-feed file://…/feed.json --update-auto-accept --update-check-now` (opções só de teste): a antiga descobre a nova, descarrega, verifica, troca-se e reabre.
+- **Assinatura estável.** Com assinatura *ad hoc* cada compilação tem outra identidade e o macOS pede de novo a permissão de gravação de ecrã a cada atualização. `scripts/build-app.sh` usa, se existir, a identidade local «Toth Release Signing» (keychain `~/Library/Keychains/toth-signing.keychain-db`, fora do repositório), cujo requisito de assinatura (`identifier … and certificate root = H"…"`) é igual em todas as versões. Quem compila a partir do código-fonte sem essa identidade fica com *ad hoc* (funciona, mas a permissão é pedida de novo ao trocar de versão). **Guardar a cópia de segurança do certificado** (`~/.toth-signing/Toth-Release-Signing.p12`): sem ele, a identidade seguinte é outra e a permissão é pedida uma vez.
+- **Notarização** (conta Apple Developer) elimina o aviso da primeira abertura: `SIGN_IDENTITY="Developer ID Application: …" NOTARY_PROFILE=… ./scripts/build-app.sh`.
+
+## Guia de permissões
+`PermissionsGuide.swift`: ao abrir a app (`Permissions.checkAtLaunch`) e quando uma captura falha por falta de permissão, mostra 3 passos (*Conceder permissão* → ativar na lista → *Reiniciar o Toth*) e vê de segundo a segundo se a permissão passou a valer. O modelo recebe as ações por closures: `--permissions-selftest` testa os passos sem o sistema e `--render-permissions <saida.png>` desenha os 3 estados.
+
