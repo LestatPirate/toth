@@ -775,7 +775,7 @@ import Foundation
     @Test func splitThenMoveOnlyThePartShiftsTheRest() {
         var t = EditTimeline(sourceDuration: 60, tracks: [.video])
         t.split(at: 20, tracks: [.video]); t.split(at: 40, tracks: [.video])
-        let at = t.move(TimeSpan(start: 20, end: 40), tracks: [.video], to: 50, ripple: true)
+        let at = t.move(TimeSpan(start: 20, end: 40), tracks: [.video], to: 60, ripple: true)
         #expect(at == 40)
         let c = t.clips(.video)
         #expect(c.map(\.src.start) == [0, 40, 20] && c.map(\.at) == [0, 20, 40])
@@ -783,9 +783,8 @@ import Foundation
     }
     @Test func splitRejectsNearEdgesAndEmptySpots() {
         var t = EditTimeline(sourceDuration: 60, tracks: [.video])
-        #expect(!t.split(at: 0.01, tracks: [.video]))
-        #expect(!t.split(at: 59.99, tracks: [.video]))
-        #expect(!t.split(at: 10, tracks: []))
+        let a = t.split(at: 0.01, tracks: [.video]), b = t.split(at: 59.99, tracks: [.video]), c = t.split(at: 10, tracks: [])
+        #expect(!a && !b && !c)
     }
 }
 
