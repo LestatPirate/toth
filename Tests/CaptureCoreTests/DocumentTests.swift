@@ -656,68 +656,109 @@ import Foundation
     }
 }
 
-// MARK: - Cortes de vídeo
+// MARK: - Linha de tempo de edição (várias linhas, clipes e espaços)
 
-@Suite struct VideoCutsTests {
-    @Test func cutsAreSortedMergedAndClamped() {
-        var v = VideoCuts(duration: 60)
-        do { let ok = v.cut(TimeSpan(start: 30, end: 40)); #expect(ok) }
-        do { let ok = v.cut(TimeSpan(start: 10, end: 15)); #expect(ok) }
-        #expect(v.cuts == [TimeSpan(start: 10, end: 15), TimeSpan(start: 30, end: 40)])
-        do { let ok = v.cut(TimeSpan(start: 14, end: 31)); #expect(ok) }                       // junta os dois
-        #expect(v.cuts == [TimeSpan(start: 10, end: 40)])
-        do { let ok = v.cut(TimeSpan(start: 40, end: 45)); #expect(ok) }                       // encostado: funde
-        #expect(v.cuts == [TimeSpan(start: 10, end: 45)])
-        do { let ok = v.cut(TimeSpan(start: 58, end: 70)); #expect(ok) }                       // limitado ao fim
-        #expect(v.cuts.last == TimeSpan(start: 58, end: 60))
-        do { let ok = v.cut(TimeSpan(start: -5, end: 2)); #expect(ok) }                        // limitado ao início
-        #expect(v.cuts.first == TimeSpan(start: 0, end: 2))
-        do { let ok = v.cut(TimeSpan(start: 20, end: 5)); #expect(ok) }                        // ao contrário: normaliza
+@Suite struct EditTimelineTests {
+    static func tl() -> EditTimeline { EditTimeline(sourceDuration: 60, tracks: [.video, .system, .microphone]) }
+    static let all: Set<EditTrack> = [.video, .system, .microphone]
+
+    @Test func startsWithOneClipPerLane() {
+        let t = Self.tl()
+        #expect(t.duration == 60 && !t.isEdited && t.tracks == [.video, .system, .microphone])
+        #expect(t.clips(.video) == [Clip(media: 0, src: TimeSpan(start: 0, end: 60), at: 0)])
+        #expect(t.gaps(.video).isEmpty)
     }
 
-    @Test func rejectsUselessCuts() {
-        var v = VideoCuts(duration: 10)
-        do { let ok = v.cut(TimeSpan(start: 3, end: 3.01)); #expect(!ok) }                     // curto demais
-        do { let ok = v.cut(TimeSpan(start: 20, end: 30)); #expect(!ok) }                      // fora do vídeo
-        do { let ok = v.cut(TimeSpan(start: 0, end: 10)); #expect(!ok) }                       // não deixa o vídeo vazio
-        do { let ok = v.cut(TimeSpan(start: 0, end: 9.95)); #expect(!ok) }                     // sobraria menos de 0,1 s
-        do { let ok = v.cut(TimeSpan(start: 0, end: 9.8)); #expect(ok) }
-        #expect(v.hasCuts && abs(v.keptDuration - 0.2) < 1e-9)
+    @Test func cutAndJoinClosesTheGapOnEveryLane() {
+        var t = Self.tl()
+        let ok = t.remove(TimeSpan(start: 20, end: 30), tracks: Self.all, ripple: true)
+        #expect(ok && t.duration == 50 && t.isEdited)
+        #expect(t.clips(.video) == [Clip(media: 0, src: TimeSpan(start: 0, end: 20), at: 0), Clip(media: 0, src: TimeSpan(start: 30, end: 60), at: 20)])
+        #expect(t.gaps(.system).isEmpty)
     }
 
-    @Test func keptSegmentsAndDuration() {
-        var v = VideoCuts(duration: 100)
-        v.cut(TimeSpan(start: 20, end: 30)); v.cut(TimeSpan(start: 60, end: 70))
-        #expect(v.kept == [TimeSpan(start: 0, end: 20), TimeSpan(start: 30, end: 60), TimeSpan(start: 70, end: 100)])
-        #expect(abs(v.keptDuration - 80) < 1e-9)
-        var w = VideoCuts(duration: 100); w.cut(TimeSpan(start: 0, end: 10))
-        #expect(w.kept == [TimeSpan(start: 10, end: 100)])                  // corte no início
+    @Test func cutLeavingASpaceKeepsTheRestWhereItIs() {
+        var t = Self.tl()
+        let ok = t.remove(TimeSpan(start: 20, end: 30), tracks: Self.all, ripple: false)
+        #expect(ok && t.duration == 60)
+        #expect(t.clips(.video)[1] == Clip(media: 0, src: TimeSpan(start: 30, end: 60), at: 30))
+        #expect(t.gaps(.video) == [TimeSpan(start: 20, end: 30)])
+        #expect(t.clip(at: 25, in: .video) == nil && t.clip(at: 35, in: .video) != nil)
     }
 
-    @Test func timeMappingRoundTrips() {
-        var v = VideoCuts(duration: 100)
-        v.cut(TimeSpan(start: 20, end: 30)); v.cut(TimeSpan(start: 60, end: 70))
-        #expect(v.editedTime(forSource: 10) == 10)
-        #expect(v.editedTime(forSource: 35) == 25)                          // 35 − 10
-        #expect(v.editedTime(forSource: 75) == 55)                          // 75 − 20
-        #expect(v.editedTime(forSource: 25) == 20)                          // dentro do corte: onde ele esteve
-        #expect(v.sourceTime(forEdited: 10) == 10)
-        #expect(v.sourceTime(forEdited: 25) == 35)
-        #expect(v.sourceTime(forEdited: 55) == 75)
-        for e in stride(from: 0.0, through: 80.0, by: 3.7) { #expect(abs(v.editedTime(forSource: v.sourceTime(forEdited: e)) - e) < 1e-9) }
-        #expect(v.skipCut(25) == 30 && v.skipCut(40) == 40)
-        #expect(v.isCut(65) && !v.isCut(30) && !v.isCut(10))               // o fim do corte já é vídeo que fica
-        #expect(v.cutIndex(at: 65) == 1 && v.cutIndex(at: 5) == nil)
+    @Test func cuttingOnlyTheAudioLeavesASpaceWithVideo() {
+        var t = Self.tl()
+        let ok = t.remove(TimeSpan(start: 10, end: 20), tracks: [.system, .microphone], ripple: false)
+        #expect(ok)
+        #expect(t.clips(.video).count == 1)                                           // o vídeo continua a correr
+        #expect(t.gaps(.system) == [TimeSpan(start: 10, end: 20)] && t.gaps(.microphone) == [TimeSpan(start: 10, end: 20)])
+        var u = Self.tl()
+        let ok2 = u.remove(TimeSpan(start: 10, end: 20), tracks: [.video], ripple: false)   // espaço sem vídeo, com áudio
+        #expect(ok2 && u.gaps(.video) == [TimeSpan(start: 10, end: 20)] && u.gaps(.system).isEmpty)
     }
 
-    @Test func restoreAndCodable() throws {
-        var v = VideoCuts(duration: 50)
-        v.cut(TimeSpan(start: 5, end: 10)); v.cut(TimeSpan(start: 20, end: 25))
-        let back = try JSONDecoder().decode(VideoCuts.self, from: JSONEncoder().encode(v))
-        #expect(back == v)
-        v.restore(at: 0)
-        #expect(v.cuts == [TimeSpan(start: 20, end: 25)])
-        v.restoreAll()
-        #expect(!v.hasCuts && v.keptDuration == 50)
+    @Test func partialCutsSplitClipsCorrectly() {
+        var t = Self.tl()
+        t.remove(TimeSpan(start: 10, end: 20), tracks: Self.all, ripple: true)      // 10 s a menos
+        t.remove(TimeSpan(start: 15, end: 25), tracks: Self.all, ripple: true)      // cai sobre as duas partes
+        let v = t.clips(.video)
+        #expect(t.duration == 40)
+        #expect(v == [Clip(media: 0, src: TimeSpan(start: 0, end: 10), at: 0), Clip(media: 0, src: TimeSpan(start: 20, end: 25), at: 10), Clip(media: 0, src: TimeSpan(start: 35, end: 60), at: 15)])
+    }
+
+    @Test func rejectsUselessOrTotalCuts() {
+        var t = Self.tl()
+        do { let ok = t.remove(TimeSpan(start: 5, end: 5.01), tracks: Self.all, ripple: true); #expect(!ok) }
+        do { let ok = t.remove(TimeSpan(start: 100, end: 120), tracks: Self.all, ripple: true); #expect(!ok) }
+        do { let ok = t.remove(TimeSpan(start: 0, end: 60), tracks: Self.all, ripple: true); #expect(!ok) }
+        #expect(!t.isEdited)
+        // retirar tudo de uma linha só é permitido enquanto sobrar conteúdo noutra
+        do { let ok = t.remove(TimeSpan(start: 0, end: 60), tracks: [.microphone], ripple: false); #expect(ok) }
+        #expect(t.contentLength(.microphone) == 0 && t.contentLength(.video) == 60)
+    }
+
+    @Test func extractCopiesRelativeToTheStart() {
+        var t = Self.tl()
+        t.remove(TimeSpan(start: 20, end: 30), tracks: Self.all, ripple: false)
+        let p = t.extract(TimeSpan(start: 15, end: 35), tracks: [.video])
+        #expect(p.length == 20 && Array(p.lanes.keys) == [.video])
+        #expect(p.lanes[.video] == [Clip(media: 0, src: TimeSpan(start: 15, end: 20), at: 0), Clip(media: 0, src: TimeSpan(start: 30, end: 35), at: 15)])   // o espaço vem junto
+    }
+
+    @Test func pasteInsertsAndPushesTheRestWhenRippling() {
+        var t = Self.tl()
+        let p = t.extract(TimeSpan(start: 10, end: 15), tracks: Self.all)           // 5 s
+        t.insert(p, at: 40, ripple: true)
+        #expect(t.duration == 65)
+        #expect(t.clips(.video) == [Clip(media: 0, src: TimeSpan(start: 0, end: 40), at: 0), Clip(media: 0, src: TimeSpan(start: 10, end: 15), at: 40), Clip(media: 0, src: TimeSpan(start: 40, end: 60), at: 45)])
+    }
+
+    @Test func pasteOverwritesWhenNotRippling() {
+        var t = Self.tl()
+        let p = t.extract(TimeSpan(start: 10, end: 15), tracks: [.system])
+        t.insert(p, at: 40, ripple: false)
+        #expect(t.duration == 60)
+        #expect(t.clips(.system) == [Clip(media: 0, src: TimeSpan(start: 0, end: 40), at: 0), Clip(media: 0, src: TimeSpan(start: 10, end: 15), at: 40), Clip(media: 0, src: TimeSpan(start: 45, end: 60), at: 45)])
+        #expect(t.clips(.video).count == 1)                                          // só a linha copiada mudou
+    }
+
+    @Test func mirrorAndReplaceForReversing() {
+        var t = Self.tl()
+        t.remove(TimeSpan(start: 20, end: 30), tracks: [.video], ripple: false)
+        let range = TimeSpan(start: 10, end: 40)
+        let p = t.extract(range, tracks: [.video])                                   // 10–20 e 30–40, com espaço no meio
+        #expect(p.lanes[.video]?.map { EditTimeline.mirroredAt($0, length: p.length) } == [20, 0])   // trocam de lugar
+        let reversed = (p.lanes[.video] ?? []).map { Clip(media: 1, src: TimeSpan(start: 0, end: $0.length), at: EditTimeline.mirroredAt($0, length: p.length)) }
+        t.replace(range, tracks: [.video], with: [.video: reversed])
+        #expect(t.clips(.video).map(\.media) == [0, 1, 1, 0])
+        #expect(t.gaps(.video) == [TimeSpan(start: 20, end: 30)])                    // o espaço do meio mantém-se no meio
+        #expect(t.duration == 60)
+    }
+
+    @Test func codable() throws {
+        var t = Self.tl()
+        t.remove(TimeSpan(start: 20, end: 30), tracks: Self.all, ripple: true)
+        let back = try JSONDecoder().decode(EditTimeline.self, from: JSONEncoder().encode(t))
+        #expect(back == t)
     }
 }

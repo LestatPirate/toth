@@ -77,9 +77,21 @@ public struct AudioMixer {
     /// emite-se silêncio até aí.
     public mutating func advance(toFrame f: Int64) { clock = max(clock, f) }
 
+    /// Um bloco pronto: a mistura e também cada fonte sozinha (para gravar faixas separadas e poder editá-las depois).
+    public struct Chunk {
+        public let frame: Int64
+        public let mixed: [Float]
+        public let system: [Float]
+        public let microphone: [Float]
+    }
+
     /// Blocos prontos a escrever. Com `flush`, emite também o que falta até ao fim (gravação terminada).
     public mutating func pop(flush: Bool = false) -> [(frame: Int64, samples: [Float])] {
-        var out: [(frame: Int64, samples: [Float])] = []
+        popChunks(flush: flush).map { ($0.frame, $0.mixed) }
+    }
+
+    public mutating func popChunks(flush: Bool = false) -> [Chunk] {
+        var out: [Chunk] = []
         while true {
             let end = emitted + Int64(chunkFrames)
             let enabled = tracks.values.filter(\.enabled)
@@ -90,17 +102,20 @@ public struct AudioMixer {
             else if enabled.allSatisfy({ $0.filledUntil >= end }) { ready = true }         // todas as fontes ligadas já chegaram
             else { ready = newest - end >= Int64(maxLatencyFrames) }                       // uma fonte atrasou-se demais: segue sem ela
             guard ready else { break }
-            var chunk = [Float](repeating: 0, count: chunkFrames * Self.channels)
+            var per: [AudioSource: [Float]] = [.system: [Float](repeating: 0, count: chunkFrames * Self.channels),
+                                               .microphone: [Float](repeating: 0, count: chunkFrames * Self.channels)]
             for (src, t) in tracks where t.enabled && !t.data.isEmpty {
                 let off = Int(emitted - t.start)
-                for i in 0..<chunk.count {
+                var c = per[src]!
+                for i in 0..<c.count {
                     let j = off * Self.channels + i
-                    if j >= 0 && j < t.data.count { chunk[i] += t.data[j] }
+                    if j >= 0 && j < t.data.count { c[i] = t.data[j] }
                 }
-                _ = src
+                per[src] = c
             }
-            for i in 0..<chunk.count { chunk[i] = max(-1, min(1, chunk[i])) }
-            out.append((emitted, chunk))
+            var mixed = [Float](repeating: 0, count: chunkFrames * Self.channels)
+            for i in 0..<mixed.count { mixed[i] = max(-1, min(1, per[.system]![i] + per[.microphone]![i])) }
+            out.append(Chunk(frame: emitted, mixed: mixed, system: per[.system]!, microphone: per[.microphone]!))
             emitted = end
             for s in AudioSource.allCases {                          // liberta o que já foi usado
                 guard var t = tracks[s], !t.data.isEmpty else { continue }

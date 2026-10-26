@@ -39,7 +39,9 @@ final class RecordingEngine: @unchecked Sendable {
     private let writer: AVAssetWriter
     private let videoInput: AVAssetWriterInput
     private let adaptor: AVAssetWriterInputPixelBufferAdaptor
-    private let audioInput: AVAssetWriterInput
+    private let audioInput: AVAssetWriterInput          // mistura (a que os outros leitores tocam)
+    private let systemInput: AVAssetWriterInput         // só o áudio do sistema (para editar)
+    private let micInput: AVAssetWriterInput            // só o microfone (para editar)
     private var mixer: AudioMixer
     private var timer: DispatchSourceTimer?
 
@@ -75,8 +77,18 @@ final class RecordingEngine: @unchecked Sendable {
             AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 128_000,
         ])
         audioInput.expectsMediaDataInRealTime = true
-        guard writer.canAdd(videoInput), writer.canAdd(audioInput) else { throw Failure.writer("formato não suportado") }
-        writer.add(videoInput); writer.add(audioInput)
+        // Faixas separadas do áudio do sistema e do microfone, só para o editor (ficam desativadas: os outros leitores tocam a mistura).
+        func separate(_ title: String) -> AVAssetWriterInput {
+            let i = AVAssetWriterInput(mediaType: .audio, outputSettings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 96_000])
+            i.expectsMediaDataInRealTime = true
+            i.marksOutputTrackAsEnabled = false
+            let m = AVMutableMetadataItem(); m.identifier = .commonIdentifierTitle; m.value = title as NSString; m.dataType = kCMMetadataBaseDataType_UTF8 as String
+            i.metadata = [m]
+            return i
+        }
+        systemInput = separate("Toth:sistema"); micInput = separate("Toth:microfone")
+        guard writer.canAdd(videoInput), writer.canAdd(audioInput), writer.canAdd(systemInput), writer.canAdd(micInput) else { throw Failure.writer("formato não suportado") }
+        writer.add(videoInput); writer.add(audioInput); writer.add(systemInput); writer.add(micInput)
         mixer = AudioMixer(system: system, microphone: microphone)
     }
 
@@ -191,12 +203,14 @@ final class RecordingEngine: @unchecked Sendable {
     func pump() { queue.sync { pumpLocked() } }
 
     private func drainAudio() {
-        for chunk in mixer.pop() { writeAudio(chunk.samples, frame: chunk.frame) }
+        for chunk in mixer.popChunks() { writeAudio(chunk) }
     }
 
-    private func writeAudio(_ samples: [Float], frame: Int64) {
-        guard audioInput.isReadyForMoreMediaData, let sb = AudioConversion.sampleBuffer(from: samples, startFrame: frame) else { return }
-        if !audioInput.append(sb), writer.status == .failed { failed = writer.error?.localizedDescription ?? "?" }
+    private func writeAudio(_ chunk: AudioMixer.Chunk) {
+        for (input, samples) in [(audioInput, chunk.mixed), (systemInput, chunk.system), (micInput, chunk.microphone)] {
+            guard input.isReadyForMoreMediaData, let sb = AudioConversion.sampleBuffer(from: samples, startFrame: chunk.frame) else { continue }
+            if !input.append(sb), writer.status == .failed { failed = writer.error?.localizedDescription ?? "?" }
+        }
     }
 
     /// Termina o ficheiro. `discard`: apaga-o em vez de o guardar.
@@ -213,8 +227,8 @@ final class RecordingEngine: @unchecked Sendable {
                 }
                 let end = max(lastVideoPTS, adjusted(now()) ?? pausedAdjusted(startHost!))
                 mixer.advance(toFrame: Int64(end * 48_000))
-                for chunk in mixer.pop(flush: true) { writeAudio(chunk.samples, frame: chunk.frame) }
-                videoInput.markAsFinished(); audioInput.markAsFinished()
+                for chunk in mixer.popChunks(flush: true) { writeAudio(chunk) }
+                videoInput.markAsFinished(); audioInput.markAsFinished(); systemInput.markAsFinished(); micInput.markAsFinished()
                 writer.endSession(atSourceTime: CMTime(seconds: max(end, lastVideoPTS), preferredTimescale: 90_000))
                 writer.finishWriting {
                     if self.writer.status == .completed { cont.resume(returning: .success(())) }

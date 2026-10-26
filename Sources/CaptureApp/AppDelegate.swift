@@ -363,6 +363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--render-videoeditor"), args.count > i + 1 {
             Task { @MainActor in await VideoEditSelfTest.render(to: args[i + 1]); print("RENDER-VIDEOEDITOR: OK"); exit(0) }
         }
+        if let i = args.firstIndex(of: "--video-inspect"), args.count > i + 1 {
+            Task { @MainActor in print(await VideoEditSelfTest.inspect(url: URL(fileURLWithPath: args[i + 1]))); exit(0) }
+        }
         // `--videoedit-selftest <pasta>`: corte de vídeo (o que sobra toca seguido), desfazer, memória dos cortes e exportação.
         if let i = args.firstIndex(of: "--videoedit-selftest"), args.count > i + 1 {
             Task { @MainActor in
