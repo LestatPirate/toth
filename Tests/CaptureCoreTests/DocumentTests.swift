@@ -655,3 +655,69 @@ import Foundation
         #expect(out.allSatisfy { $0.samples.allSatisfy { abs($0) <= 1.0 } })
     }
 }
+
+// MARK: - Cortes de vídeo
+
+@Suite struct VideoCutsTests {
+    @Test func cutsAreSortedMergedAndClamped() {
+        var v = VideoCuts(duration: 60)
+        do { let ok = v.cut(TimeSpan(start: 30, end: 40)); #expect(ok) }
+        do { let ok = v.cut(TimeSpan(start: 10, end: 15)); #expect(ok) }
+        #expect(v.cuts == [TimeSpan(start: 10, end: 15), TimeSpan(start: 30, end: 40)])
+        do { let ok = v.cut(TimeSpan(start: 14, end: 31)); #expect(ok) }                       // junta os dois
+        #expect(v.cuts == [TimeSpan(start: 10, end: 40)])
+        do { let ok = v.cut(TimeSpan(start: 40, end: 45)); #expect(ok) }                       // encostado: funde
+        #expect(v.cuts == [TimeSpan(start: 10, end: 45)])
+        do { let ok = v.cut(TimeSpan(start: 58, end: 70)); #expect(ok) }                       // limitado ao fim
+        #expect(v.cuts.last == TimeSpan(start: 58, end: 60))
+        do { let ok = v.cut(TimeSpan(start: -5, end: 2)); #expect(ok) }                        // limitado ao início
+        #expect(v.cuts.first == TimeSpan(start: 0, end: 2))
+        do { let ok = v.cut(TimeSpan(start: 20, end: 5)); #expect(ok) }                        // ao contrário: normaliza
+    }
+
+    @Test func rejectsUselessCuts() {
+        var v = VideoCuts(duration: 10)
+        do { let ok = v.cut(TimeSpan(start: 3, end: 3.01)); #expect(!ok) }                     // curto demais
+        do { let ok = v.cut(TimeSpan(start: 20, end: 30)); #expect(!ok) }                      // fora do vídeo
+        do { let ok = v.cut(TimeSpan(start: 0, end: 10)); #expect(!ok) }                       // não deixa o vídeo vazio
+        do { let ok = v.cut(TimeSpan(start: 0, end: 9.95)); #expect(!ok) }                     // sobraria menos de 0,1 s
+        do { let ok = v.cut(TimeSpan(start: 0, end: 9.8)); #expect(ok) }
+        #expect(v.hasCuts && abs(v.keptDuration - 0.2) < 1e-9)
+    }
+
+    @Test func keptSegmentsAndDuration() {
+        var v = VideoCuts(duration: 100)
+        v.cut(TimeSpan(start: 20, end: 30)); v.cut(TimeSpan(start: 60, end: 70))
+        #expect(v.kept == [TimeSpan(start: 0, end: 20), TimeSpan(start: 30, end: 60), TimeSpan(start: 70, end: 100)])
+        #expect(abs(v.keptDuration - 80) < 1e-9)
+        var w = VideoCuts(duration: 100); w.cut(TimeSpan(start: 0, end: 10))
+        #expect(w.kept == [TimeSpan(start: 10, end: 100)])                  // corte no início
+    }
+
+    @Test func timeMappingRoundTrips() {
+        var v = VideoCuts(duration: 100)
+        v.cut(TimeSpan(start: 20, end: 30)); v.cut(TimeSpan(start: 60, end: 70))
+        #expect(v.editedTime(forSource: 10) == 10)
+        #expect(v.editedTime(forSource: 35) == 25)                          // 35 − 10
+        #expect(v.editedTime(forSource: 75) == 55)                          // 75 − 20
+        #expect(v.editedTime(forSource: 25) == 20)                          // dentro do corte: onde ele esteve
+        #expect(v.sourceTime(forEdited: 10) == 10)
+        #expect(v.sourceTime(forEdited: 25) == 35)
+        #expect(v.sourceTime(forEdited: 55) == 75)
+        for e in stride(from: 0.0, through: 80.0, by: 3.7) { #expect(abs(v.editedTime(forSource: v.sourceTime(forEdited: e)) - e) < 1e-9) }
+        #expect(v.skipCut(25) == 30 && v.skipCut(40) == 40)
+        #expect(v.isCut(65) && !v.isCut(30) && !v.isCut(10))               // o fim do corte já é vídeo que fica
+        #expect(v.cutIndex(at: 65) == 1 && v.cutIndex(at: 5) == nil)
+    }
+
+    @Test func restoreAndCodable() throws {
+        var v = VideoCuts(duration: 50)
+        v.cut(TimeSpan(start: 5, end: 10)); v.cut(TimeSpan(start: 20, end: 25))
+        let back = try JSONDecoder().decode(VideoCuts.self, from: JSONEncoder().encode(v))
+        #expect(back == v)
+        v.restore(at: 0)
+        #expect(v.cuts == [TimeSpan(start: 20, end: 25)])
+        v.restoreAll()
+        #expect(!v.hasCuts && v.keptDuration == 50)
+    }
+}

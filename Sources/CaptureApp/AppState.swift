@@ -75,6 +75,7 @@ final class AppState: ObservableObject {
     /// Envia para o Lixo (recuperável).
     func trash(_ url: URL) {
         try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        if VideoFiles.isVideo(url) { try? FileManager.default.removeItem(at: url.appendingPathExtension("cortes")) }
         if model?.url == url { model = nil }
         if videoURL == url { videoURL = nil }
         refreshLibrary()

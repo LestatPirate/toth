@@ -21,5 +21,6 @@ Reparo básico → rolagem vertical (depois horizontal) → vídeo fase 1–4 �
 
 ## Vídeo
 - **Feito:** gravar a região em MP4, com pausa e áudio do sistema e microfone ligáveis; abre no editor.
-- **Falta:** editar (cortar e dividir numa linha do tempo, redimensionar com ou sem proporção, retirar/importar áudio, anotações com início e fim), escolher o microfone, gravar uma janela.
+- **Feito também:** cortar um trecho numa linha de tempo (não destrutivo, com desfazer), guardar o vídeo cortado.
+- **Falta:** dividir e reordenar, redimensionar com ou sem proporção, retirar/importar áudio, anotações com início e fim, escolher o microfone, gravar uma janela.
 

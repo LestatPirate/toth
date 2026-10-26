@@ -360,6 +360,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--render-video-hud"), args.count > i + 1 {
             DispatchQueue.main.async { VideoHUD.renderForTests(to: args[i + 1]); print("RENDER-VIDEO-HUD: OK"); exit(0) }
         }
+        if let i = args.firstIndex(of: "--render-videoeditor"), args.count > i + 1 {
+            Task { @MainActor in await VideoEditSelfTest.render(to: args[i + 1]); print("RENDER-VIDEOEDITOR: OK"); exit(0) }
+        }
+        // `--videoedit-selftest <pasta>`: corte de vídeo (o que sobra toca seguido), desfazer, memória dos cortes e exportação.
+        if let i = args.firstIndex(of: "--videoedit-selftest"), args.count > i + 1 {
+            Task { @MainActor in
+                let fails = await VideoEditSelfTest.run(dir: URL(fileURLWithPath: args[i + 1]))
+                print(fails.isEmpty ? "VIDEOEDIT-SELFTEST: OK" : "VIDEOEDIT-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                exit(fails.isEmpty ? 0 : 1)
+            }
+        }
         // `--video-selftest <pasta>`: gravação de vídeo com fotogramas e sons sintéticos (pausa, microfone ligado/desligado).
         if let i = args.firstIndex(of: "--video-selftest"), args.count > i + 1 {
             Task { @MainActor in
