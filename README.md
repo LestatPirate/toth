@@ -58,6 +58,20 @@ Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento 
 
 Veja o [guia completo](docs/GUIA.md) para cada funcionalidade em detalhe.
 
+### Uma alternativa livre e local a
+O Toth pode substituir, em parte, estas apps para quem só precisa do essencial: capturar, anotar, gravar e fazer cortes simples. É gratuito, sem conta, sem nuvem e sem telemetria.
+
+| Categoria | Apps | O que o Toth cobre |
+|---|---|---|
+| Captura e anotação | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Captura de região, anotações (setas, texto, etapas numeradas, pixelização, desfoque) e edição que pode reabrir |
+| Captura com rolagem | CleanShot X, Snagit, Shottr | Página inteira por rolagem |
+| Gravação de ecrã | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Gravação de uma área com áudio do sistema e microfone |
+| Edição de vídeo simples | iMovie, ScreenFlow, Camtasia | Cortes, cópia, inversão e quebra: um editor básico, não uma suíte completa |
+
+O Toth não tem anotações em vídeo, legendas, efeitos, captura de janela nem GIF, e não partilha online (por decisão de projeto), por isso não substitui por inteiro as apps mais completas.
+
+*Todas as marcas pertencem aos respetivos donos. Os nomes servem só para indicar a que o Toth pode servir de alternativa; o Toth não é afiliado nem recomendado por essas empresas.*
+
 ### Instalação
 **Requisitos:** macOS 15 ou superior (Apple Silicon e Intel; testado em Apple Silicon).
 
@@ -116,6 +130,20 @@ In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**
 - **Portuguese and English**, **verified updates** (SHA-256), and **full privacy**: the only network call is the check for new versions, which can be turned off.
 
 See the [full guide](docs/GUIA.md#english) for every feature in detail.
+
+### A free, local alternative to
+Toth can stand in, in part, for these apps if all you need is the essentials: capture, annotate, record and make simple cuts. It is free, with no account, no cloud and no telemetry.
+
+| Category | Apps | What Toth covers |
+|---|---|---|
+| Capture and annotation | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Region capture, annotations (arrows, text, numbered steps, pixelate, blur) and editing you can reopen |
+| Scrolling capture | CleanShot X, Snagit, Shottr | A whole page by scrolling |
+| Screen recording | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Recording an area with system audio and microphone |
+| Simple video editing | iMovie, ScreenFlow, Camtasia | Cuts, copy, reverse and break: a basic editor, not a full suite |
+
+Toth has no video annotations, captions, effects, window capture or GIF, and does not share online (by design), so it does not fully replace the more complete apps.
+
+*All trademarks belong to their respective owners. The names are used only to say what Toth can be an alternative to; Toth is not affiliated with or endorsed by those companies.*
 
 ### Installation
 **Requirements:** macOS 15 or later (Apple Silicon and Intel; tested on Apple Silicon).
