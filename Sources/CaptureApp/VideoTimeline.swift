@@ -17,14 +17,16 @@ final class TimelineNSView: NSView {
     var onAction: ((Action) -> Void)?
     enum Action { case cutJoin, cutGap, copy, paste, pasteOver, reverse, togglePlay }
 
-    let headerWidth: CGFloat = 158, margin: CGFloat = 14, rulerHeight: CGFloat = 22, handleWidth: CGFloat = 9
+    let headerWidth: CGFloat = 178, margin: CGFloat = 14, rulerHeight: CGFloat = 22, handleWidth: CGFloat = 9
     private enum Drag {
-        case none, scrub, selecting(anchor: Double), start, end
+        case none, scrub, selecting(anchor: Double), start, end, moving(grab: Double)
         var isStart: Bool { if case .start = self { true } else { false } }
     }
     private var drag = Drag.none
     private var pressPoint: NSPoint = .zero
     private var moved = false
+    /// Posição provisória do trecho enquanto é arrastado (só se confirma ao largar).
+    private var ghost: TimeSpan?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -36,8 +38,11 @@ final class TimelineNSView: NSView {
     private var duration: Double { max(model?.duration ?? 0, 0.001) }
     var trackLeft: CGFloat { headerWidth + margin }
     var trackWidth: CGFloat { max(1, bounds.width - trackLeft - margin) }
-    func x(_ t: Double) -> CGFloat { trackLeft + CGFloat(t / duration) * trackWidth }
-    func time(_ x: CGFloat) -> Double { max(0, min(duration, Double((x - trackLeft) / trackWidth) * duration)) }
+    private var viewStart: Double { model?.viewStart ?? 0 }
+    private var pps: Double { model?.pixelsPerSecond ?? Double(trackWidth) / duration }
+    func x(_ t: Double) -> CGFloat { trackLeft + CGFloat((t - viewStart) * pps) }
+    func time(_ x: CGFloat) -> Double { max(0, min(duration, viewStart + Double(x - trackLeft) / pps)) }
+    override func layout() { super.layout(); model?.trackWidth = Double(trackWidth) }
     private func rowHeight(_ t: EditTrack) -> CGFloat { t == .video ? 38 : 50 }
     /// Retângulo da linha `t` (na zona das faixas).
     func rowRect(_ t: EditTrack) -> NSRect {
@@ -66,10 +71,12 @@ final class TimelineNSView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let model, let ctx = NSGraphicsContext.current?.cgContext else { return }
         NSColor(white: 0.12, alpha: 1).setFill(); bounds.fill()
+        ctx.saveGState(); NSBezierPath(rect: NSRect(x: trackLeft - 1, y: 0, width: trackWidth + 2, height: bounds.height)).addClip()
         drawRuler()
+        ctx.restoreGState()
         for lane in lanes {
             let r = rowRect(lane)
-            let active = model.mask.contains(lane)
+            let active = model.enabled.contains(lane)
             drawHeader(lane, row: r, active: active)
             // fundo da linha
             NSColor(white: 0.19, alpha: 1).setFill()
@@ -81,8 +88,22 @@ final class TimelineNSView: NSView {
             ctx.restoreGState()
             NSColor.white.withAlphaComponent(active ? 0.22 : 0.1).setStroke()
             let b = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5); b.lineWidth = 1; b.stroke()
+            if !active, r.width > 90 {
+                let text = L("suprimida no resultado") as NSString
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor(white: 0.85, alpha: 0.9)]
+                let sz = text.size(withAttributes: attrs)
+                let pill = NSRect(x: r.maxX - sz.width - 16, y: r.minY + 3, width: sz.width + 10, height: sz.height + 2)
+                NSColor.black.withAlphaComponent(0.6).setFill(); NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+                text.draw(at: NSPoint(x: pill.minX + 5, y: pill.minY + 1), withAttributes: attrs)
+            }
         }
         drawSelection(model)
+        if let g = ghost {
+            let a = tracksArea
+            let r = NSRect(x: x(g.start), y: a.minY - 2, width: max(2, x(g.end) - x(g.start)), height: a.height + 4)
+            NSColor.white.withAlphaComponent(0.12).setFill(); r.fill()
+            NSColor.white.setStroke(); let b = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1)); b.lineWidth = 1.5; b.setLineDash([5, 3], count: 2, phase: 0); b.stroke()
+        }
         // posição de reprodução
         let px = x(model.playhead)
         NSColor.systemRed.setStroke()
@@ -92,15 +113,18 @@ final class TimelineNSView: NSView {
     }
 
     private func drawHeader(_ lane: EditTrack, row: NSRect, active: Bool) {
-        let box = NSRect(x: 8, y: row.midY - 9, width: 18, height: 18)
-        let sym = NSImage(systemSymbolName: active ? "checkmark.square.fill" : "square", accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .regular).applying(.init(paletteColors: active ? [NSColor.white, NSColor.controlAccentColor] : [NSColor(white: 0.55, alpha: 1)])))
-        sym?.draw(in: box)
+        let on = model?.enabled.contains(lane) ?? true, locked = model?.locked.contains(lane) ?? false
+        func glyph(_ name: String, _ rect: NSRect, _ c: NSColor) {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular).applying(.init(paletteColors: [c])))?.draw(in: rect)
+        }
+        glyph(on ? "eye.fill" : "eye.slash", NSRect(x: 7, y: row.midY - 8, width: 20, height: 16), on ? .controlAccentColor : NSColor(white: 0.55, alpha: 1))
+        glyph(locked ? "lock.fill" : "lock.open", NSRect(x: 29, y: row.midY - 8, width: 16, height: 16), locked ? .systemOrange : NSColor(white: 0.5, alpha: 1))
         let icon = NSImage(systemSymbolName: symbol(lane), accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold).applying(.init(paletteColors: [color(lane)])))
-        icon?.draw(in: NSRect(x: 32, y: row.midY - 8, width: 16, height: 16))
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(white: active ? 0.9 : 0.55, alpha: 1)]
-        (title(lane) as NSString).draw(in: NSRect(x: 52, y: row.midY - 7, width: headerWidth - 54, height: 14), withAttributes: attrs)
+        icon?.draw(in: NSRect(x: 52, y: row.midY - 8, width: 16, height: 16))
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(white: on ? 0.9 : 0.55, alpha: 1)]
+        (title(lane) as NSString).draw(in: NSRect(x: 72, y: row.midY - 7, width: headerWidth - 74, height: 14), withAttributes: attrs)
     }
 
     private func drawGap(_ g: TimeSpan, in row: NSRect, lane: EditTrack) {
@@ -138,6 +162,14 @@ final class TimelineNSView: NSView {
                 px += 1.5
             }
         }
+        // bordas em destaque: contorno claro e barras nas pontas
+        let edge = NSColor.white.withAlphaComponent(dimmed ? 0.45 : 0.95)
+        edge.setStroke()
+        let ob = NSBezierPath(roundedRect: r.insetBy(dx: 0.75, dy: 0.75), xRadius: 3, yRadius: 3); ob.lineWidth = 1.5; ob.stroke()
+        NSColor.black.withAlphaComponent(0.55).setStroke()
+        let ib = NSBezierPath(roundedRect: r.insetBy(dx: 2.25, dy: 2.25), xRadius: 2, yRadius: 2); ib.lineWidth = 1; ib.stroke()
+        edge.setFill()
+        if r.width > 8 { NSBezierPath(rect: NSRect(x: r.minX, y: r.minY, width: 3, height: r.height)).fill(); NSBezierPath(rect: NSRect(x: r.maxX - 3, y: r.minY, width: 3, height: r.height)).fill() }
         if reversed, r.width > 24, let img = NSImage(systemSymbolName: "backward.fill", accessibilityDescription: nil) {
             img.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .bold).applying(.init(paletteColors: [.white])))?.draw(in: NSRect(x: r.minX + 5, y: r.minY + 4, width: 12, height: 10))
         }
@@ -168,13 +200,15 @@ final class TimelineNSView: NSView {
     }
 
     private func drawRuler() {
-        let d = duration
-        let steps: [Double] = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800]
-        let step = steps.first { CGFloat($0 / d) * trackWidth >= 60 } ?? 3600
+        let steps: [Double] = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800]
+        let step = steps.first { $0 * pps >= 60 } ?? 3600
+        let first = (viewStart / step).rounded(.down) * step
+        let end = min(duration, viewStart + Double(trackWidth) / pps)
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .regular), .foregroundColor: NSColor(white: 0.7, alpha: 1)]
-        var t = 0.0
+        var t = first
         NSColor(white: 0.45, alpha: 1).setStroke()
-        while t <= d + 1e-9 {
+        while t <= end + 1e-9 {
+            if t < 0 { t += step; continue }
             let px = x(t)
             let p = NSBezierPath(); p.move(to: NSPoint(x: px, y: rulerHeight - 6)); p.line(to: NSPoint(x: px, y: rulerHeight - 1)); p.lineWidth = 1; p.stroke()
             (Self.format(t, tenths: step < 1) as NSString).draw(at: NSPoint(x: px + 3, y: 4), withAttributes: attrs)
@@ -205,15 +239,22 @@ final class TimelineNSView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         pressPoint = p; moved = false
         guard let model else { return }
-        if p.x < headerWidth { if let l = lane(atY: p.y) { model.toggleMask(l); needsDisplay = true }; drag = .none; return }
-        if event.clickCount == 2, let l = lane(atY: p.y), let g = model.timeline.gaps(l).first(where: { $0.contains(time(p.x)) }) {
-            model.selection = g; model.activeEdge = .start; model.preview(g.start, label: L("Início do trecho")); drag = .none; return
+        if p.x < headerWidth {
+            if let l = lane(atY: p.y) {
+                if p.x < 28 { Task { await model.toggleEnabled(l); self.needsDisplay = true } } else if p.x < 48 { model.toggleLocked(l) }
+                needsDisplay = true
+            }
+            drag = .none; return
         }
+        if event.clickCount == 2, let l = lane(atY: p.y) { model.selectPart(at: time(p.x), in: l); drag = .none; return }
         if let h = hitHandle(p) {
             drag = h
             model.activeEdge = (h.isStart) ? .start : .end
             if let sel = model.selection { model.preview(h.isStart ? sel.start : sel.end, label: h.isStart ? L("Início do trecho") : L("Fim do trecho")) }
             return
+        }
+        if let sel = model.selection, p.y >= rulerHeight, tracksArea.contains(p), x(sel.start) < p.x, p.x < x(sel.end), !model.mask.isEmpty {
+            drag = .moving(grab: time(p.x) - sel.start); ghost = nil; return
         }
         if p.y < rulerHeight { drag = .scrub; model.clearPreview(); model.seek(to: time(p.x)); return }
         drag = tracksArea.insetBy(dx: 0, dy: -4).contains(p) ? .selecting(anchor: time(p.x)) : .none
@@ -236,6 +277,19 @@ final class TimelineNSView: NSView {
             if let e = model.selection?.end { model.selection = TimeSpan(start: min(t, e), end: e); model.preview(min(t, e), label: L("Início do trecho")) }
         case .end:
             if let s = model.selection?.start { model.selection = TimeSpan(start: s, end: max(t, s)); model.preview(max(t, s), label: L("Fim do trecho")) }
+        case let .moving(grab):
+            guard moved, let sel = model.selection else { return }
+            var start = max(0, t - grab)
+            // ímanes: pontas de outros clipes e posição de reprodução
+            let tol = 6 / pps
+            var targets = [model.playhead, 0]
+            for l in model.mask { for c in model.timeline.clips(l) { targets += [c.at, c.end] } }
+            if let hit = targets.min(by: { abs($0 - start) < abs($1 - start) }), abs(hit - start) <= tol { start = hit }
+            else if let hit = targets.min(by: { abs($0 - (start + sel.length)) < abs($1 - (start + sel.length)) }), abs(hit - (start + sel.length)) <= tol { start = hit - sel.length }
+            ghost = TimeSpan(start: start, end: start + sel.length)
+            model.pan(toShow: t)
+            model.preview(start, label: L("Mover para aqui"))
+            needsDisplay = true
         case .none: break
         }
     }
@@ -244,6 +298,11 @@ final class TimelineNSView: NSView {
         guard let model else { return }
         let p = convert(event.locationInWindow, from: nil)
         if case .selecting = drag, !moved { model.selection = nil; model.clearPreview(); model.seek(to: time(p.x)) }   // clique simples
+        if case .moving = drag {
+            if let g = ghost { let insert = event.modifierFlags.contains(.option); Task { await model.moveSelection(to: g.start, insert: insert); self.needsDisplay = true } }
+            else if !moved { model.selection = nil; model.clearPreview(); model.seek(to: time(p.x)) }
+            ghost = nil
+        }
         if let sel = model.selection, sel.length < 0.02 { model.selection = nil }
         drag = .none
     }
@@ -251,6 +310,7 @@ final class TimelineNSView: NSView {
     override func resetCursorRects() {
         guard let sel = model?.selection else { return }
         let a = tracksArea
+        addCursorRect(NSRect(x: x(sel.start) + handleWidth, y: a.minY, width: max(0, x(sel.end) - x(sel.start) - 2 * handleWidth), height: a.height), cursor: .openHand)
         for t in [sel.start, sel.end] { addCursorRect(NSRect(x: x(t) - handleWidth, y: a.minY, width: 2 * handleWidth, height: a.height), cursor: .resizeLeftRight) }
     }
 
@@ -269,6 +329,28 @@ final class TimelineNSView: NSView {
     }
     @objc private func menuAction(_ item: NSMenuItem) { if let a = item.representedObject as? Action { onAction?(a) } }
 
+    // MARK: Zoom e deslocamento
+
+    override func magnify(with event: NSEvent) {
+        guard let model else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        model.zoom(by: 1 + Double(event.magnification), anchor: time(p.x), atFraction: Double((p.x - trackLeft) / trackWidth))
+        needsDisplay = true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let model else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) {
+            model.zoom(by: exp(Double(event.scrollingDeltaY) * 0.01), anchor: time(p.x), atFraction: Double((p.x - trackLeft) / trackWidth))
+        } else {
+            let d = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) ? event.scrollingDeltaX : -event.scrollingDeltaY
+            model.pan(bySeconds: Double(d) / pps)
+        }
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
+    }
+
     // MARK: Teclado
 
     @objc func copy(_ sender: Any?) { onAction?(.copy) }
@@ -284,6 +366,9 @@ final class TimelineNSView: NSView {
         case "i", "I": model.markStart(); if let s = model.selection { model.preview(s.start, label: L("Início do trecho")) }
         case "o", "O": model.markEnd(); if let s = model.selection { model.preview(s.end, label: L("Fim do trecho")) }
         case "\t": if model.selection != nil { model.activeEdge = model.activeEdge == .start ? .end : .start; if let s = model.selection { model.preview(model.activeEdge == .start ? s.start : s.end, label: model.activeEdge == .start ? L("Início do trecho") : L("Fim do trecho")) } }
+        case "+", "=": model.zoom(by: 1.5)
+        case "-", "_": model.zoom(by: 1 / 1.5)
+        case "0": model.zoomFit()
         case "\u{1B}": model.selection = nil; model.clearPreview()
         case String(UnicodeScalar(NSLeftArrowFunctionKey)!): model.step(shift ? -1 : -model.frameStep, moveEdge: true)
         case String(UnicodeScalar(NSRightArrowFunctionKey)!): model.step(shift ? 1 : model.frameStep, moveEdge: true)

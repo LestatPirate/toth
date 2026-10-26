@@ -762,3 +762,53 @@ import Foundation
         #expect(back == t)
     }
 }
+
+@Suite struct EditTimelineMoveTests {
+    static let all: Set<EditTrack> = [.video, .system, .microphone]
+    static func tl() -> EditTimeline { EditTimeline(sourceDuration: 60, tracks: [.video, .system, .microphone]) }
+
+    @Test func movingLeavesAGapAndOverwritesTheDestination() {
+        var t = Self.tl()
+        let at = t.move(TimeSpan(start: 10, end: 20), tracks: Self.all, to: 40, ripple: false)
+        #expect(at == 40 && t.duration == 60)
+        #expect(t.gaps(.video) == [TimeSpan(start: 10, end: 20)])                       // onde estava ficou um espaço
+        #expect(t.clips(.video) == [Clip(media: 0, src: TimeSpan(start: 0, end: 10), at: 0),
+                                    Clip(media: 0, src: TimeSpan(start: 20, end: 40), at: 20),
+                                    Clip(media: 0, src: TimeSpan(start: 10, end: 20), at: 40),
+                                    Clip(media: 0, src: TimeSpan(start: 50, end: 60), at: 50)])   // 40–50 foi substituído
+    }
+
+    @Test func movingWithRippleClosesTheSourceAndPushesTheDestination() {
+        var t = Self.tl()
+        let at = t.move(TimeSpan(start: 10, end: 20), tracks: Self.all, to: 40, ripple: true)
+        #expect(at == 30 && t.duration == 60 && t.gaps(.video).isEmpty)               // 40 − 10: o espaço de origem fechou
+        #expect(t.clips(.video) == [Clip(media: 0, src: TimeSpan(start: 0, end: 10), at: 0),
+                                    Clip(media: 0, src: TimeSpan(start: 20, end: 40), at: 10),     // o clipe divide-se onde entra o trecho
+                                    Clip(media: 0, src: TimeSpan(start: 10, end: 20), at: 30),
+                                    Clip(media: 0, src: TimeSpan(start: 40, end: 60), at: 40)])
+    }
+
+    @Test func movingBackwardAndOnlyOneLane() {
+        var t = Self.tl()
+        let at = t.move(TimeSpan(start: 30, end: 40), tracks: [.system], to: 5, ripple: false)
+        #expect(at == 5)
+        #expect(t.clips(.video).count == 1 && t.clips(.microphone).count == 1)         // só a linha escolhida mexeu
+        #expect(t.clip(at: 7, in: .system) == Clip(media: 0, src: TimeSpan(start: 30, end: 40), at: 5))   // o trecho de 30–40 começa agora em 5
+        #expect(t.gaps(.system) == [TimeSpan(start: 30, end: 40)])
+    }
+
+    @Test func movingPastTheEndGrowsTheTimeline() {
+        var t = Self.tl()
+        let at = t.move(TimeSpan(start: 50, end: 60), tracks: Self.all, to: 70, ripple: false)
+        #expect(at == 70 && t.duration == 80)
+        #expect(t.gaps(.video) == [TimeSpan(start: 50, end: 70)])
+    }
+
+    @Test func noopsAndRejections() {
+        var t = Self.tl()
+        #expect(t.move(TimeSpan(start: 10, end: 10.01), tracks: Self.all, to: 20, ripple: false) == nil)   // curto demais
+        #expect(t.move(TimeSpan(start: 10, end: 20), tracks: Self.all, to: 10, ripple: false) == 10)         // já está lá
+        #expect(!t.isEdited)
+        #expect(t.move(TimeSpan(start: 10, end: 20), tracks: [], to: 30, ripple: false) == nil)             // nenhuma linha
+    }
+}

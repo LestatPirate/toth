@@ -12,7 +12,8 @@ struct TrackKey: Hashable { let media: Int; let lane: EditTrack }
 enum VideoComposer {
     static let fade = 0.012   // fade de áudio nas pontas dos clipes (evita estalidos)
 
-    static func build(timeline: EditTimeline, tracks: [TrackKey: AVAssetTrack], mediaLength: [Int: Double]) async throws
+    /// `enabled`: as linhas que entram no resultado; as outras ficam suprimidas (sem imagem ou sem som), na reprodução e ao guardar.
+    static func build(timeline: EditTimeline, tracks: [TrackKey: AVAssetTrack], mediaLength: [Int: Double], enabled: Set<EditTrack>? = nil) async throws
         -> (AVMutableComposition, AVAudioMix?, AVVideoComposition?) {
         let comp = AVMutableComposition()
         let scale: CMTimeScale = 90_000
@@ -22,7 +23,7 @@ enum VideoComposer {
         var hasVideo = false
 
         for lane in timeline.lanes {
-            guard !lane.clips.isEmpty else { continue }
+            guard !lane.clips.isEmpty, enabled?.contains(lane.track) ?? true else { continue }
             let dst = comp.addMutableTrack(withMediaType: lane.track == .video ? .video : .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
             var transformSet = false
             var ramps: [(CMTimeRange, Float, Float)] = []
@@ -99,8 +100,21 @@ final class VideoEditorModel: ObservableObject {
     /// Posição de reprodução (tempo da linha de tempo).
     @Published private(set) var playhead = 0.0
     @Published private(set) var isPlaying = false
-    /// Linhas a que os cortes, cópias e inversões se aplicam.
-    @Published var mask: Set<EditTrack> = []
+    /// Linhas que entram no resultado (na reprodução e ao guardar). Uma linha desmarcada fica suprimida.
+    @Published private(set) var enabled: Set<EditTrack> = []
+    /// Linhas protegidas: não mudam com cortes, cópias, colagens, inversões nem movimentos (mas continuam a tocar).
+    @Published private(set) var locked: Set<EditTrack> = []
+    /// Linhas a que as operações se aplicam: as que entram no resultado e não estão protegidas.
+    var mask: Set<EditTrack> {
+        get { enabled.subtracting(locked) }
+        set { enabled.formUnion(newValue); locked = Set(timeline.tracks).subtracting(newValue) }
+    }
+    /// Zoom da linha de tempo (1 = tudo à vista; menos que 1 afasta, para ter espaço à volta; mais que 1 aproxima) e o instante
+    /// que está no limite esquerdo.
+    @Published private(set) var zoom = 1.0
+    @Published private(set) var viewStart = 0.0
+    /// Largura (em píxeis) da zona das faixas; quem a conhece é a vista.
+    var trackWidth: Double = 800 { didSet { if abs(trackWidth - oldValue) > 0.5 { clampView() } } }
     @Published private(set) var clipboard: EditPiece?
     @Published private(set) var working: String?
     @Published private(set) var peaks: [TrackKey: [Float]] = [:]
@@ -164,7 +178,7 @@ final class VideoEditorModel: ObservableObject {
             tracks[TrackKey(media: 0, lane: .system)] = audios[1]; tracks[TrackKey(media: 0, lane: .microphone)] = audios[2]
         } else if let a = audios.first { lanes.append(.system); singleAudio = true; tracks[TrackKey(media: 0, lane: .system)] = a }
         timeline = EditTimeline(sourceDuration: duration, tracks: lanes)
-        mask = Set(lanes)
+        enabled = Set(lanes); locked = []
         loadSaved()
         await finishLoadingGenerated()
         await loadInfo(audioCount: audios.count)
@@ -207,7 +221,11 @@ final class VideoEditorModel: ObservableObject {
     private func installObservers() {
         if timeObserver == nil {
             timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0 / 30, preferredTimescale: 600), queue: .main) { [weak self] t in
-                MainActor.assumeIsolated { if let self, t.seconds.isFinite { self.playhead = t.seconds } }
+                MainActor.assumeIsolated {
+                    guard let self, t.seconds.isFinite else { return }
+                    self.playhead = t.seconds
+                    if self.isPlaying { self.pan(toShow: t.seconds) }
+                }
             }
         }
         statusObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
@@ -221,7 +239,7 @@ final class VideoEditorModel: ObservableObject {
         let wasPlaying = isPlaying
         let item: AVPlayerItem
         do {
-            let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength)
+            let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled)
             guard token == rebuildToken else { return }
             item = AVPlayerItem(asset: comp)
             item.audioMix = mix
@@ -285,7 +303,41 @@ final class VideoEditorModel: ObservableObject {
         selection = TimeSpan(start: start, end: playhead); activeEdge = .end
     }
 
-    func toggleMask(_ t: EditTrack) { if mask.contains(t) { if mask.count > 1 { mask.remove(t) } } else { mask.insert(t) } }
+    /// Inclui ou suprime a linha no resultado (reprodução e guardar). Tem de ficar pelo menos uma.
+    func toggleEnabled(_ t: EditTrack) async {
+        if enabled.contains(t) { guard enabled.count > 1 else { return }; enabled.remove(t) } else { enabled.insert(t) }
+        saveEdit()
+        await rebuildPlayer(at: playhead)
+    }
+
+    /// Protege ou liberta a linha das operações de edição.
+    func toggleLocked(_ t: EditTrack) { if locked.contains(t) { locked.remove(t) } else { locked.insert(t) }; saveEdit() }
+
+    // MARK: Zoom da linha de tempo
+
+    static let zoomRange = 0.25...80.0
+    /// Píxeis por segundo para o zoom atual.
+    var pixelsPerSecond: Double { trackWidth / max(0.5, timeline.duration) * zoom }
+    var visibleDuration: Double { trackWidth / max(0.001, pixelsPerSecond) }
+
+    /// Ajusta o zoom por `factor`, mantendo no mesmo sítio o instante `anchor` (por omissão a posição de reprodução, se estiver à
+    /// vista, ou o meio) que está à fração `frac` da largura.
+    func zoom(by factor: Double, anchor: Double? = nil, atFraction frac: Double? = nil) {
+        let visible = playhead >= viewStart && playhead <= viewStart + visibleDuration
+        let t = anchor ?? (visible ? playhead : viewStart + visibleDuration / 2)
+        let f = frac ?? ((t - viewStart) / max(0.001, visibleDuration))
+        zoom = min(Self.zoomRange.upperBound, max(Self.zoomRange.lowerBound, zoom * factor))
+        viewStart = t - f * visibleDuration
+        clampView()
+    }
+    func zoomFit() { zoom = 1; viewStart = 0 }
+    func pan(bySeconds d: Double) { viewStart += d; clampView() }
+    func pan(toShow t: Double) { if t < viewStart || t > viewStart + visibleDuration * 0.95 { viewStart = t - visibleDuration * 0.1; clampView() } }
+
+    private func clampView() {
+        if zoom <= 1.0001 { viewStart = 0; return }
+        viewStart = max(0, min(viewStart, max(0, timeline.duration - visibleDuration * 0.9)))
+    }
 
     var canCut: Bool { (selection?.length ?? 0) >= EditTimeline.minCut && !mask.isEmpty }
     var canPaste: Bool { clipboard != nil }
@@ -356,6 +408,28 @@ final class VideoEditorModel: ObservableObject {
         await commit(before, at: sel.start)
     }
 
+    /// Muda de sítio o trecho marcado (nas linhas escolhidas) para começar em `newStart`. Sem `insert`, onde estava fica um espaço
+    /// e no destino substitui o que lá estiver; com `insert`, o espaço de origem fecha e o destino dá lugar.
+    func moveSelection(to newStart: Double, insert: Bool) async {
+        guard let sel = selection, !mask.isEmpty else { return }
+        let before = snapshot()
+        var next = timeline
+        guard let at = next.move(sel, tracks: mask, to: newStart, ripple: insert) else { return }
+        timeline = next
+        selection = TimeSpan(start: at, end: at + sel.length)
+        previewLabel = nil
+        await commit(before, at: at)
+    }
+
+    /// Marca o clipe (ou o espaço) da linha `lane` que está no instante `t`.
+    func selectPart(at t: Double, in lane: EditTrack) {
+        if let c = timeline.clip(at: t, in: lane) { selection = TimeSpan(start: c.at, end: c.end) }
+        else if let g = timeline.gaps(lane).first(where: { $0.contains(t) }) { selection = g }
+        else { return }
+        activeEdge = .start
+        if let s = selection { preview(s.start, label: L("Início do trecho")) }
+    }
+
     func undo() async {
         guard let prev = undoStack.popLast() else { return }
         redoStack.append(snapshot()); restore(prev); saveEdit()
@@ -372,12 +446,13 @@ final class VideoEditorModel: ObservableObject {
 
     // MARK: Guardar a edição (ao lado do vídeo)
 
-    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int }
+    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int; var enabled: [String]?; var locked: [String]? }
 
     private func saveEdit() {
-        if timeline.isEdited {
+        if timeline.isEdited || enabled.count != timeline.tracks.count || !locked.isEmpty {
             try? FileManager.default.createDirectory(at: editFolder, withIntermediateDirectories: true)
-            let f = EditFile(timeline: timeline, media: Dictionary(uniqueKeysWithValues: media.filter { $0.key != 0 }.map { (String($0.key), $0.value.lastPathComponent) }), nextMedia: nextMedia)
+            let f = EditFile(timeline: timeline, media: Dictionary(uniqueKeysWithValues: media.filter { $0.key != 0 }.map { (String($0.key), $0.value.lastPathComponent) }), nextMedia: nextMedia,
+                             enabled: enabled.map(\.rawValue).sorted(), locked: locked.map(\.rawValue).sorted())
             try? JSONEncoder().encode(f).write(to: editFile, options: .atomic)
         } else { try? FileManager.default.removeItem(at: editFolder) }
     }
@@ -394,6 +469,8 @@ final class VideoEditorModel: ObservableObject {
         }
         guard ok else { return }
         timeline = f.timeline; nextMedia = f.nextMedia
+        if let e = f.enabled { let set = Set(e.compactMap(EditTrack.init(rawValue:))).intersection(timeline.tracks); if !set.isEmpty { enabled = set } }
+        if let l = f.locked { locked = Set(l.compactMap(EditTrack.init(rawValue:))).intersection(timeline.tracks) }
         for (id, file) in media where id != 0 {
             let a = AVURLAsset(url: file); assets[id] = a
             registerSync(id, file: file, asset: a)
@@ -424,7 +501,7 @@ final class VideoEditorModel: ObservableObject {
     /// Escreve o vídeo já editado num ficheiro novo (`…_editado.mp4`, na pasta das capturas) e devolve-o.
     func exportEdited() async throws -> URL {
         working = L("A guardar o vídeo…"); defer { working = nil }
-        let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength)
+        let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled)
         let base = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_editado", with: "")
         var out = CaptureStore.folder.appendingPathComponent("\(base)_editado.mp4")
         var n = 2

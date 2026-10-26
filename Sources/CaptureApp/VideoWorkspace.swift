@@ -99,6 +99,9 @@ struct VideoWorkspace: View {
                 VideoIconButton(symbol: "rectangle.on.rectangle", help: L("Colar por cima, substituindo o que lá estiver (⌥⌘V)"), disabled: !model.canPaste) { perform(.pasteOver) }
                 VideoIconButton(symbol: "backward.fill", help: L("Inverter o trecho: passa a tocar de trás para a frente"), disabled: !model.canCut || model.working != nil) { perform(.reverse) }
                 Divider().frame(height: 18).padding(.horizontal, 3)
+                VideoIconButton(symbol: "minus.magnifyingglass", help: L("Afastar a linha de tempo (-)"), disabled: model.zoom <= VideoEditorModel.zoomRange.lowerBound + 0.001) { model.zoom(by: 1 / 1.5) }
+                VideoIconButton(symbol: "plus.magnifyingglass", help: L("Aproximar a linha de tempo (+)"), disabled: model.zoom >= VideoEditorModel.zoomRange.upperBound - 0.001) { model.zoom(by: 1.5) }
+                VideoIconButton(symbol: "arrow.left.and.right.square", help: L("Ver tudo (0)"), disabled: abs(model.zoom - 1) < 0.001) { model.zoomFit() }
                 VideoIconButton(symbol: "arrow.uturn.backward", help: L("Desfazer"), disabled: !model.canUndo) { Task { await model.undo() } }
                 VideoIconButton(symbol: "arrow.uturn.forward", help: L("Refazer"), disabled: !model.canRedo) { Task { await model.redo() } }
                 Spacer()
@@ -120,7 +123,7 @@ struct VideoWorkspace: View {
                 Text(model.url.lastPathComponent).font(.system(size: 11, weight: .medium)).lineLimit(1)
                 Text(model.info).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Text(L("Arraste nas linhas para marcar um trecho; as caixas à esquerda escolhem onde se aplica.")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(L("Arraste para marcar um trecho e arraste o trecho para o mover. Olho: entra no resultado. Cadeado: protege.")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             .padding(.horizontal, 12).frame(height: 24)
             .background(.bar)

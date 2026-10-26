@@ -397,10 +397,10 @@ enum VideoEditSelfTest {
 
     /// Lê a composição do editor (com os espaços a preto) e o áudio de cada linha.
     static func decode(_ model: VideoEditorModel) async -> Decoded {
-        guard let (comp, _, vc) = try? await VideoComposer.build(timeline: model.timeline, tracks: model.trackMap, mediaLength: model.mediaLengths) else { return Decoded() }
+        guard let (comp, _, vc) = try? await VideoComposer.build(timeline: model.timeline, tracks: model.trackMap, mediaLength: model.mediaLengths, enabled: model.enabled) else { return Decoded() }
         var d = await decodeAsset(comp, videoComposition: vc)
         // áudio por linha (as faixas da composição seguem a ordem das linhas)
-        let lanes = model.timeline.tracks.filter { $0 != .video && !model.timeline.clips($0).isEmpty }
+        let lanes = model.timeline.tracks.filter { $0 != .video && !model.timeline.clips($0).isEmpty && model.enabled.contains($0) }
         let tracks = (try? await comp.loadTracks(withMediaType: .audio)) ?? []
         for (lane, track) in zip(lanes, tracks) {
             let pcm = await pcm(of: track, in: comp)
@@ -639,10 +639,10 @@ enum VideoEditSelfTest {
         do { let x1 = view.x(1.0), x2 = view.x(3.5); view.mouseDown(with: ev(.leftMouseDown, x: x1, y: 8)); view.mouseDragged(with: ev(.leftMouseDragged, x: x2, y: 8)); view.mouseUp(with: ev(.leftMouseUp, x: x2, y: 8)) }
         check(abs(model.playhead - 3.5) < 0.1, "arrastar na régua devia ir para 3,5 s (\(model.playhead))")
         // cabeçalho: a caixa escolhe a linha
-        view.mouseDown(with: ev(.leftMouseDown, x: 17, y: view.rowRect(.microphone).midY)); view.mouseUp(with: ev(.leftMouseUp, x: 17, y: view.rowRect(.microphone).midY))
-        check(!model.mask.contains(.microphone) && model.mask.count == 2, "clicar no cabeçalho devia tirar o microfone da máscara: \(model.mask)")
-        view.mouseDown(with: ev(.leftMouseDown, x: 17, y: view.rowRect(.microphone).midY)); view.mouseUp(with: ev(.leftMouseUp, x: 17, y: view.rowRect(.microphone).midY))
-        check(model.mask.count == 3, "clicar outra vez devia pô-lo de volta")
+        view.mouseDown(with: ev(.leftMouseDown, x: 38, y: view.rowRect(.microphone).midY)); view.mouseUp(with: ev(.leftMouseUp, x: 38, y: view.rowRect(.microphone).midY))
+        check(!model.mask.contains(.microphone) && model.mask.count == 2 && model.locked == [.microphone], "o cadeado devia proteger o microfone: \(model.mask)")
+        view.mouseDown(with: ev(.leftMouseDown, x: 38, y: view.rowRect(.microphone).midY)); view.mouseUp(with: ev(.leftMouseUp, x: 38, y: view.rowRect(.microphone).midY))
+        check(model.mask.count == 3, "clicar outra vez devia libertá-lo")
         // teclas: Delete corta e junta, ⇧Delete deixa espaço, Tab muda de ponta, setas movem a ponta
         func key(_ chars: String, shift: Bool = false) {
             view.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: shift ? [.shift] : [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
@@ -665,6 +665,37 @@ enum VideoEditSelfTest {
         // ... e cortar e juntar essa seleção fecha o espaço
         await model.cut(join: true)
         check(abs(model.duration - 5) < 0.15 && model.timeline.gaps(.video).isEmpty, "cortar e juntar o espaço devia fechá-lo (duração \(model.duration))")
+        // mover o trecho com o rato: marcar 0,5–1,5 s e arrastar para 3 s (por cima; fica um espaço onde estava)
+        await model.undo(); await model.undo()
+        model.selection = TimeSpan(start: 0.5, end: 1.5)
+        do { let (x1, y) = at(1.0), (x2, _) = at(3.5); view.mouseDown(with: ev(.leftMouseDown, x: x1, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: (x1 + x2) / 2, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: x2, y: y)); view.mouseUp(with: ev(.leftMouseUp, x: x2, y: y)) }
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        check(model.selection.map { abs($0.start - 3.0) < 0.1 && abs($0.length - 1.0) < 0.02 } ?? false, "mover devia levar o trecho para 3 s: \(String(describing: model.selection))")
+        check(model.timeline.gaps(.video).contains { abs($0.start - 0.5) < 0.1 }, "mover devia deixar um espaço onde estava")
+        // com o cadeado, a linha protegida não se mexe
+        await model.undo()
+        model.toggleLocked(.microphone)
+        model.selection = TimeSpan(start: 0.5, end: 1.5)
+        await model.moveSelection(to: 3.0, insert: false)
+        check(model.timeline.gaps(.microphone).isEmpty && !model.timeline.gaps(.video).isEmpty, "a linha protegida não devia mover-se")
+        await model.undo(); model.toggleLocked(.microphone)
+        // suprimir uma linha tira-a da reprodução
+        await model.toggleEnabled(.microphone)
+        check(!model.enabled.contains(.microphone) && model.mask == [.video, .system], "suprimir o microfone: \(model.enabled)")
+        let sup = await VideoEditSelfTest.decode(model)
+        check(sup.mic.isEmpty && !sup.system.isEmpty, "a linha suprimida não devia tocar")
+        await model.toggleEnabled(.microphone)
+        // clique duplo num clipe marca-o inteiro
+        model.selection = nil
+        do { let (x, y) = at(0.2); view.mouseDown(with: ev(.leftMouseDown, x: x, y: y, clicks: 2)); view.mouseUp(with: ev(.leftMouseUp, x: x, y: y, clicks: 2)) }
+        check(model.selection != nil, "clique duplo num clipe devia marcá-lo")
+        // zoom
+        model.zoom(by: 0.5)
+        check(model.zoom == 0.5 && model.pixelsPerSecond < Double(view.trackWidth) / model.timeline.duration, "afastar devia reduzir os píxeis por segundo")
+        model.zoom(by: 4)
+        let z = model.zoom
+        model.zoomFit()
+        check(z == 2 && model.zoom == 1 && model.viewStart == 0, "zoom \(z) e ajuste")
         window.orderOut(nil)
         model.tearDown()
         return fails

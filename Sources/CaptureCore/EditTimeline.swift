@@ -141,7 +141,7 @@ public struct EditTimeline: Codable, Equatable, Sendable {
     /// Cola `piece` no instante `t` (nas linhas que ele traz). Com `ripple`, o que está a partir de `t` avança para dar lugar
     /// (um clipe cortado ao meio é dividido); sem, o trecho substitui o que lá estiver.
     public mutating func insert(_ piece: EditPiece, at t: Double, ripple: Bool) {
-        let t = max(0, min(t, duration))
+        let t = ripple ? max(0, min(t, duration)) : max(0, t)          // por cima pode passar do fim (a linha de tempo cresce)
         for i in lanes.indices {
             guard let new = piece.lanes[lanes[i].track] else { continue }
             var clips = lanes[i].clips
@@ -162,6 +162,27 @@ public struct EditTimeline: Codable, Equatable, Sendable {
             clips += new.map { Clip(media: $0.media, src: $0.src, at: $0.at + t) }
             lanes[i].clips = clips.sorted { $0.at < $1.at }
         }
+    }
+
+    // MARK: Mover
+
+    /// Muda de sítio o conteúdo de `range` (nas linhas `tracks`) para que comece em `newStart`.
+    /// Sem `ripple` (levantar e pousar): onde estava fica um espaço e no destino substitui o que lá estiver.
+    /// Com `ripple` (inserir): onde estava fecha-se e no destino o resto avança para lhe dar lugar; `newStart` conta-se na
+    /// linha de tempo de antes (se for depois do fim do trecho, o ponto recua o comprimento dele, porque o espaço fechou).
+    /// Devolve o novo início, ou `nil` se não houve nada a mover.
+    @discardableResult
+    public mutating func move(_ range: TimeSpan, tracks: Set<EditTrack>, to newStart: Double, ripple: Bool) -> Double? {
+        let s = max(0, min(range.start, range.end)), e = min(duration, max(range.start, range.end))
+        guard e - s >= Self.minCut else { return nil }
+        let target = max(0, newStart)
+        if abs(target - s) < 1e-6 { return s }
+        let piece = extract(TimeSpan(start: s, end: e), tracks: tracks)
+        guard !piece.isEmpty else { return nil }
+        guard remove(TimeSpan(start: s, end: e), tracks: tracks, ripple: ripple) else { return nil }
+        let at = ripple ? (target > e ? target - (e - s) : target) : target
+        insert(piece, at: at, ripple: ripple)
+        return at
     }
 
     // MARK: Inverter
