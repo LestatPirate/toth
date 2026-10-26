@@ -634,7 +634,10 @@ enum VideoEditSelfTest {
         check(model.selection.map { abs($0.start - 0.5) < 0.06 && abs($0.end - 3) < 0.06 } ?? false && model.activeEdge == .start, "pega do início: \(String(describing: model.selection))")
         // clique simples: vai para o ponto e limpa a marcação
         do { let (x, y) = at(5.0); view.mouseDown(with: ev(.leftMouseDown, x: x, y: y)); view.mouseUp(with: ev(.leftMouseUp, x: x, y: y)) }
-        check(model.selection == nil && abs(model.playhead - 5.0) < 0.1 && model.previewLabel == nil, "clique devia limpar a marcação e ir para 5 s (\(model.playhead))")
+        check(model.selection.map { $0.start <= 5.0 && $0.end >= 5.0 } ?? false && abs(model.playhead - 5.0) > 0.5, "clique devia marcar o clipe sem mexer na reprodução (\(model.playhead), \(String(describing: model.selection)))")
+        // clicar em cima da linha vermelha vai para o ponto
+        do { model.seek(to: 4.0); let px = view.x(model.playhead), y = view.rowRect(.video).midY; view.mouseDown(with: ev(.leftMouseDown, x: px, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: view.x(4.8), y: y)); view.mouseUp(with: ev(.leftMouseUp, x: view.x(4.8), y: y)) }
+        check(abs(model.playhead - 4.8) < 0.1, "arrastar a linha vermelha devia mover a reprodução (\(model.playhead))")
         // régua
         do { let x1 = view.x(1.0), x2 = view.x(3.5); view.mouseDown(with: ev(.leftMouseDown, x: x1, y: 8)); view.mouseDragged(with: ev(.leftMouseDragged, x: x2, y: 8)); view.mouseUp(with: ev(.leftMouseUp, x: x2, y: 8)) }
         check(abs(model.playhead - 3.5) < 0.1, "arrastar na régua devia ir para 3,5 s (\(model.playhead))")
@@ -650,6 +653,7 @@ enum VideoEditSelfTest {
         }
         key("\u{7F}"); key("\u{7F}", shift: true); key(" ")
         check(actions == [.cutJoin, .cutGap, .togglePlay], "teclas Delete, ⇧Delete e espaço: \(actions)")
+        key("\u{1B}")
         drag(1.0, 2.0)
         key("\t")
         check(model.activeEdge == .start, "Tab devia mudar para a ponta do início")

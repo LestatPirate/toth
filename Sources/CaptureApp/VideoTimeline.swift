@@ -253,6 +253,8 @@ final class TimelineNSView: NSView {
             if let sel = model.selection { model.preview(h.isStart ? sel.start : sel.end, label: h.isStart ? L("Início do trecho") : L("Fim do trecho")) }
             return
         }
+        // só a linha vermelha mexe na posição de reprodução (e a régua)
+        if p.y >= 0, p.y <= bounds.height, abs(p.x - x(model.playhead)) <= 5, p.x >= trackLeft - 5 { drag = .scrub; model.clearPreview(); return }
         if let sel = model.selection, p.y >= rulerHeight, tracksArea.contains(p), x(sel.start) < p.x, p.x < x(sel.end), !model.mask.isEmpty {
             drag = .moving(grab: time(p.x) - sel.start); ghost = nil; return
         }
@@ -297,10 +299,11 @@ final class TimelineNSView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard let model else { return }
         let p = convert(event.locationInWindow, from: nil)
-        if case .selecting = drag, !moved { model.selection = nil; model.clearPreview(); model.seek(to: time(p.x)) }   // clique simples
+        if case .selecting = drag, !moved {   // clique simples: marca o clipe (ou espaço) para o poder mover; não mexe na reprodução
+            if let l = lane(atY: p.y) { model.selectPart(at: time(p.x), in: l) } else { model.selection = nil }
+        }
         if case .moving = drag {
             if let g = ghost { let insert = event.modifierFlags.contains(.option); Task { await model.moveSelection(to: g.start, insert: insert); self.needsDisplay = true } }
-            else if !moved { model.selection = nil; model.clearPreview(); model.seek(to: time(p.x)) }
             ghost = nil
         }
         if let sel = model.selection, sel.length < 0.02 { model.selection = nil }

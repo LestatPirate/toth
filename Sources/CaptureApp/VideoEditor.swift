@@ -427,7 +427,7 @@ final class VideoEditorModel: ObservableObject {
         else if let g = timeline.gaps(lane).first(where: { $0.contains(t) }) { selection = g }
         else { return }
         activeEdge = .start
-        if let s = selection { preview(s.start, label: L("Início do trecho")) }
+        clearPreview()
     }
 
     func undo() async {
