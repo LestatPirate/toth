@@ -35,7 +35,8 @@ O **Toth** é uma app para Mac para **capturar e anotar o que está no ecrã**: 
 |---|---|---|
 | **Gravação de Ecrã e Áudio do Sistema** | **Sim, obrigatória** | Ler os píxeis do ecrã para capturar (inclui a captura com rolagem). Só captura quando o utilizador o pede. |
 | Acessibilidade | Não | O Toth **não** envia teclas nem rolagens a outras apps: quem rola é o utilizador. |
-| Microfone, câmara, contactos, localização | Não | Não são usados. |
+| **Microfone** | **Opcional** | Só se ligar o microfone ao gravar vídeo (o macOS pede-a nessa altura). O áudio do sistema não precisa de mais nenhuma permissão: vem com a Gravação de Ecrã. |
+| Câmara, contactos, localização | Não | Não são usados. |
 | Rede (internet) | Só para atualizações | Um único pedido à API pública do GitHub para saber se há versão nova (sem enviar dados pessoais). Pode ser desligado em *Preferências*. |
 
 As capturas ficam na pasta `~/Pictures/Capture` e onde escolher em *Salvar como*.
@@ -51,6 +52,7 @@ As capturas ficam na pasta `~/Pictures/Capture` e onde escolher em *Salvar como*
 **Captura**
 - **Região com o ecrã congelado** ao carregar no atalho: a captura é a do momento do atalho, mesmo que o ecrã mude depois. Arraste para escolher a área, **mova-a e redimensione-a** pelas alças, e só ao **confirmar** (botão *Capturar* ou **Enter**) segue para o editor. **Esc** cancela. Funciona com vários monitores.
 - **Captura com rolagem:** depois de escolher a área, clique em **Rolagem** (ao lado de *Cancelar* e *Capturar*). A partir daí **role a janela como quiser**, para qualquer lado (cima, baixo, esquerda, direita), devagar ou depressa, e pode voltar atrás e passar outra vez pela mesma zona: o Toth percebe sozinho o movimento e vai juntando tudo. Só termina quando clicar em **Concluir** na barra flutuante (ou **Cancelar** para descartar). **Pausar/Retomar** deixa-o parar a captura e continuar depois, a partir de qualquer zona já capturada (o Toth guarda várias capturas recentes para voltar a alinhar). Se no fim não conseguir juntar nada, oferece **Tentar de novo**. O Toth não mexe na janela por si e não precisa de nenhuma permissão além da gravação de ecrã. Cabeçalhos e rodapés fixos aparecem uma só vez. Limites: imagens até cerca de 30 000 px de lado; role um eixo de cada vez (na diagonal não alinha); se rolar depressa demais a barra avisa e basta voltar um pouco atrás; conteúdo animado, vídeos ou páginas que carregam enquanto rola podem deixar emendas.
+- **Gravação de vídeo (MP4):** depois de escolher a área, clique no ícone de **vídeo**. Uma barra só com ícones permite **gravar**, **pausar e retomar** e **parar** (o vídeo abre logo no editor, na área de trabalho). O **áudio do sistema** e o **microfone** podem ser ligados ou desligados a qualquer momento, também durante a gravação. O ficheiro é um MP4 normal (vídeo H.264 e áudio AAC) guardado em `~/Pictures/Capture`. A edição do vídeo (cortes, anotações com início e fim) vem a seguir.
 - **Ecrã inteiro** pelo menu da barra de menus.
 - **Imagem nova**, para além das capturas: **em branco** (tamanho, cor de fundo ou transparente) ou **a partir da área de transferência** (botão *Novo*, menu *Ficheiro*; ⌘N e ⇧⌘N).
 - **Atalho global configurável** (por omissão **⌃⇧4**) em *Preferências*; avisa se a combinação é do sistema ou já está em uso.
@@ -83,7 +85,7 @@ As capturas ficam na pasta `~/Pictures/Capture` e onde escolher em *Salvar como*
 Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*) → escolha a área → **Enter** → anote → **Salvar como** / **Copiar tudo**. As **Preferências** (engrenagem no rodapé, ou ⌘,) têm o atalho e o idioma.
 
 ### Ainda não tem
-Captura de janela, temporizador, cursor na captura, vídeo/áudio/GIF, apagar uma área da imagem, versão para Windows. Fora do âmbito por decisão: contas, partilha online, IA na nuvem e telemetria.
+Captura de janela, temporizador, GIF, edição de vídeo, apagar uma área da imagem, versão para Windows. Fora do âmbito por decisão: contas, partilha online, IA na nuvem e telemetria.
 
 ### Compilar e contribuir
 Só são precisas as *Command Line Tools* do macOS (sem Xcode): `./scripts/build-app.sh` gera `dist/Toth.app` e o zip. Testes: `swift test`. Guia para programadores em [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Contribuições são bem-vindas: abra uma *issue* ou um *pull request*. Segurança: ver [SECURITY.md](SECURITY.md).
@@ -117,7 +119,8 @@ It is **free software** under the **MIT License**: you may use, study, modify an
 |---|---|---|
 | **Screen & System Audio Recording** | **Yes, required** | Reading the screen pixels to capture (including scrolling capture). It only captures when you ask it to. |
 | Accessibility | No | Toth does **not** send keys or scrolling to other apps: you do the scrolling. |
-| Microphone, camera, contacts, location | No | Not used. |
+| **Microphone** | **Optional** | Only if you turn the microphone on while recording video (macOS asks for it then). System audio needs no extra permission: it comes with Screen Recording. |
+| Camera, contacts, location | No | Not used. |
 | Network (internet) | Only for updates | A single request to GitHub's public API to find out whether a new version exists (no personal data sent). It can be turned off in *Preferences*. |
 
 Captures are saved in `~/Pictures/Capture` and wherever you choose in *Save as*.
@@ -133,6 +136,7 @@ Captures are saved in `~/Pictures/Capture` and wherever you choose in *Save as*.
 **Capture**
 - **Region capture with a frozen screen:** the screen freezes the moment you press the shortcut, so the capture is that exact moment even if the screen changes afterwards. Drag to choose the area, **move and resize** it with the handles, and only when you **confirm** (*Capture* button or **Enter**) does it go to the editor. **Esc** cancels. Multi-monitor aware.
 - **Scrolling capture:** after choosing the area, click **Scroll** (next to *Cancel* and *Capture*). From then on **scroll the window however you like**, in any direction (up, down, left, right), slowly or fast, and you can go back and pass over the same area again: Toth works out the movement by itself and keeps joining everything. It only ends when you click **Finish** on the floating bar (or **Cancel** to discard). **Pause/Resume** lets you stop capturing and carry on later from any area already captured (Toth keeps several recent captures to line up again). If it cannot join anything in the end, it offers **Try again**. Toth never touches the window by itself and needs no permission beyond screen recording. Fixed headers and footers appear only once. Limits: images up to about 30,000 px on a side; scroll one axis at a time (diagonal does not align); if you scroll too fast the bar warns you and going back a little resumes; animated content, videos or pages that load while scrolling may leave seams.
+- **Video recording (MP4):** after choosing the area, click the **video** icon. An icon-only bar lets you **record**, **pause and resume** and **stop** (the video opens right away in the editor workspace). **System audio** and the **microphone** can be turned on or off at any time, even while recording. The file is a regular MP4 (H.264 video and AAC audio) saved in `~/Pictures/Capture`. Video editing (cuts, annotations with start and end) comes next.
 - **Full-screen capture** from the menu bar.
 - **New images** besides captures: **blank** (size, background color or transparent) or **from the clipboard** (*New* button, *File* menu; ⌘N and ⇧⌘N).
 - **Configurable global shortcut** (default **⌃⇧4**) in *Preferences*; it warns if a combination is taken by the system or already in use.
@@ -165,7 +169,7 @@ Captures are saved in `~/Pictures/Capture` and wherever you choose in *Save as*.
 Press **⌃⇧4** (or use the menu bar icon or the *File* menu) → choose the area → **Enter** → annotate → **Save as** / **Copy all**. **Preferences** (gear icon in the footer, or ⌘,) hold the shortcut and the language.
 
 ### Not yet available
-Window capture, timer, cursor in captures, video/audio/GIF, erasing an area of the image, a Windows version. Out of scope by design: accounts, online sharing, cloud AI and telemetry.
+Window capture, timer, GIF, video editing, erasing an area of the image, a Windows version. Out of scope by design: accounts, online sharing, cloud AI and telemetry.
 
 ### Build and contribute
 Only the macOS *Command Line Tools* are needed (no Xcode): `./scripts/build-app.sh` produces `dist/Toth.app` and the zip. Tests: `swift test`. Developer guide: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Contributions are welcome: open an *issue* or a *pull request*. Security: see [SECURITY.md](SECURITY.md).

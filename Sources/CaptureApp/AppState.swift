@@ -9,6 +9,7 @@ import CaptureCore
 struct LibraryItem: Identifiable, Equatable {
     let url: URL
     var id: URL { url }
+    var isVideo: Bool { VideoFiles.isVideo(url) }
 }
 
 /// Estado da janela única: captura aberta + biblioteca (faixa de miniaturas).
@@ -17,6 +18,10 @@ final class AppState: ObservableObject {
     static let shared = AppState()
 
     @Published private(set) var model: EditorModel?
+    /// Vídeo aberto no editor (em vez de uma imagem): o leitor ocupa a área de trabalho.
+    @Published private(set) var videoURL: URL?
+    /// A captura (imagem ou vídeo) que está aberta é esta?
+    func isCurrent(_ url: URL) -> Bool { model?.url == url || videoURL == url }
     @Published private(set) var library: [LibraryItem] = []
     /// Muda a cada gravação, para as miniaturas recarregarem.
     @Published private(set) var revision = 0
@@ -36,19 +41,32 @@ final class AppState: ObservableObject {
     var onCapture: (() -> Void)?
 
     func open(_ url: URL) {
+        if VideoFiles.isVideo(url) { openVideo(url); return }
         do {
             let m = try EditorModel(url: url)
             m.onSaved = { [weak self] in self?.revision += 1 }
             model = m
+            videoURL = nil
             refreshLibrary()
         } catch {
             errorMessage = L("Não foi possível abrir %@: %@", url.lastPathComponent, error.localizedDescription)
         }
     }
 
+    /// Abre um vídeo (MP4, MOV, M4V) na área de trabalho do editor.
+    func openVideo(_ url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            errorMessage = L("Não foi possível abrir %@: %@", url.lastPathComponent, L("o ficheiro não existe"))
+            return
+        }
+        model = nil
+        videoURL = url
+        refreshLibrary()
+    }
+
     func refreshLibrary() {
         let items = (try? FileManager.default.contentsOfDirectory(at: CaptureStore.folder, includingPropertiesForKeys: nil)) ?? []
-        library = items.filter { $0.pathExtension == "capture" }
+        library = items.filter { $0.pathExtension == "capture" || VideoFiles.isVideo($0) }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
             .map(LibraryItem.init)
         folderCaptureCount = library.filter { CaptureContainer.isFolderCapture($0.url) }.count
@@ -58,8 +76,9 @@ final class AppState: ObservableObject {
     func trash(_ url: URL) {
         try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
         if model?.url == url { model = nil }
+        if videoURL == url { videoURL = nil }
         refreshLibrary()
-        if model == nil, let first = library.first { open(first.url) }
+        if model == nil, videoURL == nil, let first = library.first { open(first.url) }
     }
 
     /// Cria uma captura nova a partir de uma imagem na área de transferência.
@@ -94,6 +113,18 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// «Salvar como» para um vídeo: copia o MP4 para onde o utilizador escolher.
+    func saveVideoAs(_ url: URL) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = url.lastPathComponent
+        panel.allowedContentTypes = [UTType(filenameExtension: url.pathExtension) ?? .mpeg4Movie]
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        do {
+            if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
+            try FileManager.default.copyItem(at: url, to: dest)
+        } catch { errorMessage = L("Não foi possível guardar o vídeo: %@", error.localizedDescription) }
+    }
+
     /// Mostra a biblioteca: uma grelha com a pré-visualização atual de cada captura, para escolher clicando.
     func openSaved() {
         refreshLibrary()
@@ -114,8 +145,8 @@ final class AppState: ObservableObject {
         panel.canChooseFiles = true
         panel.canChooseDirectories = true   // capturas antigas são pastas
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.image, UTType(filenameExtension: "capture") ?? .data]
-        panel.message = L("Escolha imagens ou capturas (.capture) para abrir no editor")
+        panel.allowedContentTypes = [.image, .movie, UTType(filenameExtension: "capture") ?? .data]
+        panel.message = L("Escolha imagens, vídeos ou capturas (.capture) para abrir no editor")
         guard panel.runModal() == .OK else { return }
         open(urls: panel.urls)
     }
@@ -125,7 +156,7 @@ final class AppState: ObservableObject {
     func open(urls: [URL]) {
         var skipped: [String] = []
         for url in urls {
-            if url.pathExtension.lowercased() == "capture" {
+            if url.pathExtension.lowercased() == "capture" || VideoFiles.isVideo(url) {
                 open(url)
             } else if let img = ImageFiles.load(url) {
                 do { open(try CaptureStore.save(img)) } catch { skipped.append(url.lastPathComponent) }

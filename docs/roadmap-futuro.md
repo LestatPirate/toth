@@ -18,3 +18,8 @@ O utilizador rola a janela (qualquer sentido, com idas e voltas, Pausar/Retomar)
 
 ## Ordem sugerida
 Reparo básico → rolagem vertical (depois horizontal) → vídeo fase 1–4 → Reparo por IA (se a licença do modelo for aprovada).
+
+## Vídeo
+- **Feito:** gravar a região em MP4, com pausa e áudio do sistema e microfone ligáveis; abre no editor.
+- **Falta:** editar (cortar e dividir numa linha do tempo, redimensionar com ou sem proporção, retirar/importar áudio, anotações com início e fim), escolher o microfone, gravar uma janela.
+

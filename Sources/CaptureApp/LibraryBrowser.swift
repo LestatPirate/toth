@@ -56,7 +56,7 @@ private struct BrowserCell: View {
     private var title: String { LibraryNames.title(forFileName: item.url.deletingPathExtension().lastPathComponent) }
 
     var body: some View {
-        let isCurrent = state.model?.url == item.url
+        let isCurrent = state.isCurrent(item.url)
         VStack(spacing: 6) {
             ThumbnailView(item: item, revision: state.revision, selected: isCurrent, width: 200, height: 130)
             Text(title).font(.system(size: 11)).lineLimit(1)

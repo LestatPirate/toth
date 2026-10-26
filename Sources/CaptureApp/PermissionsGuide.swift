@@ -111,7 +111,7 @@ struct PermissionsGuideView: View {
                     Button(L("Repor a permissão")) { guide.resetAndAsk() }.controlSize(.small)
                 }
             } else {
-                Text(L("O Toth não precisa de mais nenhuma permissão (nem Acessibilidade, nem microfone) e não usa a internet, a não ser para procurar atualizações."))
+                Text(L("Não precisa de mais nenhuma (nem Acessibilidade); o microfone é opcional, só se o ligar ao gravar vídeo. Não usa a internet, a não ser para procurar atualizações."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }

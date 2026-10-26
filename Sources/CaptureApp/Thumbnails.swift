@@ -1,6 +1,7 @@
 // Copyright © 2026 Alex Felizardo.
 // Licença MIT: ver LICENSE. MIT License: see LICENSE.
 
+import AVFoundation
 import AppKit
 import ImageIO
 import CaptureCore
@@ -14,12 +15,22 @@ enum Thumbnails {
 
     /// Lê o preview guardado na captura (arquivo ou pasta); se não existir (captura antiga), gera-o a partir do original.
     static func load(_ package: URL) -> NSImage? {
+        if VideoFiles.isVideo(package) { return videoFrame(package) }
         if let d = CaptureContainer.readEntry(CapturePackage.previewFile, at: package), let img = NSImage(data: d) { return img }
         guard let original = CaptureContainer.readEntry(CapturePackage.originalFile, at: package),
               let data = previewPNG(fromPNG: original) else { return nil }
         // Em pastas antigas guarda-se o preview gerado; num arquivo não se reescreve a partir de uma leitura.
         if CaptureContainer.isFolderCapture(package) { try? data.write(to: package.appendingPathComponent(CapturePackage.previewFile), options: .atomic) }
         return NSImage(data: data)
+    }
+
+    /// Miniatura de um vídeo: um fotograma perto do início.
+    private static func videoFrame(_ url: URL) -> NSImage? {
+        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: maxPixel * 2, height: maxPixel * 2)
+        guard let cg = try? gen.copyCGImage(at: CMTime(seconds: 0.4, preferredTimescale: 600), actualTime: nil) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     private static func thumbnailPNG(from source: CGImageSource?) -> Data? {

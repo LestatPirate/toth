@@ -11,3 +11,5 @@
 **Logótipo / Logo:** o logótipo (`docs/brand/TothLogo.png`) é © Alex Felizardo, e não está abrangido pela licença MIT (ver [TRADEMARKS.md](TRADEMARKS.md)). / The logo is © Alex Felizardo and is not covered by the MIT License (see TRADEMARKS.md).
 
 **Atualizações / Updates:** a verificação de atualizações consulta a API pública de *releases* do GitHub (https://api.github.com), sem enviar dados pessoais. / The update check queries GitHub's public releases API, sending no personal data.
+
+**Vídeo e áudio / Video and audio:** a gravação usa os codificadores H.264 e AAC que vêm com o macOS (AVFoundation); o Toth não inclui nenhum codec. / Recording uses the H.264 and AAC encoders that ship with macOS (AVFoundation); Toth bundles no codec.

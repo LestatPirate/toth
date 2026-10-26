@@ -16,6 +16,8 @@ final class RegionSelector {
     /// Chamado quando se escolhe a captura com rolagem: ecrã, área (pontos, canto superior esquerdo do ecrã) e a
     /// imagem exata dessa área no instante congelado (é a primeira imagem da captura com rolagem).
     var onScroll: ((NSScreen, CGRect, CGImage) -> Void)?
+    /// Chamado quando se escolhe gravar vídeo: ecrã e área (pontos, canto superior esquerdo do ecrã).
+    var onVideo: ((NSScreen, CGRect) -> Void)?
 
     func begin(snapshots: [(screen: NSScreen, image: CGImage)], completion: @escaping (CGImage?) -> Void) {
         guard !isActive else { return }
@@ -27,6 +29,7 @@ final class RegionSelector {
             view.onConfirm = { [weak self] cropped in self?.end(cropped) }
             view.onCancel = { [weak self] in self?.end(nil) }
             view.onScroll = { [weak self] rect, first in self?.endScroll(screen: screen, rect: rect, first: first) }
+            view.onVideo = { [weak self] rect in self?.endVideo(screen: screen, rect: rect) }
             // Só pode haver uma seleção de cada vez (em qualquer ecrã).
             view.onBeginSelecting = { [weak self, weak view] in self?.views.forEach { if $0 !== view { $0.clearSelection() } } }
             window.contentView = view
@@ -42,6 +45,12 @@ final class RegionSelector {
         guard completion != nil else { return }
         end(nil)
         onScroll?(screen, rect, first)
+    }
+
+    private func endVideo(screen: NSScreen, rect: CGRect) {
+        guard completion != nil else { return }
+        end(nil)
+        onVideo?(screen, rect)
     }
 
     private func end(_ image: CGImage?) {
@@ -73,6 +82,8 @@ final class RegionSelector {
     func cancelForTests() { end(nil) }
     /// Para testes: pré-seleciona uma área (coordenadas da vista do 1.º ecrã, origem no canto superior esquerdo).
     func debugPreselect(_ rect: CGRect) { views.first?.debugSelect(rect) }
+    /// Para testes: escolhe «Vídeo» como se se clicasse no botão.
+    func debugVideo() { views.first?.debugVideoClick() }
     /// Para testes: escolhe «Rolagem» como se se clicasse no botão.
     func debugScroll() { views.first?.debugScrollClick() }
     /// Para testes: confirma a seleção atual como se se carregasse em Enter.
@@ -98,14 +109,18 @@ private final class SelectionView: NSView {
     var onCancel: (() -> Void)?
     var onBeginSelecting: (() -> Void)?
     var onScroll: ((CGRect, CGImage) -> Void)?
+    var onVideo: ((CGRect) -> Void)?
 
     private enum Mode { case idle, drawing(anchor: CGPoint), moving(offset: CGSize), resizing(handle: Int, original: CGRect) }
     private var mode: Mode = .idle
     private var selection: CGRect?
 
-    private let confirmButton = NSButton(title: L("Capturar"), target: nil, action: nil)
-    private let cancelButton = NSButton(title: L("Cancelar"), target: nil, action: nil)
-    private let scrollButton = NSButton(title: L("Rolagem"), target: nil, action: nil)
+    // Barra de ícones: cancelar · rolagem · vídeo · capturar
+    private let bar = IconBar()
+    private var cancelButton: IconButton!
+    private var scrollButton: IconButton!
+    private var videoButton: IconButton!
+    private var confirmButton: IconButton!
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -113,14 +128,14 @@ private final class SelectionView: NSView {
     init(frame: CGRect, image: CGImage) {
         self.image = image
         super.init(frame: frame)
-        confirmButton.target = self; confirmButton.action = #selector(confirmClicked)
-        confirmButton.bezelStyle = .rounded; confirmButton.keyEquivalent = "\r"; confirmButton.controlSize = .large
-        cancelButton.target = self; cancelButton.action = #selector(cancelClicked)
-        cancelButton.bezelStyle = .rounded; cancelButton.controlSize = .large
-        scrollButton.target = self; scrollButton.action = #selector(scrollClicked)
-        scrollButton.bezelStyle = .rounded; scrollButton.controlSize = .large
-        scrollButton.toolTip = L("Captura com rolagem: depois role a janela como quiser e clique em Concluir")
-        [confirmButton, cancelButton, scrollButton].forEach { $0.isHidden = true; addSubview($0) }
+        cancelButton = IconButton(symbol: "xmark", tooltip: L("Cancelar (Esc)"), target: self, action: #selector(cancelClicked))
+        scrollButton = IconButton(symbol: "arrow.up.and.down.text.horizontal", tooltip: L("Captura com rolagem: depois role a janela como quiser e clique em ✓"), target: self, action: #selector(scrollClicked))
+        videoButton = IconButton(symbol: "video.fill", tooltip: L("Gravar vídeo desta área (MP4), com áudio do sistema e microfone opcionais"), target: self, action: #selector(videoClicked))
+        confirmButton = IconButton(symbol: "camera.fill", tooltip: L("Capturar (Enter)"), target: self, action: #selector(confirmClicked))
+        confirmButton.prominent = true
+        bar.setItems([cancelButton, IconBar.separator(), scrollButton, videoButton, IconBar.separator(), confirmButton])
+        bar.isHidden = true
+        addSubview(bar)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -128,10 +143,16 @@ private final class SelectionView: NSView {
 
     func clearSelection() { selection = nil; mode = .idle; layoutButtons(); needsDisplay = true }
     func debugScrollClick() { scrollClicked() }
+    func debugVideoClick() { videoClicked() }
     func debugSelect(_ r: CGRect) { selection = r; layoutButtons(); needsDisplay = true }
 
     @objc private func confirmClicked() { confirm() }
     @objc private func cancelClicked() { onCancel?() }
+
+    @objc private func videoClicked() {
+        guard let sel = selection, sel.width >= 2, sel.height >= 2 else { return }
+        onVideo?(sel)
+    }
 
     @objc private func scrollClicked() {
         guard let c = crop() else { return }
@@ -225,19 +246,15 @@ private final class SelectionView: NSView {
     // MARK: Botões e desenho
 
     private func layoutButtons() {
-        guard let sel = selection, case .idle = mode else { [confirmButton, cancelButton, scrollButton].forEach { $0.isHidden = true }; return }
-        [confirmButton, cancelButton, scrollButton].forEach { $0.sizeToFit(); $0.isHidden = false }
-        let gap: CGFloat = 8
-        let w = scrollButton.frame.width + gap + cancelButton.frame.width + gap + confirmButton.frame.width
-        let h = confirmButton.frame.height
+        guard let sel = selection, case .idle = mode else { bar.isHidden = true; return }
+        bar.isHidden = false
+        let w = bar.frame.width, h = bar.frame.height
         var x = min(max(8, sel.maxX - w), bounds.width - w - 8)
         // por baixo da seleção; se não couber, por cima; se também não, dentro
         var y = sel.maxY + 10
         if y + h > bounds.height - 8 { y = sel.minY - h - 10 }
         if y < 8 { y = max(8, sel.maxY - h - 10); x = max(8, sel.maxX - w - 10) }
-        scrollButton.setFrameOrigin(CGPoint(x: x, y: y))
-        cancelButton.setFrameOrigin(CGPoint(x: x + scrollButton.frame.width + gap, y: y))
-        confirmButton.setFrameOrigin(CGPoint(x: x + scrollButton.frame.width + gap + cancelButton.frame.width + gap, y: y))
+        bar.setFrameOrigin(CGPoint(x: x, y: y))
     }
 
     override func draw(_ dirtyRect: NSRect) {

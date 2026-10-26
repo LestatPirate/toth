@@ -23,6 +23,8 @@ struct MainView: View {
                     if panel.isVisible {
                         PropertiesPanel(model: model).frame(width: panel.width)
                     }
+                } else if let video = state.videoURL {
+                    VideoWorkspace(url: video).id(video)
                 } else {
                     EmptyState(state: state)
                 }
@@ -56,7 +58,9 @@ private struct TopBar: View {
                 (L("Da área de transferência"), { state.pasteAsNewCapture() }),
             ])
             BarButton(symbol: "folder", label: L("Abrir")) { state.openImages() }
-            BarButton(symbol: "square.and.arrow.down", label: L("Salvar como"), disabled: state.model == nil) { state.model?.exportToFile() }
+            BarButton(symbol: "square.and.arrow.down", label: L("Salvar como"), disabled: state.model == nil && state.videoURL == nil) {
+                if let m = state.model { m.exportToFile() } else if let v = state.videoURL { state.saveVideoAs(v) }
+            }
             if let model = state.model { ToolsBar(model: model) } else { Spacer(minLength: 0) }
             if let model = state.model { RightActions(model: model) }
         }
@@ -213,7 +217,7 @@ private struct LibraryStrip: View {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 8) {
                     ForEach(state.library) { item in
-                        ThumbnailView(item: item, revision: state.revision, selected: state.model?.url == item.url)
+                        ThumbnailView(item: item, revision: state.revision, selected: state.isCurrent(item.url))
                             .onTapGesture { state.open(item.url) }
                             .contextMenu {
                                 Button(L("Mostrar no Finder")) { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
@@ -272,6 +276,9 @@ struct ThumbnailView: View {
             RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor))
             if let image = loader.image {
                 Image(nsImage: image).resizable().scaledToFit().padding(2)
+            }
+            if item.isVideo {
+                Image(systemName: "play.circle.fill").font(.system(size: 22)).foregroundStyle(.white, .black.opacity(0.55)).shadow(radius: 1)
             }
         }
         .frame(width: width, height: height)

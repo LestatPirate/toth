@@ -11,8 +11,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.2.0}"
-BUILD="${BUILD:-18}"
+VERSION="${VERSION:-0.3.0}"
+BUILD="${BUILD:-19}"
 BUNDLE_ID="${BUNDLE_ID:-io.github.lestatpirate.toth}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"   # vazio: escolhe-se mais abaixo (identidade local, senão ad hoc)
 APP="dist/Toth.app"
@@ -92,6 +92,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       </array>
     </dict>
   </array>
+  <key>NSMicrophoneUsageDescription</key><string>O Toth só grava o microfone quando liga essa opção na gravação de vídeo. / Toth only records the microphone when you turn that option on while recording video.</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 Alex Felizardo. Licença MIT.</string>
 </dict>
 </plist>
@@ -110,11 +111,11 @@ if [ -z "${SIGN_IDENTITY:-}" ]; then
 fi
 echo "==> 3/5 Assinar (${SIGN_IDENTITY/#-/ad hoc})"
 if [ "$SIGN_IDENTITY" = "-" ]; then
-  codesign --force --deep --options runtime --sign - "$APP"
+  codesign --force --deep --options runtime --entitlements scripts/Toth.entitlements --sign - "$APP"
 elif [ -n "$SIGN_KEYCHAIN" ]; then
-  codesign --force --deep --options runtime --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" "$APP"
+  codesign --force --deep --options runtime --entitlements scripts/Toth.entitlements --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" "$APP"
 else
-  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+  codesign --force --deep --options runtime --entitlements scripts/Toth.entitlements --timestamp --sign "$SIGN_IDENTITY" "$APP"
 fi
 codesign --verify --deep --strict "$APP" && echo "    assinatura válida"
 

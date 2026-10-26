@@ -269,12 +269,12 @@ final class ScrollHUD: NSPanel {
     var onPause: (() -> Void)?
     private let headline = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
-    private let pauseButton = NSButton(title: L("Pausar"), target: nil, action: nil)
-    private let finishButton = NSButton(title: L("Concluir"), target: nil, action: nil)
-    private let cancelButton = NSButton(title: L("Cancelar"), target: nil, action: nil)
+    private var pauseButton: IconButton!
+    private var finishButton: IconButton!
+    private var cancelButton: IconButton!
 
     init(near rect: CGRect, on screen: NSScreen) {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 690, height: 64), styleMask: [.borderless, .nonactivatingPanel],
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 520, height: 64), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -283,20 +283,22 @@ final class ScrollHUD: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hidesOnDeactivate = false
-        let box = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 690, height: 64))
+        let box = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 520, height: 64))
         box.material = .hudWindow; box.state = .active; box.wantsLayer = true
         box.layer?.cornerRadius = 12; box.layer?.masksToBounds = true
         headline.font = .systemFont(ofSize: 12.5, weight: .semibold); headline.textColor = .labelColor
-        headline.frame = NSRect(x: 14, y: 36, width: 380, height: 18)
+        headline.frame = NSRect(x: 14, y: 36, width: 372, height: 18)
         detail.font = .systemFont(ofSize: 11); detail.textColor = .secondaryLabelColor
-        detail.frame = NSRect(x: 14, y: 12, width: 380, height: 16)
-        pauseButton.target = self; pauseButton.action = #selector(pauseClicked)
-        pauseButton.bezelStyle = .rounded; pauseButton.frame = NSRect(x: 402, y: 18, width: 92, height: 28)
-        finishButton.target = self; finishButton.action = #selector(finishClicked)
-        finishButton.bezelStyle = .rounded; finishButton.keyEquivalent = "\r"; finishButton.frame = NSRect(x: 498, y: 18, width: 92, height: 28)
-        cancelButton.target = self; cancelButton.action = #selector(cancelClicked)
-        cancelButton.bezelStyle = .rounded; cancelButton.frame = NSRect(x: 594, y: 18, width: 86, height: 28)
-        [headline, detail, pauseButton, finishButton, cancelButton].forEach { box.addSubview($0) }
+        detail.frame = NSRect(x: 14, y: 12, width: 372, height: 16)
+        pauseButton = IconButton(symbol: "pause.fill", tooltip: L("Pausar"), target: self, action: #selector(pauseClicked))
+        finishButton = IconButton(symbol: "checkmark", tooltip: L("Concluir"), target: self, action: #selector(finishClicked))
+        finishButton.prominent = true
+        cancelButton = IconButton(symbol: "xmark", tooltip: L("Cancelar"), target: self, action: #selector(cancelClicked))
+        for (i, b) in [pauseButton!, finishButton!, cancelButton!].enumerated() {
+            b.frame.origin = NSPoint(x: 520 - 14 - CGFloat(3 - i) * 38 + 4, y: 15)
+            box.addSubview(b)
+        }
+        [headline, detail].forEach { box.addSubview($0) }
         contentView = box
         place(near: rect, on: screen)
     }
@@ -318,10 +320,11 @@ final class ScrollHUD: NSPanel {
     }
 
     func show(_ s: ScrollStatus) {
-        pauseButton.title = s.paused ? L("Retomar") : L("Pausar")
+        pauseButton.setSymbol(s.paused ? "play.fill" : "pause.fill")
+        pauseButton.toolTip = s.paused ? L("Retomar") : L("Pausar")
         if s.paused {
             headline.stringValue = s.frames < 2 ? L("Em pausa") : L("Em pausa · %d × %d px · %d capturas", s.width, s.height, s.frames)
-            detail.stringValue = L("Clique em Retomar e continue a rolar a partir de uma zona já capturada.")
+            detail.stringValue = L("Clique em ▶ e continue a rolar a partir de uma zona já capturada.")
             detail.textColor = .systemBlue
             return
         }
@@ -331,7 +334,7 @@ final class ScrollHUD: NSPanel {
                 detail.stringValue = L("Não consegui alinhar as imagens: role mais devagar ou volte atrás.")
                 detail.textColor = .systemOrange
             } else {
-                detail.stringValue = L("Para qualquer lado; pode voltar atrás. Depois clique em Concluir.")
+                detail.stringValue = L("Para qualquer lado; pode voltar atrás. Depois clique em ✓.")
                 detail.textColor = .secondaryLabelColor
             }
             return
@@ -339,7 +342,7 @@ final class ScrollHUD: NSPanel {
         headline.stringValue = L("%d × %d px · %d capturas", s.width, s.height, s.frames)
         switch s.health {
         case .ok:
-            detail.stringValue = L("Continue a rolar; clique em Concluir para criar a imagem.")
+            detail.stringValue = L("Continue a rolar; clique em ✓ para criar a imagem.")
             detail.textColor = .secondaryLabelColor
         case .tooFast:
             detail.stringValue = L("Rolou depressa demais: volte um pouco atrás para retomar.")
@@ -356,9 +359,9 @@ final class ScrollHUD: NSPanel {
         let states = [ScrollStatus(), ScrollStatus(width: 1440, height: 12480, frames: 38, health: .ok),
                       ScrollStatus(width: 1440, height: 12480, frames: 38, health: .tooFast),
                       ScrollStatus(width: 1440, height: 12480, frames: 38, paused: true)]
-        let sheet = NSImage(size: NSSize(width: 690, height: 64 * 4 + 20))
+        let sheet = NSImage(size: NSSize(width: 520, height: 64 * 4 + 20))
         sheet.lockFocus()
-        NSColor.windowBackgroundColor.setFill(); NSRect(x: 0, y: 0, width: 690, height: 64 * 4 + 20).fill()
+        NSColor.windowBackgroundColor.setFill(); NSRect(x: 0, y: 0, width: 520, height: 64 * 4 + 20).fill()
         for (i, st) in states.enumerated() {
             let hud = ScrollHUD(near: CGRect(x: 100, y: 300, width: 400, height: 300), on: screen)
             hud.show(st)
@@ -382,7 +385,7 @@ final class ScrollHUD: NSPanel {
 /// Moldura azul à volta da região (não apanha cliques; as janelas do Toth não entram na captura).
 @MainActor
 final class RegionFrameWindow: NSWindow {
-    init(rect: CGRect, on screen: NSScreen) {
+    init(rect: CGRect, on screen: NSScreen, color: NSColor = .systemBlue) {
         let f = screen.frame
         let r = NSRect(x: f.minX + rect.minX - 3, y: f.maxY - rect.maxY - 3, width: rect.width + 6, height: rect.height + 6)
         super.init(contentRect: r, styleMask: .borderless, backing: .buffered, defer: false)
@@ -391,15 +394,18 @@ final class RegionFrameWindow: NSWindow {
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         isReleasedWhenClosed = false
-        contentView = FrameBorderView(frame: NSRect(origin: .zero, size: r.size))
+        contentView = FrameBorderView(frame: NSRect(origin: .zero, size: r.size), color: color)
     }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
 private final class FrameBorderView: NSView {
+    let color: NSColor
+    init(frame: NSRect, color: NSColor) { self.color = color; super.init(frame: frame) }
+    required init?(coder: NSCoder) { fatalError() }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.systemBlue.setStroke()
+        color.setStroke()
         let p = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
         p.lineWidth = 3; p.stroke()
     }

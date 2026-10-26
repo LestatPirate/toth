@@ -357,6 +357,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        if let i = args.firstIndex(of: "--render-video-hud"), args.count > i + 1 {
+            DispatchQueue.main.async { VideoHUD.renderForTests(to: args[i + 1]); print("RENDER-VIDEO-HUD: OK"); exit(0) }
+        }
+        // `--video-selftest <pasta>`: gravação de vídeo com fotogramas e sons sintéticos (pausa, microfone ligado/desligado).
+        if let i = args.firstIndex(of: "--video-selftest"), args.count > i + 1 {
+            Task { @MainActor in
+                let fails = await VideoSelfTest.run(dir: URL(fileURLWithPath: args[i + 1]))
+                print(fails.isEmpty ? "VIDEO-SELFTEST: OK" : "VIDEO-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                exit(fails.isEmpty ? 0 : 1)
+            }
+        }
+
+        // `--video-e2e x,y,w,h <app> <pasta>`: seletor real + gravação real (com pausa), editor aberto e a app à frente.
+        if let i = args.firstIndex(of: "--video-e2e"), args.count > i + 3 {
+            let v = args[i + 1].split(separator: ",").compactMap { Double($0) }
+            if v.count == 4 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    Task { @MainActor in
+                        let r = await VideoE2ETest.run(rect: CGRect(x: v[0], y: v[1], width: v[2], height: v[3]), owner: args[i + 2], dir: URL(fileURLWithPath: args[i + 3]))
+                        print("VIDEO-E2E: " + r); exit(0)
+                    }
+                }
+            }
+        }
+
         // `--scroll-selftest`: captura por rolagem sobre páginas sintéticas (sem tocar no ecrã real).
         if CommandLine.arguments.contains("--scroll-selftest") {
             Task { @MainActor in
@@ -457,6 +482,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // `--capture-hold` usa uma imagem sintética em vez do ecrã real (testes visuais sem expor o ecrã).
                     let image = CommandLine.arguments.contains("--capture-hold") ? Self.syntheticSnapshot(for: screen) : try await ScreenCapturer.snapshot(of: screen)
                     snapshots.append((screen, image))
+                }
+                selector.onVideo = { screen, rect in
+                    Task { @MainActor in
+                        guard let url = await VideoCaptureSession.record(screen: screen, rect: rect) else { return }
+                        AppState.shared.open(url)
+                        NSSound(named: "Grab")?.play()
+                        MainWindow.show()
+                    }
                 }
                 selector.onScroll = { [weak self] screen, rect, first in
                     Task { @MainActor in

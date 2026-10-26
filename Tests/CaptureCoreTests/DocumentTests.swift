@@ -536,3 +536,122 @@ import Foundation
     }
 }
 
+
+// MARK: - Mistura de áudio (gravação de vídeo)
+
+@Suite struct AudioMixerTests {
+    /// Tom estéreo intercalado (`freq` Hz) com `frames` frames a começar na posição `from`.
+    static func tone(_ freq: Double, from: Int64, frames: Int, amp: Float = 0.4) -> [Float] {
+        var out = [Float](repeating: 0, count: frames * 2)
+        for i in 0..<frames {
+            let v = amp * Float(sin(2 * Double.pi * freq * Double(from + Int64(i)) / 48_000))
+            out[2 * i] = v; out[2 * i + 1] = v
+        }
+        return out
+    }
+
+    /// Energia do tom `freq` (Goertzel) num trecho do canal esquerdo, normalizada pelo comprimento.
+    static func energy(_ chunks: [(frame: Int64, samples: [Float])], _ freq: Double, frames: ClosedRange<Int64>) -> Double {
+        var s: [Double] = []
+        for c in chunks { for i in 0..<(c.samples.count / 2) where frames.contains(c.frame + Int64(i)) { s.append(Double(c.samples[2 * i])) } }
+        guard !s.isEmpty else { return 0 }
+        let w = 2 * Double.pi * freq / 48_000, k = 2 * cos(w)
+        var a = 0.0, b = 0.0
+        for x in s { let n = x + k * a - b; b = a; a = n }
+        let power = a * a + b * b - k * a * b
+        return power / Double(s.count * s.count)
+    }
+
+    static func joined(_ chunks: [(frame: Int64, samples: [Float])]) -> Int64 { Int64(chunks.reduce(0) { $0 + $1.samples.count / 2 }) }
+
+    @Test func bothSourcesAreMixedAndAligned() {
+        var m = AudioMixer(system: true, microphone: true)
+        var out: [(frame: Int64, samples: [Float])] = []
+        var f: Int64 = 0
+        while f < 48_000 {                                  // tamanhos de bloco diferentes em cada fonte
+            m.push(.system, samples: Self.tone(440, from: f, frames: 1024), startFrame: f)
+            m.push(.microphone, samples: Self.tone(880, from: f, frames: 1024), startFrame: f)
+            f += 1024
+            m.advance(toFrame: f)
+            out += m.pop()
+        }
+        out += m.pop(flush: true)
+        #expect(Self.joined(out) >= 48_000)
+        let sys = Self.energy(out, 440, frames: 4_800...43_200), mic = Self.energy(out, 880, frames: 4_800...43_200)
+        #expect(sys > 0.01 && mic > 0.01, "sistema \(sys), microfone \(mic)")
+        #expect(Self.energy(out, 1_500, frames: 4_800...43_200) < 0.001)       // nenhum tom estranho
+    }
+
+    @Test func microphoneCanBeSwitchedOffAndOnAnytime() {
+        var m = AudioMixer(system: true, microphone: true)
+        var out: [(frame: Int64, samples: [Float])] = []
+        var f: Int64 = 0
+        while f < 96_000 {
+            if f == 32_768 { m.setEnabled(.microphone, false) }       // 0,7 s: desliga
+            if f == 65_536 { m.setEnabled(.microphone, true) }        // 1,4 s: volta a ligar
+            m.push(.system, samples: Self.tone(440, from: f, frames: 1024), startFrame: f)
+            m.push(.microphone, samples: Self.tone(880, from: f, frames: 1024), startFrame: f)
+            f += 1024; m.advance(toFrame: f); out += m.pop()
+        }
+        out += m.pop(flush: true)
+        #expect(Self.energy(out, 880, frames: 2_000...30_000) > 0.01)             // antes: microfone presente
+        #expect(Self.energy(out, 880, frames: 36_000...62_000) < 0.0005)          // desligado: ausente
+        #expect(Self.energy(out, 880, frames: 68_000...94_000) > 0.01)            // religado: presente
+        #expect(Self.energy(out, 440, frames: 36_000...62_000) > 0.01)            // o sistema nunca parou
+    }
+
+    @Test func gapsBecomeSilenceAndPositionsAreKept() {
+        var m = AudioMixer(system: true, microphone: false)
+        m.push(.system, samples: Self.tone(440, from: 0, frames: 9_600), startFrame: 0)
+        m.push(.system, samples: Self.tone(440, from: 19_200, frames: 9_600), startFrame: 19_200)   // falha de 0,2 s
+        m.advance(toFrame: 28_800)
+        var out = m.pop(); out += m.pop(flush: true)
+        #expect(Self.energy(out, 440, frames: 1_000...8_000) > 0.01)
+        #expect(Self.energy(out, 440, frames: 10_500...18_500) < 0.0001)           // a falha ficou em silêncio
+        #expect(Self.energy(out, 440, frames: 20_000...28_000) > 0.01)
+    }
+
+    @Test func overlapsAreTrimmed() {
+        var m = AudioMixer(system: true, microphone: false)
+        m.push(.system, samples: Self.tone(440, from: 0, frames: 4_800), startFrame: 0)
+        m.push(.system, samples: Self.tone(440, from: 2_400, frames: 4_800), startFrame: 2_400)   // repete 2 400 frames
+        m.advance(toFrame: 7_200)
+        var out = m.pop(); out += m.pop(flush: true)
+        #expect(Self.joined(out) >= 7_200 && Self.joined(out) <= 7_200 + 960)      // o último bloco completa-se com silêncio
+        // contínuo: sem saltos de amplitude entre amostras consecutivas
+        let flat = out.flatMap { $0.samples }
+        var maxJump: Float = 0
+        for i in stride(from: 2, to: 7_200 * 2, by: 2) { maxJump = max(maxJump, abs(flat[i] - flat[i - 2])) }
+        #expect(maxJump < 0.1)
+    }
+
+    @Test func aLateSourceDoesNotBlockTheOthers() {
+        var m = AudioMixer(chunkFrames: 960, maxLatencyFrames: 4_800, system: true, microphone: true)   // microfone ligado mas mudo
+        var out: [(frame: Int64, samples: [Float])] = []
+        var f: Int64 = 0
+        while f < 48_000 {
+            m.push(.system, samples: Self.tone(440, from: f, frames: 960), startFrame: f)
+            f += 960; m.advance(toFrame: f); out += m.pop()
+        }
+        // a meio segundo de atraso máximo, o áudio já tem de ter saído (sem esperar pelo microfone)
+        #expect(Self.joined(out) >= 48_000 - 4_800 - 960)
+        #expect(Self.energy(out, 440, frames: 2_000...30_000) > 0.01)
+    }
+
+    @Test func silenceWhenNothingIsEnabled() {
+        var m = AudioMixer(system: false, microphone: false)
+        m.advance(toFrame: 9_600)
+        let out = m.pop()
+        #expect(Self.joined(out) == 9_600)
+        #expect(out.allSatisfy { $0.samples.allSatisfy { $0 == 0 } })
+    }
+
+    @Test func clipsInsteadOfOverflowing() {
+        var m = AudioMixer(system: true, microphone: true)
+        m.push(.system, samples: Self.tone(440, from: 0, frames: 4_800, amp: 0.9), startFrame: 0)
+        m.push(.microphone, samples: Self.tone(440, from: 0, frames: 4_800, amp: 0.9), startFrame: 0)
+        m.advance(toFrame: 4_800)
+        let out = m.pop()
+        #expect(out.allSatisfy { $0.samples.allSatisfy { abs($0) <= 1.0 } })
+    }
+}
