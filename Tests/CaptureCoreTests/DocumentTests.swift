@@ -763,6 +763,32 @@ import Foundation
     }
 }
 
+@Suite struct EditTimelineSplitTests {
+    @Test func splitMakesTwoAdjacentClipsInOneLane() {
+        var t = EditTimeline(sourceDuration: 60, tracks: [.video, .system])
+        let ok = t.split(at: 20, tracks: [.video])
+        #expect(ok)
+        #expect(t.clips(.video).count == 2 && t.clips(.system).count == 1)
+        #expect(t.clips(.video)[0].src.end == 20 && t.clips(.video)[1].at == 20 && t.clips(.video)[1].src.start == 20)
+        #expect(t.duration == 60 && t.gaps(.video).isEmpty)
+    }
+    @Test func splitThenMoveOnlyThePartShiftsTheRest() {
+        var t = EditTimeline(sourceDuration: 60, tracks: [.video])
+        t.split(at: 20, tracks: [.video]); t.split(at: 40, tracks: [.video])
+        let at = t.move(TimeSpan(start: 20, end: 40), tracks: [.video], to: 50, ripple: true)
+        #expect(at == 40)
+        let c = t.clips(.video)
+        #expect(c.map(\.src.start) == [0, 40, 20] && c.map(\.at) == [0, 20, 40])
+        #expect(t.duration == 60)
+    }
+    @Test func splitRejectsNearEdgesAndEmptySpots() {
+        var t = EditTimeline(sourceDuration: 60, tracks: [.video])
+        #expect(!t.split(at: 0.01, tracks: [.video]))
+        #expect(!t.split(at: 59.99, tracks: [.video]))
+        #expect(!t.split(at: 10, tracks: []))
+    }
+}
+
 @Suite struct EditTimelineMoveTests {
     static let all: Set<EditTrack> = [.video, .system, .microphone]
     static func tl() -> EditTimeline { EditTimeline(sourceDuration: 60, tracks: [.video, .system, .microphone]) }

@@ -164,6 +164,24 @@ public struct EditTimeline: Codable, Equatable, Sendable {
         }
     }
 
+    // MARK: Quebra
+
+    /// Insere uma quebra no instante `t` das linhas `tracks`: o clipe que lá está divide-se em dois, lado a lado, sem cortar nada.
+    /// Assim cada parte pode marcar-se e mover-se à parte. Devolve `false` se nenhuma linha tinha clipe a dividir (ou a
+    /// quebra ficaria a menos de `minCut` de uma ponta).
+    @discardableResult
+    public mutating func split(at t: Double, tracks: Set<EditTrack>) -> Bool {
+        var done = false
+        for i in lanes.indices where tracks.contains(lanes[i].track) {
+            guard let k = lanes[i].clips.firstIndex(where: { t - $0.at >= Self.minCut && $0.end - t >= Self.minCut }) else { continue }
+            let c = lanes[i].clips[k]
+            lanes[i].clips[k] = Clip(media: c.media, src: TimeSpan(start: c.src.start, end: c.src.start + (t - c.at)), at: c.at)
+            lanes[i].clips.insert(Clip(media: c.media, src: TimeSpan(start: c.src.start + (t - c.at), end: c.src.end), at: t), at: k + 1)
+            done = true
+        }
+        return done
+    }
+
     // MARK: Mover
 
     /// Muda de sítio o conteúdo de `range` (nas linhas `tracks`) para que comece em `newStart`.

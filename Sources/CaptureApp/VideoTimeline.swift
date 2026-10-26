@@ -15,11 +15,11 @@ import SwiftUI
 final class TimelineNSView: NSView {
     weak var model: VideoEditorModel?
     var onAction: ((Action) -> Void)?
-    enum Action { case cutJoin, cutGap, copy, paste, pasteOver, reverse, togglePlay }
+    enum Action { case cutJoin, cutGap, copy, paste, pasteOver, reverse, togglePlay, insertBreak }
 
     let headerWidth: CGFloat = 178, margin: CGFloat = 14, rulerHeight: CGFloat = 22, handleWidth: CGFloat = 9
     private enum Drag {
-        case none, scrub, selecting(anchor: Double), start, end, moving(grab: Double)
+        case none, scrub, selecting(anchor: Double, lane: EditTrack), start, end, moving(grab: Double)
         var isStart: Bool { if case .start = self { true } else { false } }
     }
     private var drag = Drag.none
@@ -53,6 +53,13 @@ final class TimelineNSView: NSView {
     var tracksArea: NSRect {
         let last = lanes.last.map { rowRect($0).maxY } ?? rulerHeight + 4
         return NSRect(x: trackLeft, y: rulerHeight + 4, width: trackWidth, height: max(1, last - rulerHeight - 4))
+    }
+    /// A zona onde o trecho marcado vive: só as linhas em que foi marcado.
+    var selectionArea: NSRect {
+        let sel = model?.selectionLanes ?? []
+        let rows = lanes.filter { sel.isEmpty || sel.contains($0) }.map { rowRect($0) }
+        guard let first = rows.first else { return tracksArea }
+        return rows.dropFirst().reduce(first) { $0.union($1) }
     }
     static func idealHeight(lanes: Int) -> CGFloat { 22 + 4 + 38 + CGFloat(max(0, lanes - 1)) * 54 + 12 }
 
@@ -99,7 +106,7 @@ final class TimelineNSView: NSView {
         }
         drawSelection(model)
         if let g = ghost {
-            let a = tracksArea
+            let a = selectionArea
             let r = NSRect(x: x(g.start), y: a.minY - 2, width: max(2, x(g.end) - x(g.start)), height: a.height + 4)
             NSColor.white.withAlphaComponent(0.12).setFill(); r.fill()
             NSColor.white.setStroke(); let b = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1)); b.lineWidth = 1.5; b.setLineDash([5, 3], count: 2, phase: 0); b.stroke()
@@ -177,7 +184,7 @@ final class TimelineNSView: NSView {
 
     private func drawSelection(_ model: VideoEditorModel) {
         guard let sel = model.selection else { return }
-        let area = tracksArea
+        let area = selectionArea
         let r = NSRect(x: x(sel.start), y: area.minY - 2, width: max(2, x(sel.end) - x(sel.start)), height: area.height + 4)
         NSColor.controlAccentColor.withAlphaComponent(0.22).setFill(); r.fill()
         NSColor.controlAccentColor.setStroke()
@@ -226,7 +233,7 @@ final class TimelineNSView: NSView {
     // MARK: Rato
 
     private func hitHandle(_ p: NSPoint) -> Drag? {
-        guard let sel = model?.selection, tracksArea.insetBy(dx: -10, dy: -4).contains(p) else { return nil }
+        guard let sel = model?.selection, selectionArea.insetBy(dx: -10, dy: -4).contains(p) else { return nil }
         let ds = abs(p.x - x(sel.start)), de = abs(p.x - x(sel.end))
         guard min(ds, de) <= handleWidth else { return nil }
         return ds <= de ? .start : .end
@@ -255,11 +262,11 @@ final class TimelineNSView: NSView {
         }
         // só a linha vermelha mexe na posição de reprodução (e a régua)
         if p.y >= 0, p.y <= bounds.height, abs(p.x - x(model.playhead)) <= 5, p.x >= trackLeft - 5 { drag = .scrub; model.clearPreview(); return }
-        if let sel = model.selection, p.y >= rulerHeight, tracksArea.contains(p), x(sel.start) < p.x, p.x < x(sel.end), !model.mask.isEmpty {
+        if let sel = model.selection, p.y >= rulerHeight, selectionArea.contains(p), x(sel.start) < p.x, p.x < x(sel.end), !model.mask.isEmpty {
             drag = .moving(grab: time(p.x) - sel.start); ghost = nil; return
         }
         if p.y < rulerHeight { drag = .scrub; model.clearPreview(); model.seek(to: time(p.x)); return }
-        drag = tracksArea.insetBy(dx: 0, dy: -4).contains(p) ? .selecting(anchor: time(p.x)) : .none
+        if let l = lane(atY: p.y), tracksArea.insetBy(dx: 0, dy: -4).contains(p) { drag = .selecting(anchor: time(p.x), lane: l) } else { drag = .none }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -269,8 +276,9 @@ final class TimelineNSView: NSView {
         let t = time(p.x)
         switch drag {
         case .scrub: model.seek(to: t)
-        case let .selecting(anchor):
+        case let .selecting(anchor, lane):
             guard moved else { return }
+            model.selectionLanes = [lane]
             let sel = TimeSpan(start: min(anchor, t), end: max(anchor, t))
             model.selection = sel
             model.activeEdge = t >= anchor ? .end : .start
@@ -300,10 +308,10 @@ final class TimelineNSView: NSView {
         guard let model else { return }
         let p = convert(event.locationInWindow, from: nil)
         if case .selecting = drag, !moved {   // clique simples: marca o clipe (ou espaço) para o poder mover; não mexe na reprodução
-            if let l = lane(atY: p.y) { model.selectPart(at: time(p.x), in: l) } else { model.selection = nil }
+            if case let .selecting(_, l) = drag { model.selectPart(at: time(p.x), in: l) } else { model.selection = nil }
         }
         if case .moving = drag {
-            if let g = ghost { let insert = event.modifierFlags.contains(.option); Task { await model.moveSelection(to: g.start, insert: insert); self.needsDisplay = true } }
+            if let g = ghost { let insert = !event.modifierFlags.contains(.option); Task { await model.moveSelection(to: g.start, insert: insert); self.needsDisplay = true } }
             ghost = nil
         }
         if let sel = model.selection, sel.length < 0.02 { model.selection = nil }
@@ -312,14 +320,21 @@ final class TimelineNSView: NSView {
 
     override func resetCursorRects() {
         guard let sel = model?.selection else { return }
-        let a = tracksArea
+        let a = selectionArea
         addCursorRect(NSRect(x: x(sel.start) + handleWidth, y: a.minY, width: max(0, x(sel.end) - x(sel.start) - 2 * handleWidth), height: a.height), cursor: .openHand)
         for t in [sel.start, sel.end] { addCursorRect(NSRect(x: x(t) - handleWidth, y: a.minY, width: 2 * handleWidth, height: a.height), cursor: .resizeLeftRight) }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard model?.selection != nil || model?.canPaste == true else { return nil }
+        let p = convert(event.locationInWindow, from: nil)
         let m = NSMenu()
+        if let l = lane(atY: p.y), p.x >= trackLeft, let model {
+            let t = time(p.x)
+            let i = NSMenuItem(title: String(format: L("Inserir quebra em %@ (%@)"), title(l), Self.format(t)), action: #selector(breakHere(_:)), keyEquivalent: ""); i.target = self
+            i.representedObject = [t as NSNumber, l.rawValue as NSString]; i.isEnabled = model.timeline.clip(at: t, in: l) != nil; m.addItem(i)
+            m.addItem(.separator())
+        }
+        guard model?.selection != nil || model?.canPaste == true else { return m.items.isEmpty ? nil : m }
         func add(_ title: String, _ a: Action, _ enabled: Bool = true) {
             let i = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: ""); i.target = self; i.isEnabled = enabled
             i.representedObject = a; m.addItem(i)
@@ -329,6 +344,10 @@ final class TimelineNSView: NSView {
         add(L("Copiar"), .copy, has); add(L("Colar (insere)"), .paste, model?.canPaste == true); add(L("Colar por cima"), .pasteOver, model?.canPaste == true); m.addItem(.separator())
         add(L("Inverter o trecho"), .reverse, has)
         return m
+    }
+    @objc private func breakHere(_ item: NSMenuItem) {
+        guard let a = item.representedObject as? [Any], let t = (a[0] as? NSNumber)?.doubleValue, let raw = a[1] as? String, let l = EditTrack(rawValue: raw) else { return }
+        Task { await model?.insertBreak(at: t, lanes: [l]) }
     }
     @objc private func menuAction(_ item: NSMenuItem) { if let a = item.representedObject as? Action { onAction?(a) } }
 
@@ -369,6 +388,7 @@ final class TimelineNSView: NSView {
         case "i", "I": model.markStart(); if let s = model.selection { model.preview(s.start, label: L("Início do trecho")) }
         case "o", "O": model.markEnd(); if let s = model.selection { model.preview(s.end, label: L("Fim do trecho")) }
         case "\t": if model.selection != nil { model.activeEdge = model.activeEdge == .start ? .end : .start; if let s = model.selection { model.preview(model.activeEdge == .start ? s.start : s.end, label: model.activeEdge == .start ? L("Início do trecho") : L("Fim do trecho")) } }
+        case "b", "B": onAction?(.insertBreak)
         case "+", "=": model.zoom(by: 1.5)
         case "-", "_": model.zoom(by: 1 / 1.5)
         case "0": model.zoomFit()

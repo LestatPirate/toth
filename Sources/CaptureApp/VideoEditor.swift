@@ -94,7 +94,9 @@ final class VideoEditorModel: ObservableObject {
 
     @Published private(set) var timeline = EditTimeline(sourceDuration: 0, tracks: [])
     /// Trecho marcado (em tempo da linha de tempo).
-    @Published var selection: TimeSpan?
+    @Published var selection: TimeSpan? { didSet { if selection == nil { selectionLanes = [] } } }
+    /// As linhas em que o trecho foi marcado (a marcação é por linha); vazio = as linhas ativas e livres.
+    @Published var selectionLanes: Set<EditTrack> = []
     /// A ponta do trecho que as setas movem e que se vê no leitor.
     @Published var activeEdge = Edge.end
     /// Posição de reprodução (tempo da linha de tempo).
@@ -106,7 +108,7 @@ final class VideoEditorModel: ObservableObject {
     @Published private(set) var locked: Set<EditTrack> = []
     /// Linhas a que as operações se aplicam: as que entram no resultado e não estão protegidas.
     var mask: Set<EditTrack> {
-        get { enabled.subtracting(locked) }
+        get { let base = enabled.subtracting(locked); return selectionLanes.isEmpty ? base : base.intersection(selectionLanes) }
         set { enabled.formUnion(newValue); locked = Set(timeline.tracks).subtracting(newValue) }
     }
     /// Zoom da linha de tempo (1 = tudo à vista; menos que 1 afasta, para ter espaço à volta; mais que 1 aproxima) e o instante
@@ -421,8 +423,20 @@ final class VideoEditorModel: ObservableObject {
         await commit(before, at: at)
     }
 
+    /// Insere uma quebra no instante `t` (por omissão na posição de reprodução) nas linhas `lanes` (por omissão as escolhidas):
+    /// o clipe divide-se em dois sem cortar nada, para cada parte se poder marcar e mover à parte.
+    func insertBreak(at t: Double? = nil, lanes: Set<EditTrack>? = nil) async {
+        let at = t ?? playhead
+        let before = snapshot()
+        var next = timeline
+        guard next.split(at: at, tracks: lanes ?? mask) else { message = L("Não dá para pôr uma quebra aqui: não há clipe, ou está colada a uma ponta."); return }
+        timeline = next
+        await commit(before, at: at)
+    }
+
     /// Marca o clipe (ou o espaço) da linha `lane` que está no instante `t`.
     func selectPart(at t: Double, in lane: EditTrack) {
+        selectionLanes = [lane]
         if let c = timeline.clip(at: t, in: lane) { selection = TimeSpan(start: c.at, end: c.end) }
         else if let g = timeline.gaps(lane).first(where: { $0.contains(t) }) { selection = g }
         else { return }

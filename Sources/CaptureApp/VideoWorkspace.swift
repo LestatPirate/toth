@@ -60,6 +60,7 @@ struct VideoWorkspace: View {
         switch a {
         case .cutJoin: Task { await model.cut(join: true) }
         case .cutGap: Task { await model.cut(join: false) }
+        case .insertBreak: Task { await model.insertBreak() }
         case .copy: model.copySelection()
         case .paste: Task { await model.paste(insert: true) }
         case .pasteOver: Task { await model.paste(insert: false) }
@@ -92,6 +93,7 @@ struct VideoWorkspace: View {
                 VideoIconButton(symbol: "arrow.left.to.line.compact", help: L("Marcar o fim do trecho aqui (O)")) { model.markEnd(); if let s = model.selection { model.preview(s.end, label: L("Fim do trecho")) } }
                 Divider().frame(height: 18).padding(.horizontal, 3)
                 VideoIconButton(symbol: "scissors", help: L("Cortar e juntar: o resto toca seguido (Delete)"), prominent: true, disabled: !model.canCut) { perform(.cutJoin) }
+                VideoIconButton(symbol: "square.split.2x1", help: L("Inserir uma quebra na posição de reprodução, na linha escolhida (B)"), disabled: model.working != nil) { perform(.insertBreak) }
                 VideoIconButton(symbol: "scissors.badge.ellipsis", help: L("Cortar deixando um espaço (sem vídeo e sem som) (⇧Delete)"), disabled: !model.canCut) { perform(.cutGap) }
                 Divider().frame(height: 18).padding(.horizontal, 3)
                 VideoIconButton(symbol: "doc.on.doc", help: L("Copiar o trecho marcado (⌘C)"), disabled: !model.canCut) { perform(.copy) }
