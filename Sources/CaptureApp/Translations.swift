@@ -89,7 +89,7 @@ enum Translations {
         "Cortar": "Cut",
         "Não dá para cortar esse trecho: é curto demais ou deixaria o vídeo vazio.": "That part cannot be cut: it is too short or would leave the video empty.",
         "A inverter o trecho…": "Reversing the part…",
-        "Arraste para marcar um trecho e arraste o trecho para o mover. Olho: entra no resultado. Cadeado: protege.": "Drag to mark a part, then drag the part to move it. Eye: included in the result. Lock: protects.",
+        "Arraste um bloco para o mover (entra entre blocos). ⇧+arrastar marca um trecho para recortar. Olho: entra no resultado. Cadeado: protege.": "Drag a block to move it (it drops between blocks). ⇧+drag marks a part to cut. Eye: included in the result. Lock: protects.",
         "Colar (insere)": "Paste (insert)",
         "Colar na posição de reprodução, empurrando o resto (⌘V)": "Paste at the playhead, pushing the rest along (⌘V)",
         "Colar por cima": "Paste over",

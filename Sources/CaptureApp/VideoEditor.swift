@@ -410,13 +410,16 @@ final class VideoEditorModel: ObservableObject {
         await commit(before, at: sel.start)
     }
 
-    /// Muda de sítio o trecho marcado (nas linhas escolhidas) para começar em `newStart`. Sem `insert`, onde estava fica um espaço
+    /// Muda de sítio o trecho marcado (nas linhas escolhidas) para começar perto de `newStart`. Sem `insert`, onde estava fica um espaço
     /// e no destino substitui o que lá estiver; com `insert`, o espaço de origem fecha e o destino dá lugar.
     func moveSelection(to newStart: Double, insert: Bool) async {
         guard let sel = selection, !mask.isEmpty else { return }
         let before = snapshot()
         var next = timeline
-        guard let at = next.move(sel, tracks: mask, to: newStart, ripple: insert) else { return }
+        // inserir nunca parte um clipe: o bloco vai para a junção mais próxima
+        let target = insert ? next.snapDrop(sel, tracks: mask, start: newStart) : newStart
+        if insert, abs(target - sel.start) < 1e-6 || abs(target - sel.end) < 1e-6 { return }
+        guard let at = next.move(sel, tracks: mask, to: target, ripple: insert) else { return }
         timeline = next
         selection = TimeSpan(start: at, end: at + sel.length)
         previewLabel = nil

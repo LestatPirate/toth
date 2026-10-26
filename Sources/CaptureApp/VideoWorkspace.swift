@@ -125,7 +125,7 @@ struct VideoWorkspace: View {
                 Text(model.url.lastPathComponent).font(.system(size: 11, weight: .medium)).lineLimit(1)
                 Text(model.info).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Text(L("Arraste para marcar um trecho e arraste o trecho para o mover. Olho: entra no resultado. Cadeado: protege.")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(L("Arraste um bloco para o mover (entra entre blocos). ⇧+arrastar marca um trecho para recortar. Olho: entra no resultado. Cadeado: protege.")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             .padding(.horizontal, 12).frame(height: 24)
             .background(.bar)

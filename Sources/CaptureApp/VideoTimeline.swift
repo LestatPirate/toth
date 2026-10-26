@@ -27,6 +27,8 @@ final class TimelineNSView: NSView {
     private var moved = false
     /// Posição provisória do trecho enquanto é arrastado (só se confirma ao largar).
     private var ghost: TimeSpan?
+    /// A junção onde o bloco vai ser inserido ao largar (sem partir clipes).
+    private var dropMarker: Double?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -105,6 +107,11 @@ final class TimelineNSView: NSView {
             }
         }
         drawSelection(model)
+        if let d = dropMarker {
+            let a = selectionArea, px = x(d)
+            NSColor.systemYellow.setFill()
+            NSBezierPath(roundedRect: NSRect(x: px - 2, y: a.minY - 4, width: 4, height: a.height + 8), xRadius: 2, yRadius: 2).fill()
+        }
         if let g = ghost {
             let a = selectionArea
             let r = NSRect(x: x(g.start), y: a.minY - 2, width: max(2, x(g.end) - x(g.start)), height: a.height + 4)
@@ -265,6 +272,13 @@ final class TimelineNSView: NSView {
         if let sel = model.selection, p.y >= rulerHeight, selectionArea.contains(p), x(sel.start) < p.x, p.x < x(sel.end), !model.mask.isEmpty {
             drag = .moving(grab: time(p.x) - sel.start); ghost = nil; return
         }
+        if p.y >= rulerHeight, !event.modifierFlags.contains(.shift), let l = lane(atY: p.y), tracksArea.contains(p),
+           let c = model.timeline.clip(at: time(p.x), in: l), !(model.selection != nil && model.selectionLanes == [l] && (model.selection!.start < time(p.x) && time(p.x) < model.selection!.end)) {
+            // um clipe é um bloco inteiro: marca-se de uma vez e arrasta-se para o mover
+            model.selectionLanes = [l]; model.selection = TimeSpan(start: c.at, end: c.end); model.selectionLanes = [l]
+            model.activeEdge = .start; model.clearPreview()
+            drag = .moving(grab: time(p.x) - c.at); ghost = nil; dropMarker = nil; needsDisplay = true; return
+        }
         if p.y < rulerHeight { drag = .scrub; model.clearPreview(); model.seek(to: time(p.x)); return }
         if let l = lane(atY: p.y), tracksArea.insetBy(dx: 0, dy: -4).contains(p) { drag = .selecting(anchor: time(p.x), lane: l) } else { drag = .none }
     }
@@ -290,15 +304,20 @@ final class TimelineNSView: NSView {
         case let .moving(grab):
             guard moved, let sel = model.selection else { return }
             var start = max(0, t - grab)
-            // ímanes: pontas de outros clipes e posição de reprodução
-            let tol = 6 / pps
-            var targets = [model.playhead, 0]
-            for l in model.mask { for c in model.timeline.clips(l) { targets += [c.at, c.end] } }
-            if let hit = targets.min(by: { abs($0 - start) < abs($1 - start) }), abs(hit - start) <= tol { start = hit }
-            else if let hit = targets.min(by: { abs($0 - (start + sel.length)) < abs($1 - (start + sel.length)) }), abs(hit - (start + sel.length)) <= tol { start = hit - sel.length }
+            if event.modifierFlags.contains(.option) {
+                // pousar livremente (por cima): ímanes nas pontas dos clipes e na posição de reprodução
+                let tol = 6 / pps
+                var targets = [model.playhead, 0]
+                for l in model.mask { for c in model.timeline.clips(l) { targets += [c.at, c.end] } }
+                if let hit = targets.min(by: { abs($0 - start) < abs($1 - start) }), abs(hit - start) <= tol { start = hit }
+                else if let hit = targets.min(by: { abs($0 - (start + sel.length)) < abs($1 - (start + sel.length)) }), abs(hit - (start + sel.length)) <= tol { start = hit - sel.length }
+                dropMarker = nil
+            } else {
+                dropMarker = model.timeline.snapDrop(sel, tracks: model.mask, start: start)   // a junção onde entra
+            }
             ghost = TimeSpan(start: start, end: start + sel.length)
             model.pan(toShow: t)
-            model.preview(start, label: L("Mover para aqui"))
+            model.preview(dropMarker ?? start, label: L("Mover para aqui"))
             needsDisplay = true
         case .none: break
         }
@@ -312,7 +331,7 @@ final class TimelineNSView: NSView {
         }
         if case .moving = drag {
             if let g = ghost { let insert = !event.modifierFlags.contains(.option); Task { await model.moveSelection(to: g.start, insert: insert); self.needsDisplay = true } }
-            ghost = nil
+            ghost = nil; dropMarker = nil
         }
         if let sel = model.selection, sel.length < 0.02 { model.selection = nil }
         drag = .none

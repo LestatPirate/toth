@@ -763,6 +763,20 @@ import Foundation
     }
 }
 
+@Suite struct EditTimelineDropTests {
+    @Test func dropSnapsToJunctionsAndNeverSplitsAClip() {
+        var t = EditTimeline(sourceDuration: 60, tracks: [.video])
+        t.split(at: 20, tracks: [.video]); t.split(at: 40, tracks: [.video])
+        let block = TimeSpan(start: 0, end: 20)
+        #expect(t.dropPoints(excluding: block, tracks: [.video]) == [0, 20, 40, 60])
+        let b = t.snapDrop(block, tracks: [.video], start: 28)      // por cima do meio do segundo bloco
+        #expect(b == 20 || b == 40)
+        let before = t.clips(.video).count
+        let at = t.move(block, tracks: [.video], to: b, ripple: true)
+        #expect(at != nil && t.clips(.video).count == before)        // nenhum clipe foi partido
+    }
+}
+
 @Suite struct EditTimelineSplitTests {
     @Test func splitMakesTwoAdjacentClipsInOneLane() {
         var t = EditTimeline(sourceDuration: 60, tracks: [.video, .system])

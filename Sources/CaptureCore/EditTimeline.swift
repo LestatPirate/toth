@@ -184,6 +184,26 @@ public struct EditTimeline: Codable, Equatable, Sendable {
 
     // MARK: Mover
 
+    /// Os sítios onde um bloco pode ser largado sem partir nenhum clipe: as pontas dos clipes das linhas `tracks` (e o início),
+    /// menos as que ficam dentro do próprio trecho `range` que se move.
+    public func dropPoints(excluding range: TimeSpan, tracks: Set<EditTrack>) -> [Double] {
+        let s = min(range.start, range.end), e = max(range.start, range.end)
+        var pts: Set<Double> = [0, s, e]
+        for l in lanes where tracks.contains(l.track) {
+            for c in l.clips where !(c.at > s + 1e-6 && c.at < e - 1e-6) { pts.insert(c.at) }
+            for c in l.clips where !(c.end > s + 1e-6 && c.end < e - 1e-6) { pts.insert(c.end) }
+        }
+        return pts.sorted()
+    }
+
+    /// O ponto de largada (em tempo de antes de mover) mais perto do bloco que se arrasta com início em `start`: conta a ponta
+    /// do bloco (início ou fim) que fica mais perto de uma junção.
+    public func snapDrop(_ range: TimeSpan, tracks: Set<EditTrack>, start: Double) -> Double {
+        let len = abs(range.end - range.start)
+        let pts = dropPoints(excluding: range, tracks: tracks)
+        return pts.min { min(abs($0 - start), abs($0 - (start + len))) < min(abs($1 - start), abs($1 - (start + len))) } ?? start
+    }
+
     /// Muda de sítio o conteúdo de `range` (nas linhas `tracks`) para que comece em `newStart`.
     /// Sem `ripple` (levantar e pousar): onde estava fica um espaço e no destino substitui o que lá estiver.
     /// Com `ripple` (inserir): onde estava fecha-se e no destino o resto avança para lhe dar lugar; `newStart` conta-se na

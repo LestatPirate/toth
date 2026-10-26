@@ -613,15 +613,15 @@ enum VideoEditSelfTest {
         window.contentView = view
         window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
         window.makeKeyAndOrderFront(nil)
-        func ev(_ type: NSEvent.EventType, x: CGFloat, y: CGFloat, clicks: Int = 1) -> NSEvent {
-            NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: view.frame.height - y), modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+        func ev(_ type: NSEvent.EventType, x: CGFloat, y: CGFloat, clicks: Int = 1, shift: Bool = false) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: view.frame.height - y), modifierFlags: shift ? [.shift] : [], timestamp: 0, windowNumber: window.windowNumber,
                                context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)!
         }
         func at(_ t: Double, row: EditTrack = .video) -> (CGFloat, CGFloat) { (view.x(t), view.rowRect(row).midY) }
         func drag(_ a: Double, _ b: Double, row: EditTrack = .video) {
             let (ax, y) = at(a, row: row), (bx, _) = at(b, row: row)
-            view.mouseDown(with: ev(.leftMouseDown, x: ax, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: (ax + bx) / 2, y: y))
-            view.mouseDragged(with: ev(.leftMouseDragged, x: bx, y: y)); view.mouseUp(with: ev(.leftMouseUp, x: bx, y: y))
+            view.mouseDown(with: ev(.leftMouseDown, x: ax, y: y, shift: true)); view.mouseDragged(with: ev(.leftMouseDragged, x: (ax + bx) / 2, y: y, shift: true))
+            view.mouseDragged(with: ev(.leftMouseDragged, x: bx, y: y, shift: true)); view.mouseUp(with: ev(.leftMouseUp, x: bx, y: y, shift: true))
         }
         // marcar a arrastar numa linha de áudio; o leitor mostra o ponto exato da ponta que se move
         drag(1.0, 2.0, row: .system)
@@ -675,16 +675,16 @@ enum VideoEditSelfTest {
         await model.undo(); await model.undo()
         model.selection = TimeSpan(start: 0.5, end: 1.5); model.selectionLanes = [.video]
         let durBefore = model.timeline.duration
-        do { let (x1, y) = at(1.0), (x2, _) = at(3.5); view.mouseDown(with: ev(.leftMouseDown, x: x1, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: (x1 + x2) / 2, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: x2, y: y)); view.mouseUp(with: ev(.leftMouseUp, x: x2, y: y)) }
+        do { let (x1, y) = at(1.0), (x2, _) = at(6.0); view.mouseDown(with: ev(.leftMouseDown, x: x1, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: (x1 + x2) / 2, y: y)); view.mouseDragged(with: ev(.leftMouseDragged, x: x2, y: y)); view.mouseUp(with: ev(.leftMouseUp, x: x2, y: y)) }
         try? await Task.sleep(nanoseconds: 800_000_000)
-        check(model.selection.map { abs($0.start - 2.0) < 0.1 && abs($0.length - 1.0) < 0.02 } ?? false, "mover devia inserir o trecho antes do que estava aos 3 s (fica aos 2 s, porque o espaço de origem fechou): \(String(describing: model.selection))")
+        check(model.selection.map { abs($0.start - 5.0) < 0.1 && abs($0.length - 1.0) < 0.02 } ?? false, "mover devia inserir o trecho na junção do fim (fica aos 5 s, porque o espaço de origem fechou): \(String(describing: model.selection))")
         check(model.timeline.gaps(.video).isEmpty && abs(model.timeline.duration - durBefore) < 0.02, "mover devia deslocar o resto, sem espaços nem sobrepor")
         check(model.timeline.clips(.system).count == 1 && model.timeline.clips(.microphone).count == 1, "mover o vídeo não devia mexer nas linhas de áudio")
         // com o cadeado, a linha protegida não se mexe
         await model.undo()
         model.toggleLocked(.microphone)
         model.selection = TimeSpan(start: 0.5, end: 1.5)
-        await model.moveSelection(to: 3.0, insert: true)
+        await model.moveSelection(to: 5.9, insert: true)
         check(model.timeline.clips(.microphone).count == 1 && model.timeline.clips(.video).count > 1, "a linha protegida não devia mover-se")
         await model.undo(); model.toggleLocked(.microphone)
         // suprimir uma linha tira-a da reprodução
