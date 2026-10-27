@@ -1,24 +1,39 @@
-<p align="center"><img src="docs/brand/TothLogo.png" alt="Toth" width="132"></p>
+<div align="center">
 
-<h1 align="center">Toth</h1>
+<img src="docs/brand/TothLogo.png" alt="Toth" width="120">
 
-<p align="center">
-  <strong>Captura, anota e edita. Tudo no seu Mac, sem nuvem.</strong><br>
-  <em>Capture, annotate and edit. All on your Mac, no cloud.</em>
-</p>
+# T O T H
 
-<p align="center">
-  <a href="../../releases/latest"><img alt="Versão" src="https://img.shields.io/github/v/release/LestatPirate/toth?include_prereleases&label=vers%C3%A3o&color=2b2b2b&labelColor=555"></a>
-  <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-2b2b2b?labelColor=555">
-  <img alt="Swift" src="https://img.shields.io/badge/Swift-puro-2b2b2b?labelColor=555">
-  <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-2b2b2b?labelColor=555"></a>
-</p>
+### Captura. Anota. Grava. Edita.
+*Capture. Annotate. Record. Edit.*
 
-<p align="center">
-  <a href="#português">Português</a> · <a href="#english">English</a> · <a href="docs/GUIA.md">Guia completo · Full guide</a> · <a href="../../releases/latest"><strong>Descarregar · Download</strong></a>
-</p>
+**Tudo no seu Mac. Sem conta, sem nuvem, sem telemetria.**
 
-<p align="center"><img src="docs/images/toth-editor-pt.png" alt="Editor de imagem do Toth" width="880"></p>
+<br>
+
+[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.3.0-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
+[![Licença](https://img.shields.io/badge/LICEN%C3%87A-MIT-111111?style=for-the-badge)](LICENSE)
+[![macOS](https://img.shields.io/badge/macOS-15%2B-111111?style=for-the-badge&logo=apple&logoColor=white)](#instalação)
+[![Apoiar](https://img.shields.io/badge/APOIAR-PayPal-0070BA?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/lestat013)
+
+[Português](#português) &nbsp;·&nbsp; [English](#english) &nbsp;·&nbsp; [Guia completo · Full guide](docs/GUIA.md)
+
+<br>
+
+<img src="docs/images/toth-editor-pt.png" alt="Editor de imagem do Toth" width="900">
+
+</div>
+
+<br>
+
+<table>
+<tr>
+<td width="25%" valign="top"><h4>📸 Capturar</h4>Região com o ecrã congelado, página inteira por rolagem e ecrã completo.</td>
+<td width="25%" valign="top"><h4>✏️ Anotar</h4>Setas, texto, balões, etapas, pixelização e desfoque. Sempre reeditável.</td>
+<td width="25%" valign="top"><h4>🎥 Gravar</h4>MP4 com áudio do sistema e microfone, a qualquer momento.</td>
+<td width="25%" valign="top"><h4>✂️ Editar vídeo</h4>Três linhas, blocos que se movem, cortes exatos ao quadro.</td>
+</tr>
+</table>
 
 ---
 
@@ -89,13 +104,24 @@ O Toth não tem anotações em vídeo, legendas, efeitos, captura de janela nem 
 
 As capturas ficam em `~/Pictures/Capture`. **Atualizações:** o Toth procura uma versão nova ao abrir (no máximo uma vez por dia), pergunta se quer atualizar, verifica a soma SHA-256 e a assinatura e instala sem tocar nas suas capturas. As versões são assinadas sempre com a mesma identidade, por isso a permissão mantém-se. **Desinstalar:** arraste `Toth.app` para o Lixo.
 
+<table align="center">
+<tr><td align="center">
+<br>
+<strong>☕ Gostou do Toth?</strong><br><br>
+O projeto é gratuito e livre, e vai continuar a sê-lo.<br>
+Se quiser ajudar a mantê-lo, pode apoiar de forma voluntária.<br>
+<sub>Nada na app depende disso.</sub><br><br>
+<a href="https://paypal.me/lestat013"><img src="https://img.shields.io/badge/APOIAR%20NO%20PAYPAL-0070BA?style=for-the-badge&logo=paypal&logoColor=white" alt="Apoiar no PayPal"></a>
+<br><br>
+</td></tr>
+</table>
+
 ### Compilar e contribuir
 Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` gera `dist/Toth.app` e o zip. Guia para programadores em [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Contribuições são bem-vindas (*issue* ou *pull request*). Segurança: [SECURITY.md](SECURITY.md).
 
 ### Licença
 **MIT** (software livre): [LICENSE](LICENSE) ([tradução de cortesia](LICENSE.pt.md)). © 2026 **Alex Felizardo**. O nome e o logótipo não estão abrangidos pela MIT ([TRADEMARKS.md](TRADEMARKS.md)). [Privacidade](PRIVACY.md) · [Segurança](SECURITY.md) · [Avisos de terceiros](THIRD_PARTY_NOTICES.md).
 
-**Gostou do Toth?** O projeto é gratuito e livre. Se quiser apoiar a manutenção, pode fazê-lo de forma voluntária em [paypal.me/lestat013](https://paypal.me/lestat013). Nada na app depende disso.
 
 ---
 
@@ -164,10 +190,20 @@ Toth has no video annotations, captions, effects, window capture or GIF, and doe
 
 Captures are saved in `~/Pictures/Capture`. **Updates:** Toth checks for a new version on launch (at most once a day), asks whether to update, verifies the SHA-256 checksum and signature, and installs without touching your captures. Releases are always signed with the same identity, so the permission is kept. **Uninstall:** drag `Toth.app` to the Trash.
 
+<table align="center">
+<tr><td align="center">
+<br>
+<strong>☕ Enjoying Toth?</strong><br><br>
+The project is free and open, and will stay that way.<br>
+If you would like to help keep it going, you can support it voluntarily.<br>
+<sub>Nothing in the app depends on it.</sub><br><br>
+<a href="https://paypal.me/lestat013"><img src="https://img.shields.io/badge/SUPPORT%20ON%20PAYPAL-0070BA?style=for-the-badge&logo=paypal&logoColor=white" alt="Support on PayPal"></a>
+<br><br>
+</td></tr>
+</table>
+
 ### Build and contribute
 Only the macOS *Command Line Tools* are needed: `./scripts/build-app.sh` produces `dist/Toth.app` and the zip. Developer guide: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Contributions are welcome (*issue* or *pull request*). Security: [SECURITY.md](SECURITY.md).
 
 ### License
 **MIT** (free software): [LICENSE](LICENSE). © 2026 **Alex Felizardo**. The name and the logo are not covered by the MIT License ([TRADEMARKS.md](TRADEMARKS.md)). [Privacy](PRIVACY.md) · [Security](SECURITY.md) · [Third-party notices](THIRD_PARTY_NOTICES.md).
-
-**Enjoying Toth?** The project is free and open. If you would like to support its upkeep, you can do so voluntarily at [paypal.me/lestat013](https://paypal.me/lestat013). Nothing in the app depends on it.
