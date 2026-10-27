@@ -95,6 +95,8 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 ### Licença
 **MIT** (software livre): [LICENSE](LICENSE) ([tradução de cortesia](LICENSE.pt.md)). © 2026 **Alex Felizardo**. O nome e o logótipo não estão abrangidos pela MIT ([TRADEMARKS.md](TRADEMARKS.md)). [Privacidade](PRIVACY.md) · [Segurança](SECURITY.md) · [Avisos de terceiros](THIRD_PARTY_NOTICES.md).
 
+**Gostou do Toth?** O projeto é gratuito e livre. Se quiser apoiar a manutenção, pode fazê-lo de forma voluntária em [paypal.me/lestat013](https://paypal.me/lestat013). Nada na app depende disso.
+
 ---
 
 ## English
@@ -167,3 +169,5 @@ Only the macOS *Command Line Tools* are needed: `./scripts/build-app.sh` produce
 
 ### License
 **MIT** (free software): [LICENSE](LICENSE). © 2026 **Alex Felizardo**. The name and the logo are not covered by the MIT License ([TRADEMARKS.md](TRADEMARKS.md)). [Privacy](PRIVACY.md) · [Security](SECURITY.md) · [Third-party notices](THIRD_PARTY_NOTICES.md).
+
+**Enjoying Toth?** The project is free and open. If you would like to support its upkeep, you can do so voluntarily at [paypal.me/lestat013](https://paypal.me/lestat013). Nothing in the app depends on it.
