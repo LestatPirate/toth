@@ -11,7 +11,7 @@
 
 <br>
 
-[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.3.0-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
+[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.4.0-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
 [![Licença](https://img.shields.io/badge/LICEN%C3%87A-MIT-111111?style=for-the-badge)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-15%2B-111111?style=for-the-badge&logo=apple&logoColor=white)](#instalação)
 [![Apoiar](https://img.shields.io/badge/APOIAR-PayPal-0070BA?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/lestat013)
@@ -43,6 +43,20 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, para **capturar e 
 
 ### Porquê «Toth»
 Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento e da sabedoria**: o escriba dos deuses, que registava, media e dava forma ao que era dito. Esta app faz, em pequeno, o mesmo gesto: **guarda o que vê e dá-lhe sentido**. Uma captura é um registo; as setas, o texto e os cortes são a forma de o explicar. O nome lembra que um ecrã só se torna conhecimento quando alguém o escreve, o anota e o partilha com clareza.
+
+### Novidades da versão 0.4.0
+**Rodar e enquadrar**
+
+| | |
+|---|---|
+| **Rodar qualquer elemento** | Setas, texto, balões, formas, etapas, marcador, pixelização e desfoque: alça redonda acima do elemento (encosta aos 15°; ⌥ liberta) ou rotação no painel (graus, ±90°, Endireitar). As alças, o toque e a edição do texto acompanham a rotação. |
+| **Tela → Imagem** | A própria captura move-se, redimensiona-se (em proporção pelos cantos, ⇧ para livre, só uma medida pelos lados) e roda-se com o rato ou pelos campos (largura, altura, escala, rotação). A imagem original nunca é alterada; «Restaurar original» volta atrás. |
+| **Tela do vídeo** | No editor de vídeo, alças sobre o vídeo, com margem à volta, para o redimensionar e rodar com o rato, ou pelos campos; 25/50/75 % e «Original». Vale para a reprodução e para o MP4 guardado. |
+
+**Texto**
+- A caixa de texto e o balão **ajustam a altura ao texto enquanto escreve**; retângulo e elipse crescem para o texto caber.
+- **Redimensionar em proporção** (secção Texto): ligado, a letra acompanha a altura da caixa; desligado, só a caixa muda e o texto quebra de linha por palavras, sem hifenização.
+- Tamanho da letra até **400**; texto centrado fica centrado mesmo maior do que a caixa.
 
 ### Novidades da versão 0.3.0
 **Gravação de vídeo**
@@ -92,7 +106,7 @@ O Toth não tem anotações em vídeo, legendas, efeitos, captura de janela nem 
 ### Instalação
 **Requisitos:** macOS 15 ou superior (Apple Silicon e Intel; testado em Apple Silicon).
 
-1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.3.0.zip` e descomprima.
+1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.4.0.zip` e descomprima.
 2. Arraste `Toth.app` para **Aplicações**.
 3. **Primeira abertura (uma só vez).** A app ainda não está notarizada pela Apple, por isso o macOS mostra *“Toth” não aberto*. **Não mova para o Lixo:** clique em **OK**, abra **Definições do Sistema → Privacidade e Segurança**, desça até **Segurança**, clique em **Abrir mesmo assim** junto a “Toth” e confirme. (No macOS 14 ou anterior: botão direito → **Abrir**. No Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Permissão guiada.** Ao abrir, o Toth verifica a **Gravação de Ecrã** e, se faltar, mostra um guia de 3 passos: **Conceder permissão** → ativar o Toth na lista → **Reiniciar o Toth**.
@@ -133,6 +147,20 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 
 ### Why “Toth”
 In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**: the scribe of the gods, who recorded, measured and gave form to what was spoken. This app does the same, in small: it **keeps what you see and gives it meaning**. A capture is a record; arrows, text and cuts are how you explain it. The name is a reminder that a screen only becomes knowledge once someone writes it down, annotates it and shares it clearly.
+
+### What's new in 0.4.0
+**Rotate and frame**
+
+| | |
+|---|---|
+| **Rotate any element** | Arrows, text, callouts, shapes, steps, highlighter, pixelate and blur: a round handle above the element (snaps to 15°; ⌥ frees it) or the rotation in the panel (degrees, ±90°, Straighten). Handles, hit-testing and text editing follow the rotation. |
+| **Canvas → Image** | The capture itself moves, resizes (proportionally by the corners, ⇧ for free, one dimension by the sides) and rotates with the mouse or the fields (width, height, scale, rotation). The original image is never altered; “Restore original” goes back. |
+| **Video canvas** | In the video editor, handles over the video, with a margin around it, to resize and rotate it with the mouse, or the fields; 25/50/75 % and “Original”. It applies to playback and to the saved MP4. |
+
+**Text**
+- Text boxes and callouts **fit their height to the text as you type**; rectangles and ellipses grow so the text fits.
+- **Resize proportionally** (Text section): on, the text scales with the box height; off, only the box changes and the text wraps by word, with no hyphenation.
+- Font size up to **400**; centered text stays centered even when larger than the box.
 
 ### What's new in 0.3.0
 **Video recording**
@@ -180,7 +208,7 @@ Toth has no video annotations, captions, effects, window capture or GIF, and doe
 ### Installation
 **Requirements:** macOS 15 or later (Apple Silicon and Intel; tested on Apple Silicon).
 
-1. Under [**Releases**](../../releases/latest), download `Toth-0.3.0.zip` and unzip it.
+1. Under [**Releases**](../../releases/latest), download `Toth-0.4.0.zip` and unzip it.
 2. Drag `Toth.app` to **Applications**.
 3. **First launch (once).** The app is not yet notarized by Apple, so macOS shows *“Toth” Not Opened*. **Don't move it to the Trash:** click **Done**, open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to “Toth” and confirm. (On macOS 14 or earlier: right-click → **Open**. In Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Guided permission.** On launch, Toth checks **Screen Recording** and, if missing, shows a 3-step guide: **Grant permission** → turn Toth on in the list → **Restart Toth**.
