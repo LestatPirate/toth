@@ -119,6 +119,7 @@ struct VideoWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             PlayerView(player: model.player)
+                .padding(model.frameMode ? VideoFrameOverlayView.inset : 0)   // na Tela, uma margem para trabalhar à volta do vídeo
                 .background(Color.black)
                 .frame(minWidth: 160, maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
                 .overlay(alignment: .topLeading) {

@@ -27,9 +27,12 @@ final class VideoFrameOverlayView: NSView {
 
     // MARK: Geometria (a saída é desenhada ajustada e centrada na vista, como o leitor faz)
 
+    /// Margem à volta do vídeo (o leitor fica recuado o mesmo), para haver espaço para as alças e para a rotação.
+    static let inset: CGFloat = 70
     private var canvas: CGSize { model?.canvasSize ?? CGSize(width: 16, height: 16) }
-    private var scale: CGFloat { min(bounds.width / max(1, canvas.width), bounds.height / max(1, canvas.height)) }
-    private var displayOrigin: CGPoint { CGPoint(x: (bounds.width - canvas.width * scale) / 2, y: (bounds.height - canvas.height * scale) / 2) }
+    private var area: CGRect { bounds.insetBy(dx: Self.inset, dy: Self.inset) }
+    private var scale: CGFloat { min(max(1, area.width) / max(1, canvas.width), max(1, area.height) / max(1, canvas.height)) }
+    private var displayOrigin: CGPoint { CGPoint(x: area.minX + (area.width - canvas.width * scale) / 2, y: area.minY + (area.height - canvas.height * scale) / 2) }
     /// Da saída (píxeis do ficheiro) para a vista, e o contrário.
     func viewPoint(_ p: Point) -> CGPoint { CGPoint(x: displayOrigin.x + CGFloat(p.x) * scale, y: displayOrigin.y + CGFloat(p.y) * scale) }
     func canvasPoint(_ v: CGPoint) -> Point { Point(x: Double((v.x - displayOrigin.x) / scale), y: Double((v.y - displayOrigin.y) / scale)) }
