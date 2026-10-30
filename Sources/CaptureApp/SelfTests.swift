@@ -283,11 +283,13 @@ enum SelfTests {
 
     /// Desenha a janela principal para uma imagem (sem tocar no ecrã), no idioma efetivo.
     static func renderMain(to path: String, capture: URL, select: Int?, size: NSSize = NSSize(width: 1360, height: 820), panelHidden: Bool = false,
-                           clicks: [(Double, Double)] = [], toolScroll: [Double] = []) {
+                           clicks: [(Double, Double)] = [], toolScroll: [Double] = [], tool: Tool? = nil, canvasImage: Bool = false, editHold: Bool = false) {
         PanelLayout.shared.setWidthForTests(panelHidden ? 0 : PanelLayout.defaultWidth)
         let state = AppState.shared
         if capture.lastPathComponent != "none" { state.open(capture) }   // "none": ecrã vazio (sem captura aberta)
         if let n = select, let m = state.model, m.doc.ordered.indices.contains(n) { m.selection = m.doc.ordered[n].id; m.tool = .select }
+        if let tool, let m = state.model { m.tool = tool }
+        if canvasImage, let m = state.model { m.tool = .canvas; m.canvasTarget = .image }
         let host = NSHostingView(rootView: MainView(state: state))
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -314,6 +316,7 @@ enum SelfTests {
         }
         // Deslize das ferramentas chamado diretamente (a mesma função que as setas e a roda usam).
         for dx in toolScroll { ToolsScroll.current?.scroll(by: CGFloat(dx)); settle() }
+        if editHold { CanvasView.current?.debugHoldEditing(); settle() }
         host.display()   // 1.ª passagem: aplica as medidas (preferências) ao estado
         settle()
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
@@ -516,6 +519,138 @@ enum SelfTests {
         m.tool = .canvas
         canvas.debugMouse(at: Point(x: 2000, y: 2000))
         check(m.tool == .select, "clicar fora da área da Tela devia confirmar (ferramenta \(m.tool))")
+        return fails
+    }
+
+    // MARK: Rotação dos elementos e enquadramento da imagem (Tela → Imagem)
+
+    static func rotateSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir
+        let state = AppState.shared
+        // imagem 800×500: metade esquerda verde, direita branca (para ver a rotação da imagem)
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 800, pixelsHigh: 500, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 800, height: 500).fill()
+        NSColor.green.setFill(); NSRect(x: 0, y: 0, width: 400, height: 500).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        guard let url = try? CaptureStore.save(rep.cgImage!) else { return ["não criou a captura"] }
+        state.open(url)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        guard let m = state.model, let canvas = CanvasView.current else { return ["sem editor"] }
+        m.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        func export() -> NSBitmapImageRep? { m.exportPNG().flatMap { NSBitmapImageRep(data: $0) } }
+        func isRed(_ r: NSBitmapImageRep, _ x: Int, _ y: Int) -> Bool { guard let c = r.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return false }; return c.redComponent > 0.8 && c.greenComponent < 0.3 }
+        func isGreen(_ r: NSBitmapImageRep, _ x: Int, _ y: Int) -> Bool { guard let c = r.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return false }; return c.greenComponent > 0.8 && c.redComponent < 0.3 }
+        func isWhite(_ r: NSBitmapImageRep, _ x: Int, _ y: Int) -> Bool { guard let c = r.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return false }; return c.redComponent > 0.9 && c.greenComponent > 0.9 && c.blueComponent > 0.9 }
+
+        // 1) retângulo vermelho 200×60 centrado em (400,250), rodado 90°: fica vertical (200 de altura, 60 de largura)
+        var id = UUID()
+        m.perform { id = $0.add(.rect(origin: Point(x: 300, y: 220), width: 200, height: 60), style: Style(colorHex: "#FF0000", lineWidth: 2, fillHex: "#FF0000")).id }
+        m.selection = id; m.tool = .select
+        m.setRotation(90)
+        check(m.selected?.rotation == 90, "a rotação devia ficar em 90°")
+        if let r = export() {
+            check(isRed(r, 400, 330) && isRed(r, 400, 170), "rodado 90°, o retângulo devia ocupar (400,330) e (400,170)")
+            check(!isRed(r, 480, 250) && !isRed(r, 320, 250), "rodado 90°, (480,250) e (320,250) deviam ficar livres")
+        } else { fails.append("sem exportação") }
+        // 2) o toque segue a rotação
+        m.selection = nil
+        canvas.debugMouse(at: Point(x: 400, y: 330))
+        check(m.selection == id, "clicar no retângulo rodado devia selecioná-lo")
+        canvas.debugMouse(at: Point(x: 480, y: 250))
+        check(m.selection == nil, "clicar onde o retângulo já não está não devia selecionar")
+        // 3) a alça redonda roda o elemento: de 90° para 180° (alça arrastada para baixo do centro)
+        m.selection = id
+        if let a = m.selected {
+            let h = canvas.rotationHandlePoint(a)
+            check(abs(h.x - 400 - (30 + 22 / m.fitScale)) < 1 && abs(h.y - 250) < 1, "com 90° a alça devia estar à direita do centro (\(h))")
+            canvas.debugMouse(at: h, dragTo: Point(x: 400, y: 400))
+            check(m.selected?.rotation == 180, "arrastar a alça para baixo devia dar 180° (\(m.selected?.rotation ?? -1))")
+            canvas.debugMouse(at: canvas.rotationHandlePoint(m.selected!), dragTo: Point(x: 250, y: 100))   // ⌥: sem encostar
+            let free = m.selected?.rotation ?? 0
+            check(abs(free - (-45)) < 6, "a alça devia seguir o rato (\(free))")
+            m.undo(); m.undo()
+            check(m.selected?.rotation == 90, "desfazer devia repor 90°")
+        }
+        // 4) redimensionar rodado: a alça do canto oposto fica no sítio
+        if let a = m.selected {
+            let before = a.handlePoints[0], h2 = a.handlePoints[2]
+            canvas.debugMouse(at: h2, dragTo: Point(x: h2.x - 20, y: h2.y + 40))
+            let after = m.selected?.handlePoints[0] ?? Point(x: -1, y: -1)
+            check(abs(after.x - before.x) < 1 && abs(after.y - before.y) < 1, "o canto oposto não devia mexer (\(before) → \(after))")
+            check((m.selected?.shape.bounds.width ?? 0) > 200, "o retângulo devia ter crescido")
+            m.undo()
+        }
+        // 5) rotação guardada e relida
+        m.perform { _ in }
+        if let re = try? EditorModel(url: url) { check(re.doc.annotations.first { $0.id == id }?.rotation == 90, "a rotação devia ficar no ficheiro") }
+
+        // 6) Tela → Imagem: rodar a imagem 90° para a direita: a área passa a 500×800 e o verde (esquerda) vai para cima
+        m.tool = .canvas; m.canvasTarget = .image
+        m.rotateImage(by: 90)
+        check(m.imageRotation == 90, "a imagem devia estar a 90°")
+        check(abs(m.doc.area.width - 500) < 1 && abs(m.doc.area.height - 800) < 1, "a área devia seguir a imagem rodada (\(m.doc.area))")
+        if let r = export() {
+            check(r.pixelsWide == 500 && r.pixelsHigh == 800, "a exportação devia ter 500×800 (\(r.pixelsWide)×\(r.pixelsHigh))")
+            check(isGreen(r, 250, 100) && isWhite(r, 250, 700), "rodada para a direita, a metade verde devia ficar em cima")
+        }
+        m.undo()
+        check(m.imageIsNatural, "desfazer devia repor a imagem natural")
+        // 7) redimensionar pela alça do canto inferior direito, em proporção: 800×500 → 400×250
+        canvas.debugMouse(at: canvas.imageHandlePoints()[4], dragTo: Point(x: 400, y: 250))
+        let p = m.imagePlacement
+        check(abs(p.width - 400) < 1 && abs(p.height - 250) < 1 && abs(p.x) < 1 && abs(p.y) < 1, "em proporção devia ficar 400×250 na origem (\(p))")
+        check(abs(m.doc.area.width - 400) < 1, "a área devia seguir o tamanho da imagem (\(m.doc.area))")
+        m.undo()
+        // 8) com ⇧: livre (400×300)
+        canvas.debugMouse(at: canvas.imageHandlePoints()[4], dragTo: Point(x: 400, y: 300), shift: true)
+        let f = m.imagePlacement
+        check(abs(f.width - 400) < 1 && abs(f.height - 300) < 1, "com ⇧ devia ficar 400×300 (\(f))")
+        m.undo()
+        // 9) a alça de um lado muda só uma medida
+        canvas.debugMouse(at: canvas.imageHandlePoints()[3], dragTo: Point(x: 600, y: 250))
+        check(abs(m.imagePlacement.width - 600) < 1 && abs(m.imagePlacement.height - 500) < 1, "o lado direito devia mudar só a largura (\(m.imagePlacement))")
+        m.undo()
+        // 10) mover a imagem: arrastar de dentro
+        canvas.debugMouse(at: Point(x: 400, y: 250), dragTo: Point(x: 450, y: 280))
+        check(abs(m.imagePlacement.x - 50) < 1 && abs(m.imagePlacement.y - 30) < 1, "arrastar devia mover a imagem (\(m.imagePlacement))")
+        check(abs(m.doc.area.x - 50) < 1, "a área (sem área própria) devia acompanhar a imagem (\(m.doc.area))")
+        m.undo()
+        // 11) a alça redonda roda a imagem (encosta aos 90°)
+        canvas.debugMouse(at: canvas.imageRotationHandlePoint(), dragTo: Point(x: 900, y: 252))
+        check(m.imageRotation == 90, "a alça devia rodar a imagem para 90° (\(m.imageRotation))")
+        // 12) campos: tamanho em proporção e escala; restaurar
+        m.setImageSize(width: 200)
+        check(abs(m.imagePlacement.width - 200) < 1 && abs(m.imagePlacement.height - 125) < 1 && m.imageRotation == 90, "largura 200 em proporção devia dar 200×125 e manter a rotação (\(m.imagePlacement))")
+        m.keepImageAspect = false; m.setImageSize(height: 400); m.keepImageAspect = true
+        check(abs(m.imagePlacement.width - 200) < 1 && abs(m.imagePlacement.height - 400) < 1, "sem proporção, a altura muda sozinha (\(m.imagePlacement))")
+        m.setImageScale(0.5)
+        check(abs(m.imagePlacement.width - 400) < 1 && abs(m.imagePlacement.height - 250) < 1, "escala 50% devia dar 400×250")
+        m.resetImage()
+        check(m.imageIsNatural && m.doc.area == m.doc.naturalImageRect, "restaurar devia voltar ao natural")
+        // 13) só clicar na imagem (sem arrastar) não altera nada nem cria ponto de undo
+        let undos = m.canUndo
+        m.tool = .canvas; m.canvasTarget = .area
+        canvas.debugMouse(at: Point(x: 400, y: 250))
+        check(m.canvasTarget == .image && m.imageIsNatural, "clicar na imagem devia só passar a editá-la")
+        check(m.canUndo == undos, "um clique sem arrasto não devia criar um ponto de undo")
+        // 14) a imagem rodada entra no desenho dos efeitos sem falhar
+        m.tool = .select
+        var bid = UUID()
+        m.perform { bid = $0.add(.gaussian(origin: Point(x: 100, y: 100), width: 200, height: 100, intensity: 8)).id; $0.setImageFrame($0.naturalImageRect, rotation: 30) }
+        m.selection = bid; m.setRotation(20)
+        check(export() != nil, "exportar com imagem e blur rodados devia funcionar")
+        // 15) texto rodado (fica no ficheiro, para os testes visuais com --render-main … --edit-hold)
+        var tid = UUID()
+        m.perform { tid = $0.add(.textBox(origin: Point(x: 420, y: 320), width: 260, height: 60, string: "Texto rodado", fontSize: 28), style: Style(colorHex: "#1D4ED8", fillHex: "#FFFFFF")).id }
+        m.selection = tid; m.setRotation(-30)
+        check(export() != nil && m.selected?.rotation == -30, "texto rodado devia exportar")
+        m.selection = nil
+        print("ROTATE-CAPTURE: \(url.path)")
         return fails
     }
 

@@ -23,6 +23,41 @@ public struct Rect: Equatable, Sendable {
     }
 }
 
+/// Rotações e caixas envolventes (sem CoreGraphics).
+public enum Geometry {
+    /// Roda `p` à volta de `c` por `degrees` (sentido dos ponteiros do relógio, com o eixo y para baixo).
+    public static func rotate(_ p: Point, around c: Point, degrees: Double) -> Point {
+        guard degrees != 0 else { return p }
+        let a = degrees * .pi / 180
+        // múltiplos de 90° exatos (sem os restos de vírgula flutuante do seno/cosseno, que arredondariam as caixas para fora)
+        func clean(_ v: Double) -> Double { abs(v) < 1e-12 ? 0 : (abs(abs(v) - 1) < 1e-12 ? (v < 0 ? -1 : 1) : v) }
+        let s = clean(sin(a)), co = clean(cos(a))
+        let dx = p.x - c.x, dy = p.y - c.y
+        return Point(x: c.x + dx * co - dy * s, y: c.y + dx * s + dy * co)
+    }
+
+    /// Caixa envolvente de `r` rodado por `degrees` à volta do seu centro.
+    public static func boundingBox(of r: Rect, rotatedBy degrees: Double) -> Rect {
+        guard degrees != 0 else { return r }
+        let c = Point(x: r.x + r.width / 2, y: r.y + r.height / 2)
+        let pts = [Point(x: r.minX, y: r.minY), Point(x: r.maxX, y: r.minY), Point(x: r.maxX, y: r.maxY), Point(x: r.minX, y: r.maxY)]
+            .map { rotate($0, around: c, degrees: degrees) }
+        let x0 = pts.map(\.x).min()!, x1 = pts.map(\.x).max()!, y0 = pts.map(\.y).min()!, y1 = pts.map(\.y).max()!
+        return Rect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+    }
+
+    /// Graus no intervalo (-180, 180], com os valores quase inteiros arredondados.
+    public static func normalizedDegrees(_ d: Double) -> Double {
+        var v = d.truncatingRemainder(dividingBy: 360)
+        if v <= -180 { v += 360 } else if v > 180 { v -= 360 }
+        let r = v.rounded()
+        return abs(v - r) < 1e-9 ? (r == -0 ? 0 : r) : v
+    }
+
+    /// Ângulo (graus) do ponto `p` visto do centro `c`, com 0° para a direita e 90° para baixo.
+    public static func degrees(from c: Point, to p: Point) -> Double { atan2(p.y - c.y, p.x - c.x) * 180 / .pi }
+}
+
 public extension Shape {
     /// Nome para mostrar na lista de camadas.
     var isCallout: Bool { if case .callout = self { return true }; return false }
@@ -125,6 +160,23 @@ public extension Shape {
             return Rect(x: min(o.x, o.x + w), y: min(o.y, o.y + h), width: abs(w), height: abs(h))
         }
         return nil
+    }
+
+    /// A caixa do corpo da forma: no balão é a caixa sem o ponteiro; nas outras é `bounds`.
+    var bodyBounds: Rect { calloutBox ?? bounds }
+
+    /// Centro à volta do qual a forma roda.
+    var rotationCenter: Point { let b = bodyBounds; return Point(x: b.x + b.width / 2, y: b.y + b.height / 2) }
+
+    /// O ponto da forma que não se mexe ao arrastar a alça `index` (o canto oposto, a outra ponta); `nil` se não há.
+    func fixedPoint(forHandle index: Int) -> Point? {
+        let h = handles
+        switch self {
+        case .arrow, .line: return h.indices.contains(1 - index) ? h[1 - index] : nil
+        case .callout: return index < 4 && h.count >= 4 ? h[(index + 2) % 4] : nil
+        case .text: return nil
+        default: return h.count >= 4 && h.indices.contains(index) ? h[(index + 2) % 4] : nil
+        }
     }
 
     /// Caixa envolvente aproximada, em coordenadas da imagem.
@@ -267,7 +319,49 @@ extension Rect {
 public extension CaptureDocument {
     /// Anotação mais acima que toca no ponto.
     func topmost(at p: Point, tolerance: Double) -> Annotation? {
-        ordered.last { $0.visible && $0.shape.hits(p, tolerance: tolerance) }
+        ordered.last { $0.visible && $0.hits(p, tolerance: tolerance) }
+    }
+}
+
+public extension Annotation {
+    /// Do documento para o referencial da forma (desfaz a rotação).
+    func toLocal(_ p: Point) -> Point { Geometry.rotate(p, around: shape.rotationCenter, degrees: -rotation) }
+    /// Do referencial da forma para o documento (aplica a rotação).
+    func toWorld(_ p: Point) -> Point { Geometry.rotate(p, around: shape.rotationCenter, degrees: rotation) }
+
+    /// `true` se o ponto (do documento) toca na forma rodada.
+    func hits(_ p: Point, tolerance t: Double) -> Bool { shape.hits(toLocal(p), tolerance: t) }
+
+    /// Alças no documento (já rodadas).
+    var handlePoints: [Point] { shape.handles.map(toWorld) }
+
+    func handle(at p: Point, tolerance t: Double) -> Int? {
+        let q = toLocal(p)
+        return shape.handle(at: q, tolerance: t)
+    }
+
+    /// Move a alça `index` para o ponto `p` do documento. Com rotação, o canto oposto (ou a outra ponta) fica no mesmo sítio
+    /// do documento, como se espera ao redimensionar um objeto rodado.
+    func movingHandle(_ index: Int, to p: Point) -> Annotation {
+        var out = self
+        let local = toLocal(p)
+        let before = shape.fixedPoint(forHandle: index).map(toWorld)
+        out.shape = shape.movingHandle(index, to: local)
+        if rotation != 0, let fixed = shape.fixedPoint(forHandle: index), let before {
+            let after = out.toWorld(fixed)
+            out.shape = out.shape.translated(dx: before.x - after.x, dy: before.y - after.y)
+        }
+        return out
+    }
+
+    /// Caixa envolvente no documento, com a rotação e a espessura da linha.
+    var worldBounds: Rect {
+        guard rotation != 0 else { return paintBounds }
+        let b = paintBounds, c = shape.rotationCenter
+        let pts = [Point(x: b.minX, y: b.minY), Point(x: b.maxX, y: b.minY), Point(x: b.maxX, y: b.maxY), Point(x: b.minX, y: b.maxY)]
+            .map { Geometry.rotate($0, around: c, degrees: rotation) }
+        let x0 = pts.map(\.x).min()!, x1 = pts.map(\.x).max()!, y0 = pts.map(\.y).min()!, y1 = pts.map(\.y).max()!
+        return Rect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
     }
 }
 

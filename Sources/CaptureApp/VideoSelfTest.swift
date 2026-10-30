@@ -397,7 +397,7 @@ enum VideoEditSelfTest {
 
     /// Lê a composição do editor (com os espaços a preto) e o áudio de cada linha.
     static func decode(_ model: VideoEditorModel) async -> Decoded {
-        guard let (comp, _, vc) = try? await VideoComposer.build(timeline: model.timeline, tracks: model.trackMap, mediaLength: model.mediaLengths, enabled: model.enabled) else { return Decoded() }
+        guard let (comp, _, vc) = try? await VideoComposer.build(timeline: model.timeline, tracks: model.trackMap, mediaLength: model.mediaLengths, enabled: model.enabled, renderSize: model.outputSize) else { return Decoded() }
         var d = await decodeAsset(comp, videoComposition: vc)
         // áudio por linha (as faixas da composição seguem a ordem das linhas)
         let lanes = model.timeline.tracks.filter { $0 != .video && !model.timeline.clips($0).isEmpty && model.enabled.contains($0) }
@@ -590,6 +590,25 @@ enum VideoEditSelfTest {
             await model.cut(join: true)
             check(!model.timeline.isEdited && model.message != nil, "cortar tudo devia ser recusado com aviso")
             model.selection = nil
+
+            // 11) tamanho de saída: em proporção (largura 160 → 160×90), livre (160×60), e guardar sai com esse tamanho; fica na edição
+            check(model.sourceSize == CGSize(width: 320, height: 180), "tamanho natural \(model.sourceSize)")
+            await model.setOutputSize(width: 160)
+            check(model.outputSize == CGSize(width: 160, height: 90), "largura 160 em proporção devia dar 160×90 (\(String(describing: model.outputSize)))")
+            model.outputKeepAspect = false
+            await model.setOutputSize(height: 60)
+            check(model.outputSize == CGSize(width: 160, height: 60), "sem proporção devia dar 160×60 (\(String(describing: model.outputSize)))")
+            let small = try await model.exportEdited()
+            if let vt = try? await AVURLAsset(url: small).loadTracks(withMediaType: .video).first, let n = try? await vt.load(.naturalSize) {
+                check(n == CGSize(width: 160, height: 60), "o ficheiro guardado devia ter 160×60 (\(n))")
+            } else { fails.append("sem vídeo no ficheiro redimensionado") }
+            let d11 = await decode(model)
+            check(abs(blue(d11, near: 2.5) - 80) < 25, "redimensionado, a cor do meio aos 2,5 s devia manter-se (\(blue(d11, near: 2.5)))")
+            let reopened = VideoEditorModel(url: url); await reopened.load()
+            check(reopened.outputSize == CGSize(width: 160, height: 60), "o tamanho devia ficar guardado com a edição (\(String(describing: reopened.outputSize)))")
+            reopened.tearDown()
+            await model.resetOutputSize()
+            check(model.outputSize == nil, "«Original» devia limpar o tamanho")
             model.tearDown()
         } catch { fails.append("exceção: \(error)") }
         fails += await gestures(dir: dir)

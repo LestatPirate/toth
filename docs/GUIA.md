@@ -17,6 +17,7 @@
 - **Quebra** (tecla B, ícone, ou botão direito): divide o clipe em dois blocos sem cortar nada.
 - **Por linha:** a marcação, o corte, a cópia e o movimento aplicam-se só à linha escolhida. O **olho** inclui ou **suprime** a linha no resultado (também na reprodução e ao guardar) e o **cadeado** protege-a de alterações.
 - **Zoom** da linha de tempo (lupas, + − 0, pinça ou ⌘+roda) e deslocamento horizontal.
+- **Tamanho do vídeo** (botão na barra): largura e altura em proporção ou livres, 25/50/75 % ou original. Aplica-se à reprodução e ao ficheiro guardado.
 - Edição **não destrutiva** (o vídeo original não muda), com **desfazer/refazer** e memória ao reabrir. **Guardar** cria um MP4 novo, com o áudio misturado numa só faixa.
 - **Ecrã inteiro** pelo menu da barra de menus.
 - **Imagem nova**, para além das capturas: **em branco** (tamanho, cor de fundo ou transparente) ou **a partir da área de transferência** (botão *Novo*, menu *Ficheiro*; ⌘N e ⇧⌘N).
@@ -28,7 +29,8 @@
 - **Cores da linha e do preenchimento** à escolha, espessura, opacidade e sombra.
 - **Etapas numeradas** (1, 2, 3 · I, II, III · i, ii, iii · A, B, C · a, b, c), com cor do círculo e do número, fonte e **reinício da sequência**. **Redimensionam-se pelos cantos mantendo a proporção** (ou pelo controlo *Tamanho*), e o número ou a letra acompanha a escala e fica sempre centrado; o último tamanho usado é lembrado.
 - **Blur e Pixelização** com intensidade ajustável, para ocultar informação sensível. Atuam sobre **tudo o que está por baixo**: a imagem e também os objetos inseridos em camadas inferiores (um objeto por cima do efeito continua nítido).
-- **Área de trabalho (Tela):** aumente ou diminua a imagem, com cor de fundo ou transparente; **expande-se sozinha** quando um elemento sai da área.
+- **Área de trabalho (Tela):** aumente ou diminua a imagem, com cor de fundo ou transparente; **expande-se sozinha** quando um elemento sai da área. Na Tela, clique na **imagem** (ou escolha «Imagem» no painel) para a **mover, redimensionar** (em proporção pelos cantos, ⇧ para livre, ou só uma medida pelos lados) e **rodar** (alça redonda ou ±90° no painel). A imagem original nunca é alterada e «Restaurar original» volta atrás.
+- **Rodar qualquer elemento:** com o elemento selecionado, arraste a alça redonda acima dele (encosta aos 15°; ⌥ liberta) ou use a rotação no painel (deslizador, graus, ±90°, Endireitar).
 - **Camadas:** ordem, ocultar, remover. Qualquer elemento pode ser removido ou editado **mais tarde**, mesmo depois de fechar e reabrir.
 - **Copiar, colar, duplicar**; cola **imagens e texto de outras apps**. Desfazer/refazer, zoom e deslocamento.
 - **Seleção rápida:** com uma ferramenta de desenho ativa, **clicar** num objeto existente seleciona-o e mostra as opções desse objeto; **arrastar** continua a desenhar um novo (por exemplo, uma seta a partir de uma caixa). **⌥ + clique** força a criação por cima de um objeto (útil para as etapas).
@@ -67,6 +69,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - **Break** (B key, icon, or right-click): splits a clip into two blocks without cutting anything.
 - **Per lane:** marking, cutting, copying and moving apply only to the chosen lane. The **eye** includes or **mutes/hides** a lane in the result (in playback and when saving) and the **lock** protects it from changes.
 - **Timeline zoom** (magnifier buttons, + − 0, pinch or ⌘+wheel) and horizontal panning.
+- **Video size** (toolbar button): width and height, proportional or free, 25/50/75 % or original. It applies to playback and to the saved file.
 - **Non-destructive** editing (the original video never changes), with **undo/redo** and memory on reopening. **Save** creates a new MP4 with the audio mixed into a single track.
 - **Full-screen capture** from the menu bar.
 - **New images** besides captures: **blank** (size, background color or transparent) or **from the clipboard** (*New* button, *File* menu; ⌘N and ⇧⌘N).
@@ -78,7 +81,8 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - Your choice of **line and fill colors**, thickness, opacity and shadow.
 - **Numbered steps** (1, 2, 3 · I, II, III · i, ii, iii · A, B, C · a, b, c), with circle and number colors, font, and **sequence restart**. They **resize by their corners keeping the proportions** (or with the *Size* control), and the number or letter scales along and stays centered; the last size used is remembered.
 - **Blur and Pixelate** with adjustable strength, to hide sensitive information. They act on **everything beneath them**: the image and also objects on lower layers (an object above the effect stays sharp).
-- **Work area (Canvas):** enlarge or shrink the image, with a background color or transparent; it **expands automatically** when an element goes outside the area.
+- **Work area (Canvas):** enlarge or shrink the image, with a background color or transparent; it **expands automatically** when an element goes outside the area. In Canvas, click the **image** (or choose “Image” in the panel) to **move, resize** (proportionally by the corners, ⇧ for free, or one dimension by the sides) and **rotate** it (round handle or ±90° in the panel). The original image is never altered and “Restore original” goes back.
+- **Rotate any element:** with the element selected, drag the round handle above it (snaps to 15°; ⌥ frees it) or use the rotation in the panel (slider, degrees, ±90°, Straighten).
 - **Layers:** order, hide, remove. Any element can be removed or edited **later**, even after closing and reopening.
 - **Copy, paste, duplicate**; pastes **images and text from other apps**. Undo/redo, zoom and pan.
 - **Quick selection:** with a drawing tool active, **clicking** an existing object selects it and shows its options; **dragging** keeps drawing a new one (for example an arrow from a box). **⌥ + click** forces creation on top of an object (handy for steps).

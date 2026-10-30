@@ -30,11 +30,18 @@ enum Tool: String, CaseIterable, Identifiable {
     }
 }
 
+/// Na ferramenta Tela: o que as alças editam.
+enum CanvasTarget { case area, image }
+
 @MainActor
 final class EditorModel: ObservableObject {
     @Published private(set) var doc: CaptureDocument
     @Published var tool: Tool = .arrow
     @Published var selection: UUID?
+    /// Na Tela: a área de trabalho (alças azuis) ou a imagem original (mover, redimensionar, rodar).
+    @Published var canvasTarget: CanvasTarget = .area
+    /// Ao redimensionar a imagem pelos cantos, manter a proporção (⇧ inverte).
+    @Published var keepImageAspect = true
     /// Estilo da ferramenta atual: o último que o utilizador usou (guardado entre sessões, ver `ToolDefaults`).
     var style: Style {
         get { ToolDefaults.shared.style(for: tool) }
@@ -226,6 +233,53 @@ final class EditorModel: ObservableObject {
     }
 
     func resetArea() { perform { $0.workArea = nil } }
+
+    // MARK: Enquadramento da imagem (Tela → Imagem)
+
+    var imagePlacement: Rect { doc.imagePlacement }
+    var imageRotation: Double { doc.imageRotation }
+    var imageIsNatural: Bool { doc.imageFrame == nil }
+
+    /// Altera o enquadramento durante um gesto (sem ponto de undo; usar com checkpoint()/commit()). Devolve se a área mudou.
+    @discardableResult
+    func setImageFrameLive(_ r: Rect, rotation: Double) -> Bool {
+        var changed = false
+        mutate { $0.setImageFrame(r, rotation: rotation); changed = $0.expandAreaToFitImage() }
+        return changed
+    }
+
+    /// Tamanho da imagem (mantém o canto superior esquerdo do enquadramento). Com `keepAspect`, a outra medida acompanha.
+    func setImageSize(width: Double? = nil, height: Double? = nil) {
+        let p = doc.imagePlacement, ratio = doc.canvasWidth / max(1, doc.canvasHeight)
+        var w = p.width, h = p.height
+        if let width { w = max(8, width.rounded()); if keepImageAspect { h = max(8, (w / ratio).rounded()) } }
+        if let height { h = max(8, height.rounded()); if keepImageAspect { w = max(8, (h * ratio).rounded()) } }
+        perform { $0.setImageFrame(Rect(x: p.x, y: p.y, width: w, height: h), rotation: $0.imageRotation); _ = $0.expandAreaToFitImage() }
+    }
+
+    /// Escala da imagem face ao natural (1 = tamanho natural), pela largura.
+    var imageScale: Double { doc.imagePlacement.width / max(1, doc.canvasWidth) }
+    func setImageScale(_ k: Double) {
+        let p = doc.imagePlacement
+        perform { $0.setImageFrame(Rect(x: p.x, y: p.y, width: $0.canvasWidth * k, height: $0.canvasHeight * k), rotation: $0.imageRotation); _ = $0.expandAreaToFitImage() }
+    }
+
+    func setImageRotation(_ d: Double) {
+        perform { $0.setImageFrame($0.imagePlacement, rotation: d); _ = $0.expandAreaToFitImage() }
+    }
+    func rotateImage(by d: Double) { setImageRotation(doc.imageRotation + d) }
+    func resetImage() { perform { $0.imageFrame = nil } }
+
+    // MARK: Rotação dos elementos
+
+    var currentRotation: Double { selected?.rotation ?? 0 }
+
+    func setRotation(_ d: Double) {
+        guard var a = selected else { return }
+        a.rotation = Geometry.normalizedDegrees(d)
+        perform { $0.update(a); _ = $0.expandAreaToFit(ids: [a.id]) }
+    }
+    func rotateSelection(by d: Double) { if let a = selected { setRotation(a.rotation + d) } }
     func fitAreaToContent() { perform { $0.fitAreaToContent() } }
     func setAutoExpand(_ on: Bool) { perform { $0.autoExpand = on } }
     func setBackground(hex: String) { perform { $0.backgroundHex = hex } }

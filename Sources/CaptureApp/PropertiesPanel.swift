@@ -64,6 +64,57 @@ struct PropertiesPanel: View {
         Binding(get: { Color(nsColor: NSColor(hex: model.doc.backgroundHex)) }, set: { model.setBackground(hex: NSColor($0).hexString) })
     }
 
+    // Imagem (Tela → Imagem)
+    private var canvasTarget: Binding<CanvasTarget> { Binding(get: { model.canvasTarget }, set: { model.canvasTarget = $0 }) }
+    private var keepAspect: Binding<Bool> { Binding(get: { model.keepImageAspect }, set: { model.keepImageAspect = $0 }) }
+    private var imageWidth: Binding<Double> { Binding(get: { model.imagePlacement.width.rounded() }, set: { model.setImageSize(width: $0) }) }
+    private var imageHeight: Binding<Double> { Binding(get: { model.imagePlacement.height.rounded() }, set: { model.setImageSize(height: $0) }) }
+    private var imageScale: Binding<Double> { Binding(get: { model.imageScale * 100 }, set: { model.setImageScale(max(1, $0) / 100) }) }
+    private var imageRotation: Binding<Double> { Binding(get: { model.imageRotation }, set: { model.setImageRotation($0) }) }
+    private var rotation: Binding<Double> { Binding(get: { model.currentRotation }, set: { model.setRotation($0) }) }
+
+    private var imageSection: some View {
+        section(L("Imagem")) {
+            row(L("Largura")) {
+                TextField("", value: imageWidth, format: .number.grouping(.never)).frame(width: 70).multilineTextAlignment(.trailing)
+                Text("px").font(.caption).foregroundStyle(.secondary)
+            }
+            row(L("Altura")) {
+                TextField("", value: imageHeight, format: .number.grouping(.never)).frame(width: 70).multilineTextAlignment(.trailing)
+                Text("px").font(.caption).foregroundStyle(.secondary)
+            }
+            row(L("Manter proporção")) { Toggle("", isOn: keepAspect).labelsHidden() }
+            row(L("Escala")) {
+                TextField("", value: imageScale, format: .number.precision(.fractionLength(0))).frame(width: 60).multilineTextAlignment(.trailing)
+                Text("%").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 4) {
+                ForEach([25, 50, 75, 100], id: \.self) { k in Button("\(k)%") { model.setImageScale(Double(k) / 100) } }
+            }.controlSize(.small)
+            rotationRow(imageRotation, rotate: { model.rotateImage(by: $0) })
+            Text(L("Arraste a imagem para a mover, os cantos para a redimensionar (⇧ inverte «manter proporção»; os lados mudam só uma medida) e a alça redonda para a rodar. A imagem original nunca é alterada."))
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button(L("Restaurar original")) { model.resetImage() }.controlSize(.small).disabled(model.imageIsNatural)
+        }
+    }
+
+    /// Rotação em graus: deslizador, campo e rodar 90° para cada lado.
+    private func rotationRow(_ value: Binding<Double>, rotate: @escaping (Double) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(L("Rotação")).font(.system(size: 12)); Spacer()
+                TextField("", value: value, format: .number.precision(.fractionLength(0...1))).frame(width: 56).multilineTextAlignment(.trailing)
+                Text("°").font(.caption).foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: -180...180)
+            HStack(spacing: 4) {
+                Button { rotate(-90) } label: { Image(systemName: "rotate.left") }.help(L("Rodar 90° para a esquerda"))
+                Button { rotate(90) } label: { Image(systemName: "rotate.right") }.help(L("Rodar 90° para a direita"))
+                Button(L("Endireitar")) { value.wrappedValue = 0 }.disabled(value.wrappedValue == 0)
+            }.controlSize(.small)
+        }
+    }
+
     private var areaSection: some View {
         section(L("Área de trabalho")) {
             row(L("Largura")) {
@@ -162,7 +213,14 @@ struct PropertiesPanel: View {
                 Text(model.selected.map { L($0.shape.kindName) } ?? (model.tool == .canvas ? L("Área de trabalho") : L("Padrão para novos elementos")))
                     .font(.caption).foregroundStyle(.secondary)
 
-                if showArea { areaSection }
+                if model.tool == .canvas {
+                    Picker("", selection: canvasTarget) {
+                        Text(L("Área de trabalho")).tag(CanvasTarget.area)
+                        Text(L("Imagem")).tag(CanvasTarget.image)
+                    }.pickerStyle(.segmented).labelsHidden()
+                }
+                if showArea && !(model.tool == .canvas && model.canvasTarget == .image) { areaSection }
+                if model.tool == .canvas && model.canvasTarget == .image { imageSection }
                 if hasLine {
                     section(L("Linha")) {
                         row(L("Cor")) {
@@ -197,6 +255,8 @@ struct PropertiesPanel: View {
                     slider(L("Opacidade"), value: opacity, range: 0.1...1, format: "%.0f%%", scale: 100)
                     row(L("Sombra")) { Toggle("", isOn: shadow).labelsHidden() }
                     if let sel = model.selected {
+                        rotationRow(rotation, rotate: { model.rotateSelection(by: $0) })
+                        Text(L("Arraste a alça redonda acima do elemento para o rodar (encosta aos 15°; ⌥ liberta).")).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         HStack {
                             Button(L("Trazer para frente")) { model.bringToFront(sel.id) }
                             Button(L("Enviar para trás")) { model.sendToBack(sel.id) }

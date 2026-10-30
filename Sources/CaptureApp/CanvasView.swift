@@ -38,6 +38,12 @@ final class CanvasView: NSView {
     private var resizing: Int?
     private var lastPoint: Point?
     private var areaDrag: (handle: Int, original: Rect)?
+    /// Gesto sobre a imagem original (Tela → Imagem): mover, redimensionar por uma alça, ou rodar.
+    private enum ImageDrag { case move, resize(handle: Int, original: Rect, rotation: Double), rotate }
+    private var imageDrag: ImageDrag?
+    /// A rodar o elemento selecionado pela alça redonda.
+    private var rotating = false
+    private var gestureMoved = false
     /// Objeto existente sob o rato quando se começou a desenhar: se for só um clique (sem arrastar), seleciona-se esse objeto.
     private var clickCandidate: UUID?
 
@@ -107,11 +113,24 @@ final class CanvasView: NSView {
         Renderer.draw(model.doc, base: model.base, in: ctx, selected: model.selection, editing: editingID, assets: model.assets)
         if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }) {
             let side = 9 / scale
-            for h in sel.shape.handles {
+            for h in sel.handlePoints {
                 let r = CGRect(x: h.x - side / 2, y: h.y - side / 2, width: side, height: side)
                 ctx.setFillColor(NSColor.white.cgColor); ctx.fill(r)
                 ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1.5 / scale); ctx.stroke(r)
             }
+            drawRotationHandle(at: rotationHandlePoint(sel), from: sel.toWorld(topCenter(sel.shape.bodyBounds)), color: .systemBlue, ctx)
+        }
+        if model.tool == .canvas && model.canvasTarget == .image {
+            // a imagem original: contorno (rodado), 8 alças e a alça de rotação
+            ctx.setStrokeColor(NSColor.systemOrange.cgColor); ctx.setLineWidth(1.5 / scale)
+            ctx.addPath(Renderer.rotatedPath(model.imagePlacement.cg, degrees: model.imageRotation)); ctx.strokePath()
+            let side = 10 / scale
+            for h in imageHandlePoints() {
+                let r = CGRect(x: h.x - side / 2, y: h.y - side / 2, width: side, height: side)
+                ctx.setFillColor(NSColor.white.cgColor); ctx.fill(r)
+                ctx.setStrokeColor(NSColor.systemOrange.cgColor); ctx.setLineWidth(1.5 / scale); ctx.stroke(r)
+            }
+            drawRotationHandle(at: imageRotationHandlePoint(), from: imageWorld(topCenter(model.imagePlacement)), color: .systemOrange, ctx)
         }
         ctx.restoreGState()
 
@@ -124,12 +143,104 @@ final class CanvasView: NSView {
         }
         if model.tool == .canvas {
             ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1.5); ctx.stroke(areaView)
-            for h in areaHandles() {
+            if model.canvasTarget == .area { for h in areaHandles() {
                 let r = CGRect(x: h.x - 5, y: h.y - 5, width: 10, height: 10)
                 ctx.setFillColor(NSColor.white.cgColor); ctx.fill(r)
                 ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1.5); ctx.stroke(r)
-            }
+            } }
         }
+    }
+
+    // MARK: Rotação (alça redonda acima do objeto, que roda com ele)
+
+    private var rotationHandleGap: Double { 22 / Double(scale) }
+    private func topCenter(_ b: Rect) -> Point { Point(x: b.x + b.width / 2, y: b.y) }
+    /// Onde está a alça de rotação do elemento (coordenadas do documento).
+    func rotationHandlePoint(_ a: Annotation) -> Point {
+        let b = a.shape.bodyBounds
+        return a.toWorld(Point(x: b.x + b.width / 2, y: b.y - rotationHandleGap))
+    }
+    private func drawRotationHandle(at p: Point, from base: Point, color: NSColor, _ ctx: CGContext) {
+        let r = 5.5 / scale
+        ctx.setStrokeColor(color.cgColor); ctx.setLineWidth(1 / scale)
+        ctx.move(to: CGPoint(x: base.x, y: base.y)); ctx.addLine(to: CGPoint(x: p.x, y: p.y)); ctx.strokePath()
+        let circle = CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)
+        ctx.setFillColor(NSColor.white.cgColor); ctx.fillEllipse(in: circle)
+        ctx.setStrokeColor(color.cgColor); ctx.setLineWidth(1.5 / scale); ctx.strokeEllipse(in: circle)
+    }
+    /// Ângulo para o rato em `p` visto de `center`: a alça fica em cima (−90°) quando a rotação é 0. Sem ⌥, encosta aos
+    /// múltiplos de 15° (até 3° de distância).
+    private func rotationAngle(center: Point, to p: Point, free: Bool) -> Double {
+        let d = Geometry.normalizedDegrees(Geometry.degrees(from: center, to: p) + 90)
+        if free { return d }
+        let snapped = (d / 15).rounded() * 15
+        return abs(d - snapped) <= 3 ? Geometry.normalizedDegrees(snapped) : d
+    }
+
+    // MARK: Imagem original (Tela → Imagem)
+
+    private func imageWorld(_ p: Point) -> Point {
+        let r = model.imagePlacement
+        return Geometry.rotate(p, around: Point(x: r.x + r.width / 2, y: r.y + r.height / 2), degrees: model.imageRotation)
+    }
+    private func imageLocal(_ p: Point, placement r: Rect, rotation: Double) -> Point {
+        Geometry.rotate(p, around: Point(x: r.x + r.width / 2, y: r.y + r.height / 2), degrees: -rotation)
+    }
+    private static func eightHandles(_ r: Rect) -> [Point] {
+        [Point(x: r.minX, y: r.minY), Point(x: r.minX + r.width / 2, y: r.minY), Point(x: r.maxX, y: r.minY),
+         Point(x: r.maxX, y: r.minY + r.height / 2), Point(x: r.maxX, y: r.maxY), Point(x: r.minX + r.width / 2, y: r.maxY),
+         Point(x: r.minX, y: r.maxY), Point(x: r.minX, y: r.minY + r.height / 2)]
+    }
+    /// 8 alças da imagem no documento (já rodadas): tl, t, tr, r, br, b, bl, l.
+    func imageHandlePoints() -> [Point] { Self.eightHandles(model.imagePlacement).map(imageWorld) }
+    func imageRotationHandlePoint() -> Point { let r = model.imagePlacement; return imageWorld(Point(x: r.x + r.width / 2, y: r.y - rotationHandleGap)) }
+    private func imageHandle(at p: Point) -> Int? {
+        let t = 9 / Double(scale)
+        return imageHandlePoints().firstIndex { abs($0.x - p.x) <= t && abs($0.y - p.y) <= t }
+    }
+    private func hitsImage(_ p: Point) -> Bool {
+        model.imagePlacement.contains(imageLocal(p, placement: model.imagePlacement, rotation: model.imageRotation))
+    }
+    private func near(_ a: Point, _ b: Point) -> Bool { let t = 8 / Double(scale); return abs(a.x - b.x) <= t && abs(a.y - b.y) <= t }
+
+    /// Enquadramento depois de arrastar a alça `h` até `p` (ambos no referencial da imagem, sem rotação). Nos cantos mantém
+    /// a proporção se `keepAspect`; nos lados muda só uma medida. O lado/canto oposto fica fixo.
+    private func resizedImage(_ r: Rect, handle h: Int, to p: Point, keepAspect: Bool) -> Rect {
+        var x0 = r.minX, y0 = r.minY, x1 = r.maxX, y1 = r.maxY
+        let isCorner = [0, 2, 4, 6].contains(h)
+        if isCorner && keepAspect {
+            let ratio = r.width / max(1, r.height)
+            let fx = [0, 6].contains(h) ? x1 : x0, fy = [0, 2].contains(h) ? y1 : y0     // canto fixo
+            // o tamanho segue a projeção do rato na diagonal (como nas apps de desenho): o canto acompanha o rato ao longo dela
+            let sx: Double = [0, 6].contains(h) ? -1 : 1, sy: Double = [0, 2].contains(h) ? -1 : 1
+            let k = ((p.x - fx) * sx * r.width + (p.y - fy) * sy * r.height) / max(1, r.width * r.width + r.height * r.height)
+            let w2 = max(8, k * r.width), h2 = max(8, w2 / ratio)
+            if [0, 6].contains(h) { x0 = fx - w2 } else { x1 = fx + w2 }
+            if [0, 2].contains(h) { y0 = fy - h2 } else { y1 = fy + h2 }
+            return Rect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+        }
+        if [0, 6, 7].contains(h) { x0 = min(p.x, x1 - 8) }
+        if [2, 3, 4].contains(h) { x1 = max(p.x, x0 + 8) }
+        if [0, 1, 2].contains(h) { y0 = min(p.y, y1 - 8) }
+        if [4, 5, 6].contains(h) { y1 = max(p.y, y0 + 8) }
+        return Rect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+    }
+
+    /// Aplica o arrasto da alça `h` da imagem até ao ponto `p` do documento, mantendo fixo no documento o lado/canto oposto.
+    private func dragImageHandle(_ h: Int, original r: Rect, rotation: Double, to p: Point, keepAspect: Bool) {
+        let local = imageLocal(p, placement: r, rotation: rotation)
+        var next = resizedImage(r, handle: h, to: local, keepAspect: keepAspect)
+        if rotation != 0 {
+            let fixed = Self.eightHandles(r)[(h + 4) % 8]
+            let before = Geometry.rotate(fixed, around: Point(x: r.x + r.width / 2, y: r.y + r.height / 2), degrees: rotation)
+            let fixedNow = Self.eightHandles(next)[(h + 4) % 8]
+            let after = Geometry.rotate(fixedNow, around: Point(x: next.x + next.width / 2, y: next.y + next.height / 2), degrees: rotation)
+            next = Rect(x: next.x + before.x - after.x, y: next.y + before.y - after.y, width: next.width, height: next.height)
+        }
+        let old = origin
+        model.setImageFrameLive(next, rotation: rotation)
+        keepOrigin(old)
+        areaChangedInGesture = true
     }
 
     /// Xadrez para fundo transparente (só na vista; a exportação fica realmente transparente).
@@ -210,15 +321,15 @@ final class CanvasView: NSView {
         window?.makeFirstResponder(self)
         let p = imagePoint(event)
         dragStart = p; lastPoint = p; creating = nil; moving = false; resizing = nil; areaDrag = nil; clickCandidate = nil
+        imageDrag = nil; rotating = false; gestureMoved = false
         fitAtGestureStart = false; areaChangedInGesture = false
         let tol = 6 / Double(scale)
 
         switch model.tool {
         case .select:
-            if let id = model.selection, let a = model.doc.annotations.first(where: { $0.id == id }),
-               let h = a.shape.handle(at: p, tolerance: 8 / Double(scale)) {
-                model.checkpoint(); resizing = h
-                return
+            if let id = model.selection, let a = model.doc.annotations.first(where: { $0.id == id }) {
+                if near(p, rotationHandlePoint(a)) { model.checkpoint(); rotating = true; return }
+                if let h = a.handle(at: p, tolerance: 8 / Double(scale)) { model.checkpoint(); resizing = h; return }
             }
             let hit = model.doc.topmost(at: p, tolerance: tol)
             model.selection = hit?.id
@@ -235,10 +346,21 @@ final class CanvasView: NSView {
                 model.addStep(at: p)
             }
         case .canvas:
-            if let h = areaHandle(at: convert(event.locationInWindow, from: nil)) {
+            let vp = convert(event.locationInWindow, from: nil)
+            if model.canvasTarget == .image {
+                if near(p, imageRotationHandlePoint()) { model.checkpoint(); freezeViewIfFit(); imageDrag = .rotate; return }
+                if let h = imageHandle(at: p) { model.checkpoint(); freezeViewIfFit(); imageDrag = .resize(handle: h, original: model.imagePlacement, rotation: model.imageRotation); return }
+                if hitsImage(p) { model.checkpoint(); freezeViewIfFit(); imageDrag = .move; return }
+                if viewRect(area).insetBy(dx: -9, dy: -9).contains(vp) { model.canvasTarget = .area; needsDisplay = true; return }
+                model.tool = .select; return   // clique fora da área = confirma
+            }
+            if let h = areaHandle(at: vp) {
                 model.checkpoint(); freezeViewIfFit()
                 areaDrag = (h, model.doc.area)
-            } else if !viewRect(area).insetBy(dx: -9, dy: -9).contains(convert(event.locationInWindow, from: nil)) {
+            } else if hitsImage(p) {
+                // clicar na imagem passa a editá-la (e já dá para a arrastar)
+                model.canvasTarget = .image; model.checkpoint(); freezeViewIfFit(); imageDrag = .move
+            } else if !viewRect(area).insetBy(dx: -9, dy: -9).contains(vp) {
                 model.tool = .select   // clique fora da área = confirma
             }
         default:
@@ -256,6 +378,34 @@ final class CanvasView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         let p = imagePoint(event)
+        if let start = dragStart, hypot((p.x - start.x) * Double(scale), (p.y - start.y) * Double(scale)) >= 3 { gestureMoved = true }
+        if let drag = imageDrag {
+            let free = event.modifierFlags.contains(.option)
+            switch drag {
+            case .move:
+                if let last = lastPoint {
+                    let r = model.imagePlacement, old = origin
+                    model.setImageFrameLive(Rect(x: r.x + p.x - last.x, y: r.y + p.y - last.y, width: r.width, height: r.height), rotation: model.imageRotation)
+                    keepOrigin(old); areaChangedInGesture = true
+                }
+            case let .resize(h, original, rotation):
+                let keep = model.keepImageAspect != event.modifierFlags.contains(.shift)
+                dragImageHandle(h, original: original, rotation: rotation, to: p, keepAspect: keep)
+            case .rotate:
+                let r = model.imagePlacement, old = origin
+                model.setImageFrameLive(r, rotation: rotationAngle(center: Point(x: r.x + r.width / 2, y: r.y + r.height / 2), to: p, free: free))
+                keepOrigin(old); areaChangedInGesture = true
+            }
+            lastPoint = p
+            return
+        }
+        if rotating, let id = model.selection {
+            let free = event.modifierFlags.contains(.option)
+            update(id) { $0.rotation = rotationAngle(center: $0.shape.rotationCenter, to: p, free: free) }
+            expandAreaIfNeeded(for: id)
+            lastPoint = p
+            return
+        }
         if let drag = areaDrag {
             let old = origin
             model.setAreaLive(resizedArea(drag.original, handle: drag.handle, to: p))
@@ -264,7 +414,7 @@ final class CanvasView: NSView {
             return   // a vista não muda de ponto de referência: não é preciso atualizar lastPoint
         }
         if let h = resizing, let id = model.selection {
-            update(id) { $0.shape = $0.shape.movingHandle(h, to: p) }
+            update(id) { $0 = $0.movingHandle(h, to: p) }
             expandAreaIfNeeded(for: id)
         } else if let id = creating, let start = dragStart {
             update(id) { $0.shape = shape(model.tool, from: start, to: p) }
@@ -277,7 +427,12 @@ final class CanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil }
+        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false }
+        if imageDrag != nil {
+            if gestureMoved { model.commit() } else { model.dropLastCheckpoint() }   // só clicar na imagem não altera nada
+            endGesture(); return
+        }
+        if rotating { model.commit(); endGesture(); return }
         if areaDrag != nil { model.commit(); endGesture(); return }
         if resizing != nil { model.commit(); model.rememberStepSize(); endGesture(); return }
         if let id = creating {
@@ -413,7 +568,9 @@ final class CanvasView: NSView {
         RichText.configure(lm, f, size: s, color: color)
 
         let rect = viewRect(box)
+        view.frameCenterRotation = 0
         view.frame = rect
+        view.frameCenterRotation = CGFloat(a.rotation)    // roda com o objeto (mesmo sentido que o desenho)
         container.size = CGSize(width: rect.width, height: CGFloat.greatestFiniteMagnitude)
         view.typingAttributes = attrs
         view.insertionPointColor = color
@@ -512,9 +669,12 @@ final class CanvasView: NSView {
     }
 
     /// Clique (ou arrasto, se `to` existir) entregue ao editor como se fosse o rato.
-    func debugMouse(at p: Point, dragTo: Point? = nil, option: Bool = false) {
+    func debugMouse(at p: Point, dragTo: Point? = nil, option: Bool = false, shift: Bool = false) {
+        var flags: NSEvent.ModifierFlags = []
+        if option { flags.insert(.option) }
+        if shift { flags.insert(.shift) }
         func event(_ type: NSEvent.EventType, _ pt: Point) -> NSEvent? {
-            NSEvent.mouseEvent(with: type, location: debugWindowPoint(pt), modifierFlags: option ? [.option] : [],
+            NSEvent.mouseEvent(with: type, location: debugWindowPoint(pt), modifierFlags: flags,
                                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window?.windowNumber ?? 0, context: nil,
                                eventNumber: 0, clickCount: 1, pressure: 1)
         }

@@ -63,11 +63,13 @@ Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento 
 | **Quebra** | Divide um clipe em dois blocos sem cortar nada (B, ícone ou botão direito). |
 | **Por linha** | A marcação e as operações aplicam-se só à linha escolhida. O **olho** suprime a linha no resultado (reprodução e exportação) e o **cadeado** protege-a. |
 | **Zoom** | Afaste ou aproxime a linha de tempo (lupas, + − 0, pinça) para clicar e arrastar com mais facilidade. |
+| **Tamanho** | Redimensione o vídeo (em proporção ou livre, 25/50/75 %): vale para a reprodução e para o ficheiro guardado. |
 | **Sem riscos** | Edição não destrutiva: o vídeo original não muda. Desfazer e refazer, e a edição volta ao reabrir. **Guardar** cria um MP4 novo. |
 
 ### O essencial
 - **Captura** de região (com o ecrã congelado), de **página inteira por rolagem** e do ecrã completo; atalho global configurável (**⌃⇧4**).
-- **Anotação não destrutiva**: setas, linhas, texto, balões, formas, etapas numeradas, marcador, pixelização e desfoque; camadas, copiar e colar, desfazer e refazer. Tudo fica num ficheiro `.capture` que pode reeditar.
+- **Anotação não destrutiva**: setas, linhas, texto, balões, formas, etapas numeradas, marcador, pixelização e desfoque; **rodar** qualquer elemento; camadas, copiar e colar, desfazer e refazer. Tudo fica num ficheiro `.capture` que pode reeditar.
+- **Tela**: alargue a área de trabalho e **mova, redimensione (em proporção ou livre) e rode a própria captura**, sem nunca alterar a imagem original.
 - **Biblioteca** de capturas e vídeos, e abertura de qualquer imagem do computador.
 - **Português e inglês**, **atualizações verificadas** (SHA-256), e **privacidade total**: a única ligação à internet é a procura de versões novas, desligável.
 
@@ -149,11 +151,13 @@ In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**
 | **Break** | Splits a clip into two blocks without cutting anything (B, icon or right-click). |
 | **Per lane** | Marking and operations apply only to the chosen lane. The **eye** mutes or hides the lane in the result (playback and export) and the **lock** protects it. |
 | **Zoom** | Zoom the timeline out or in (magnifiers, + − 0, pinch) to click and drag more easily. |
+| **Size** | Resize the video (proportionally or freely, 25/50/75 %): it applies to playback and to the saved file. |
 | **Safe** | Non-destructive editing: the original video never changes. Undo and redo, and the edit returns when you reopen. **Save** creates a new MP4. |
 
 ### The essentials
 - **Capture** a region (with a frozen screen), a **whole page by scrolling**, or the full screen; configurable global shortcut (**⌃⇧4**).
-- **Non-destructive annotation**: arrows, lines, text, callouts, shapes, numbered steps, highlighter, pixelate and blur; layers, copy and paste, undo and redo. Everything lives in a `.capture` file you can edit again.
+- **Non-destructive annotation**: arrows, lines, text, callouts, shapes, numbered steps, highlighter, pixelate and blur; **rotate** any element; layers, copy and paste, undo and redo. Everything lives in a `.capture` file you can edit again.
+- **Canvas**: enlarge the work area and **move, resize (proportionally or freely) and rotate the capture itself**, without ever altering the original image.
 - A **library** of captures and videos, and opening any image on your computer.
 - **Portuguese and English**, **verified updates** (SHA-256), and **full privacy**: the only network call is the check for new versions, which can be turned off.
 

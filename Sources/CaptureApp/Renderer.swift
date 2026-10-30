@@ -19,6 +19,7 @@ enum Renderer {
             NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
             defer { NSGraphicsContext.current = previous }
             ctx.saveGState()
+            applyRotation(sel, ctx)
             ctx.setStrokeColor(NSColor.systemBlue.cgColor)
             ctx.setLineWidth(max(1.5, Double(base.width) / 1200))
             ctx.setLineDash(phase: 0, lengths: [6, 4])
@@ -36,7 +37,11 @@ enum Renderer {
             ctx.setFillColor(color(doc.backgroundHex).cgColor)
             ctx.fill(doc.area.cg)
         }
-        drawImage(base, in: CGRect(x: 0, y: 0, width: Double(base.width), height: Double(base.height)), ctx)
+        // A imagem original, no seu enquadramento (deslocada, redimensionada e/ou rodada; os píxeis nunca mudam).
+        ctx.saveGState()
+        rotate(ctx, by: doc.imageRotation, around: doc.imagePlacement.cg)
+        drawImage(base, in: doc.imagePlacement.cg, ctx)
+        ctx.restoreGState()
 
         let previous = NSGraphicsContext.current
         NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
@@ -66,9 +71,10 @@ enum Renderer {
         }
         if let g = gaussian, g <= 0 { return }
 
-        // Só interessa o que se vê: área exportada + imagem original.
+        // Só interessa o que se vê: área exportada + imagem original. Com rotação, filtra-se a caixa envolvente e recorta-se
+        // depois pelo retângulo rodado.
         let visible = doc.area.cg.union(doc.imageRect.cg)
-        let rect = a.shape.bounds.cg.intersection(visible).integral
+        let rect = a.worldBounds.cg.intersection(visible).integral
         guard rect.width >= 1, rect.height >= 1 else { return }
         let pad: CGFloat = gaussian.map { ceil($0 * 3) } ?? 0
         let padded = rect.insetBy(dx: -pad, dy: -pad)
@@ -109,6 +115,7 @@ enum Renderer {
         // 3) substitui a região (e não compõe por cima, para não deixar o original a transparecer)
         ctx.saveGState()
         ctx.clip(to: rect)
+        if a.rotation != 0 { ctx.addPath(rotatedPath(a.shape.bounds.cg, degrees: a.rotation)); ctx.clip() }
         if a.style.opacity >= 0.999 { ctx.setBlendMode(.copy) } else { ctx.setAlpha(CGFloat(a.style.opacity)) }
         drawImage(img, in: rect, ctx)
         ctx.restoreGState()
@@ -130,6 +137,29 @@ enum Renderer {
     }
 
     // MARK: -
+
+    /// Roda o contexto por `degrees` à volta do centro de `box` (sentido dos ponteiros do relógio, com o eixo y para baixo).
+    static func rotate(_ ctx: CGContext, by degrees: Double, around box: CGRect) {
+        guard degrees != 0 else { return }
+        ctx.translateBy(x: box.midX, y: box.midY)
+        ctx.rotate(by: CGFloat(degrees * .pi / 180))
+        ctx.translateBy(x: -box.midX, y: -box.midY)
+    }
+
+    /// Aplica a rotação da anotação ao contexto (à volta do centro da forma).
+    static func applyRotation(_ a: Annotation, _ ctx: CGContext) {
+        guard a.rotation != 0 else { return }
+        let c = a.shape.rotationCenter
+        ctx.translateBy(x: c.x, y: c.y)
+        ctx.rotate(by: CGFloat(a.rotation * .pi / 180))
+        ctx.translateBy(x: -c.x, y: -c.y)
+    }
+
+    /// Contorno de `box` rodado por `degrees` à volta do seu centro.
+    static func rotatedPath(_ box: CGRect, degrees: Double) -> CGPath {
+        var t = CGAffineTransform(translationX: box.midX, y: box.midY).rotated(by: CGFloat(degrees * .pi / 180)).translatedBy(x: -box.midX, y: -box.midY)
+        return CGPath(rect: box, transform: &t)
+    }
 
     /// CGContext com CTM invertido desenharia a imagem de cabeça para baixo; compensa.
     private static func drawImage(_ image: CGImage, in rect: CGRect, _ ctx: CGContext) {
@@ -316,6 +346,7 @@ enum Renderer {
         let c = color(a.style.colorHex)
         ctx.saveGState()
         defer { ctx.restoreGState() }
+        applyRotation(a, ctx)
         ctx.setStrokeColor(c.cgColor)
         ctx.setFillColor(c.cgColor)
         ctx.setLineWidth(a.style.lineWidth)

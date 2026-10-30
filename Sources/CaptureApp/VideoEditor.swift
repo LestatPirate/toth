@@ -13,7 +13,9 @@ enum VideoComposer {
     static let fade = 0.012   // fade de áudio nas pontas dos clipes (evita estalidos)
 
     /// `enabled`: as linhas que entram no resultado; as outras ficam suprimidas (sem imagem ou sem som), na reprodução e ao guardar.
-    static func build(timeline: EditTimeline, tracks: [TrackKey: AVAssetTrack], mediaLength: [Int: Double], enabled: Set<EditTrack>? = nil) async throws
+    /// `renderSize`: tamanho de saída do vídeo (em proporção ou não); `nil` = o natural.
+    static func build(timeline: EditTimeline, tracks: [TrackKey: AVAssetTrack], mediaLength: [Int: Double], enabled: Set<EditTrack>? = nil,
+                      renderSize: CGSize? = nil) async throws
         -> (AVMutableComposition, AVAudioMix?, AVVideoComposition?) {
         let comp = AVMutableComposition()
         let scale: CMTimeScale = 90_000
@@ -52,6 +54,19 @@ enum VideoComposer {
         if hasVideo {
             let m = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp)
             m.frameDuration = CMTime(value: 1, timescale: 30)         // as gravações têm ritmo variável (só mudam quando o ecrã muda); a composição sai a 30/s
+            if let rs = renderSize, rs.width >= 2, rs.height >= 2, m.renderSize.width > 0, m.renderSize.height > 0 {
+                // redimensionar: escala cada camada (por cima da transformação que já traz) e muda o tamanho da saída
+                let target = CGSize(width: (rs.width / 2).rounded() * 2, height: (rs.height / 2).rounded() * 2)
+                let sx = target.width / m.renderSize.width, sy = target.height / m.renderSize.height
+                for case let inst as AVMutableVideoCompositionInstruction in m.instructions {
+                    for case let layer as AVMutableVideoCompositionLayerInstruction in inst.layerInstructions {
+                        var start = CGAffineTransform.identity, end = CGAffineTransform.identity, range = CMTimeRange()
+                        if !layer.getTransformRamp(for: inst.timeRange.start, start: &start, end: &end, timeRange: &range) { start = .identity }
+                        layer.setTransform(start.concatenating(CGAffineTransform(scaleX: sx, y: sy)), at: .zero)
+                    }
+                }
+                m.renderSize = target
+            }
             vc = m
         }
         return (comp, mix, vc)
@@ -125,6 +140,12 @@ final class VideoEditorModel: ObservableObject {
     @Published private(set) var previewLabel: String?
     @Published var message: String?
     private(set) var frameStep = 1.0 / 30
+    /// Tamanho natural do vídeo (já com a orientação) e o tamanho de saída escolhido (`nil` = natural). O tamanho aplica-se
+    /// à reprodução e ao guardar; pode ser em proporção ou livre.
+    @Published private(set) var sourceSize = CGSize.zero
+    @Published private(set) var outputSize: CGSize?
+    @Published var outputKeepAspect = true
+    var effectiveOutputSize: CGSize { outputSize ?? sourceSize }
 
     private struct Snapshot { var timeline: EditTimeline; var media: [Int: URL]; var nextMedia: Int }
     private var undoStack: [Snapshot] = [], redoStack: [Snapshot] = []
@@ -171,6 +192,9 @@ final class VideoEditorModel: ObservableObject {
         var lanes: [EditTrack] = []
         if let v = try? await asset.loadTracks(withMediaType: .video).first {
             lanes.append(.video); tracks[TrackKey(media: 0, lane: .video)] = v
+            if let n = try? await v.load(.naturalSize), let t = try? await v.load(.preferredTransform) {
+                let r = CGRect(origin: .zero, size: n).applying(t); sourceSize = CGSize(width: abs(r.width).rounded(), height: abs(r.height).rounded())
+            }
             if let r = try? await v.load(.minFrameDuration), r.seconds > 0, r.seconds < 0.2 { frameStep = r.seconds }
             else if let f = try? await v.load(.nominalFrameRate), f > 0 { frameStep = 1.0 / Double(f) }
         }
@@ -241,7 +265,7 @@ final class VideoEditorModel: ObservableObject {
         let wasPlaying = isPlaying
         let item: AVPlayerItem
         do {
-            let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled)
+            let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize)
             guard token == rebuildToken else { return }
             item = AVPlayerItem(asset: comp)
             item.audioMix = mix
@@ -314,6 +338,30 @@ final class VideoEditorModel: ObservableObject {
 
     /// Protege ou liberta a linha das operações de edição.
     func toggleLocked(_ t: EditTrack) { if locked.contains(t) { locked.remove(t) } else { locked.insert(t) }; saveEdit() }
+
+    // MARK: Tamanho de saída
+
+    /// Muda uma medida (a outra acompanha se `outputKeepAspect`); mínimo 16 px, arredondado a par.
+    func setOutputSize(width: Double? = nil, height: Double? = nil) async {
+        guard sourceSize.width > 0, sourceSize.height > 0 else { return }
+        let ratio = sourceSize.width / sourceSize.height
+        var w = effectiveOutputSize.width, h = effectiveOutputSize.height
+        if let width { w = max(16, width); if outputKeepAspect { h = max(16, w / ratio) } }
+        if let height { h = max(16, height); if outputKeepAspect { w = max(16, h * ratio) } }
+        await applyOutputSize(CGSize(width: w, height: h))
+    }
+    func setOutputScale(_ k: Double) async { await applyOutputSize(CGSize(width: sourceSize.width * k, height: sourceSize.height * k)) }
+    func resetOutputSize() async { await applyOutputSize(nil) }
+
+    private func applyOutputSize(_ s: CGSize?) async {
+        var next: CGSize?
+        if let s { next = CGSize(width: max(16, (s.width / 2).rounded() * 2), height: max(16, (s.height / 2).rounded() * 2)) }
+        if let n = next, abs(n.width - sourceSize.width) < 1, abs(n.height - sourceSize.height) < 1 { next = nil }
+        guard next != outputSize else { return }
+        outputSize = next
+        saveEdit()
+        await rebuildPlayer(at: playhead)
+    }
 
     // MARK: Zoom da linha de tempo
 
@@ -463,13 +511,13 @@ final class VideoEditorModel: ObservableObject {
 
     // MARK: Guardar a edição (ao lado do vídeo)
 
-    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int; var enabled: [String]?; var locked: [String]? }
+    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int; var enabled: [String]?; var locked: [String]?; var outputWidth: Double?; var outputHeight: Double? }
 
     private func saveEdit() {
-        if timeline.isEdited || enabled.count != timeline.tracks.count || !locked.isEmpty {
+        if timeline.isEdited || enabled.count != timeline.tracks.count || !locked.isEmpty || outputSize != nil {
             try? FileManager.default.createDirectory(at: editFolder, withIntermediateDirectories: true)
             let f = EditFile(timeline: timeline, media: Dictionary(uniqueKeysWithValues: media.filter { $0.key != 0 }.map { (String($0.key), $0.value.lastPathComponent) }), nextMedia: nextMedia,
-                             enabled: enabled.map(\.rawValue).sorted(), locked: locked.map(\.rawValue).sorted())
+                             enabled: enabled.map(\.rawValue).sorted(), locked: locked.map(\.rawValue).sorted(), outputWidth: outputSize.map { Double($0.width) }, outputHeight: outputSize.map { Double($0.height) })
             try? JSONEncoder().encode(f).write(to: editFile, options: .atomic)
         } else { try? FileManager.default.removeItem(at: editFolder) }
     }
@@ -488,6 +536,7 @@ final class VideoEditorModel: ObservableObject {
         timeline = f.timeline; nextMedia = f.nextMedia
         if let e = f.enabled { let set = Set(e.compactMap(EditTrack.init(rawValue:))).intersection(timeline.tracks); if !set.isEmpty { enabled = set } }
         if let l = f.locked { locked = Set(l.compactMap(EditTrack.init(rawValue:))).intersection(timeline.tracks) }
+        if let w = f.outputWidth, let h = f.outputHeight, w >= 16, h >= 16 { outputSize = CGSize(width: w, height: h) }
         for (id, file) in media where id != 0 {
             let a = AVURLAsset(url: file); assets[id] = a
             registerSync(id, file: file, asset: a)
@@ -518,7 +567,7 @@ final class VideoEditorModel: ObservableObject {
     /// Escreve o vídeo já editado num ficheiro novo (`…_editado.mp4`, na pasta das capturas) e devolve-o.
     func exportEdited() async throws -> URL {
         working = L("A guardar o vídeo…"); defer { working = nil }
-        let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled)
+        let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize)
         let base = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_editado", with: "")
         var out = CaptureStore.folder.appendingPathComponent("\(base)_editado.mp4")
         var n = 2

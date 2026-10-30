@@ -151,9 +151,12 @@ public struct Annotation: Codable, Equatable, Identifiable, Sendable {
     public var style: Style
     /// Texto dentro de retângulos e elipses (as outras formas guardam o texto na própria forma).
     public var caption: String
+    /// Rotação em graus (sentido dos ponteiros do relógio), à volta do centro da forma. A geometria da forma fica sem rodar;
+    /// quem roda é o desenho, o teste de toque e as alças.
+    public var rotation: Double
 
-    public init(id: UUID = UUID(), z: Int, visible: Bool = true, shape: Shape, style: Style = Style(), caption: String = "") {
-        self.id = id; self.z = z; self.visible = visible; self.shape = shape; self.style = style; self.caption = caption
+    public init(id: UUID = UUID(), z: Int, visible: Bool = true, shape: Shape, style: Style = Style(), caption: String = "", rotation: Double = 0) {
+        self.id = id; self.z = z; self.visible = visible; self.shape = shape; self.style = style; self.caption = caption; self.rotation = rotation
     }
 
     public init(from decoder: Decoder) throws {
@@ -164,6 +167,29 @@ public struct Annotation: Codable, Equatable, Identifiable, Sendable {
         shape = try c.decode(Shape.self, forKey: .shape)
         style = try c.decode(Style.self, forKey: .style)
         caption = try c.decodeIfPresent(String.self, forKey: .caption) ?? ""
+        rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
+    }
+}
+
+/// Onde a imagem original é desenhada no documento: pode ser deslocada, redimensionada (em proporção ou não) e rodada.
+/// Os píxeis originais nunca mudam; isto é só o enquadramento.
+public struct ImageFrame: Codable, Equatable, Sendable {
+    public var origin: Point
+    public var width: Double
+    public var height: Double
+    /// Graus, sentido dos ponteiros do relógio, à volta do centro.
+    public var rotation: Double
+    public init(origin: Point, width: Double, height: Double, rotation: Double = 0) {
+        self.origin = origin; self.width = width; self.height = height; self.rotation = rotation
+    }
+    public init(_ r: Rect, rotation: Double = 0) { self.init(origin: Point(x: r.x, y: r.y), width: r.width, height: r.height, rotation: rotation) }
+    public var rect: Rect { Rect(x: origin.x, y: origin.y, width: width, height: height) }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        origin = try c.decode(Point.self, forKey: .origin)
+        width = try c.decode(Double.self, forKey: .width)
+        height = try c.decode(Double.self, forKey: .height)
+        rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
     }
 }
 
@@ -188,6 +214,8 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     public var canvasHeight: Double
     /// `nil` = a área é a própria imagem original.
     public var workArea: WorkArea?
+    /// Enquadramento da imagem original (posição, tamanho e rotação). `nil` = na origem, ao tamanho natural, sem rodar.
+    public var imageFrame: ImageFrame?
     /// Cor de fundo onde a área vai além da imagem.
     public var backgroundHex: String = "#FFFFFF"
     public var transparentBackground: Bool = false
@@ -202,7 +230,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case formatVersion, canvasWidth, canvasHeight, workArea, crop, backgroundHex, transparentBackground, autoExpand, nextStepNumber, annotations
+        case formatVersion, canvasWidth, canvasHeight, workArea, crop, imageFrame, backgroundHex, transparentBackground, autoExpand, nextStepNumber, annotations
     }
 
     public init(from decoder: Decoder) throws {
@@ -212,6 +240,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         canvasHeight = try c.decode(Double.self, forKey: .canvasHeight)
         // "crop" é o nome antigo da área de trabalho.
         workArea = try c.decodeIfPresent(WorkArea.self, forKey: .workArea) ?? c.decodeIfPresent(WorkArea.self, forKey: .crop)
+        imageFrame = try c.decodeIfPresent(ImageFrame.self, forKey: .imageFrame)
         backgroundHex = try c.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#FFFFFF"
         transparentBackground = try c.decodeIfPresent(Bool.self, forKey: .transparentBackground) ?? false
         autoExpand = try c.decodeIfPresent(Bool.self, forKey: .autoExpand) ?? true
@@ -225,6 +254,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         try c.encode(canvasWidth, forKey: .canvasWidth)
         try c.encode(canvasHeight, forKey: .canvasHeight)
         try c.encodeIfPresent(workArea, forKey: .workArea)
+        try c.encodeIfPresent(imageFrame, forKey: .imageFrame)
         try c.encode(backgroundHex, forKey: .backgroundHex)
         try c.encode(transparentBackground, forKey: .transparentBackground)
         try c.encode(autoExpand, forKey: .autoExpand)
@@ -232,8 +262,28 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         try c.encode(annotations, forKey: .annotations)
     }
 
-    /// A imagem original, em coordenadas do documento (sempre na origem).
-    public var imageRect: Rect { Rect(x: 0, y: 0, width: canvasWidth, height: canvasHeight) }
+    /// Tamanho natural da imagem original (os píxeis).
+    public var naturalImageRect: Rect { Rect(x: 0, y: 0, width: canvasWidth, height: canvasHeight) }
+    /// Onde a imagem é desenhada (antes de rodar), em coordenadas do documento.
+    public var imagePlacement: Rect { imageFrame?.rect ?? naturalImageRect }
+    public var imageRotation: Double { imageFrame?.rotation ?? 0 }
+    /// Caixa envolvente da imagem no documento (com a rotação). Sem enquadramento, é a própria imagem na origem.
+    public var imageRect: Rect { Geometry.boundingBox(of: imagePlacement, rotatedBy: imageRotation) }
+
+    /// Muda o enquadramento da imagem (tamanho mínimo 8 px). Voltar ao natural limpa o campo.
+    public mutating func setImageFrame(_ r: Rect, rotation: Double) {
+        let rr = Rect(x: r.x, y: r.y, width: max(8, r.width), height: max(8, r.height))
+        let rot = Geometry.normalizedDegrees(rotation)
+        imageFrame = (rr == naturalImageRect && rot == 0) ? nil : ImageFrame(rr, rotation: rot)
+    }
+
+    /// Expande a área (se ligada e se for uma área própria) para conter a imagem enquadrada. Devolve `true` se mudou.
+    @discardableResult
+    public mutating func expandAreaToFitImage() -> Bool {
+        guard autoExpand, workArea != nil else { return false }
+        let current = area
+        return setArea(roundedOut: current.union(imageRect), if: current)
+    }
 
     /// Área que será exportada.
     public var area: Rect { workArea?.rect ?? imageRect }
@@ -246,14 +296,14 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         guard autoExpand else { return false }
         let current = area
         var union = current
-        for a in annotations where a.visible && ids.contains(a.id) { union = union.union(a.paintBounds) }
+        for a in annotations where a.visible && ids.contains(a.id) { union = union.union(a.worldBounds) }
         return setArea(roundedOut: union, if: current)
     }
 
     /// Área = imagem original + todos os objetos visíveis ("ajustar ao conteúdo").
     public mutating func fitAreaToContent() {
         var union = imageRect
-        for a in annotations where a.visible { union = union.union(a.paintBounds) }
+        for a in annotations where a.visible { union = union.union(a.worldBounds) }
         _ = setArea(roundedOut: union, if: nil)
     }
 

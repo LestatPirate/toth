@@ -314,6 +314,64 @@ private func tmp() -> URL {
 
 // MARK: - Etapa redimensionável
 
+private func near(_ a: Double, _ b: Double, _ tol: Double = 1e-6) -> Bool { abs(a - b) <= tol }
+
+@Test func rotatedAnnotationHitsHandlesAndBounds() {
+    // retângulo 200×100 centrado em (300, 200), rodado 90°: ocupa 100×200 à volta do mesmo centro
+    var a = Annotation(z: 0, shape: .rect(origin: Point(x: 200, y: 150), width: 200, height: 100), style: Style(lineWidth: 0))
+    a.rotation = 90
+    let wb = a.worldBounds
+    #expect(near(wb.x, 250) && near(wb.y, 100) && near(wb.width, 100) && near(wb.height, 200))
+    #expect(a.hits(Point(x: 300, y: 290), tolerance: 1) && !a.hits(Point(x: 390, y: 200), tolerance: 1))
+    // a alça do canto superior esquerdo (200,150) roda para (350,100)
+    let h0 = a.handlePoints[0]
+    #expect(near(h0.x, 350) && near(h0.y, 100))
+    #expect(a.handle(at: Point(x: 350, y: 100), tolerance: 2) == 0)
+    // arrastar o canto inferior direito (índice 2, no documento em (250,300)) para (250, 340): o canto oposto (350,100) não se mexe
+    let r = a.movingHandle(2, to: Point(x: 250, y: 340))
+    let o = r.handlePoints[0]
+    #expect(near(o.x, 350) && near(o.y, 100))
+    #expect(near(r.shape.bounds.width, 240) && near(r.shape.bounds.height, 100))
+    // sem rotação, nada muda face ao comportamento antigo
+    let plain = Annotation(z: 0, shape: .rect(origin: Point(x: 0, y: 0), width: 10, height: 10))
+    #expect(plain.movingHandle(2, to: Point(x: 30, y: 40)).shape.bounds == Rect(x: 0, y: 0, width: 30, height: 40))
+    #expect(Geometry.normalizedDegrees(450) == 90 && Geometry.normalizedDegrees(-180) == 180 && Geometry.normalizedDegrees(360) == 0)
+}
+
+@Test func rotationSurvivesSavingAndOldFilesHaveNone() throws {
+    var doc = CaptureDocument(canvasWidth: 100, canvasHeight: 50)
+    var a = doc.add(.ellipse(origin: Point(x: 10, y: 10), width: 20, height: 10)); a.rotation = 33.5; doc.update(a)
+    let data = try CapturePackage.encode(doc)
+    let back = try JSONDecoder().decode(CaptureDocument.self, from: data)
+    #expect(back.annotations.first?.rotation == 33.5)
+    let old = "{\"canvasWidth\":100,\"canvasHeight\":50,\"annotations\":[{\"id\":\"\(UUID().uuidString)\",\"z\":0,\"shape\":{\"rect\":{\"origin\":{\"x\":0,\"y\":0},\"width\":5,\"height\":5}},\"style\":{\"colorHex\":\"#FF0000\",\"lineWidth\":2}}]}"
+    let legacy = try JSONDecoder().decode(CaptureDocument.self, from: Data(old.utf8))
+    #expect(legacy.annotations.first?.rotation == 0 && legacy.imageFrame == nil)
+}
+
+@Test func imageFrameRotatesResizesAndDrivesTheArea() throws {
+    var doc = CaptureDocument(canvasWidth: 1000, canvasHeight: 600)
+    #expect(doc.imageRect == doc.naturalImageRect && doc.area == doc.naturalImageRect)
+    // rodar 90°: a caixa envolvente passa a 600×1000, centrada no mesmo ponto, e a área (sem área própria) segue
+    doc.setImageFrame(doc.naturalImageRect, rotation: 90)
+    #expect(near(doc.imageRect.x, 200) && near(doc.imageRect.y, -200) && near(doc.imageRect.width, 600) && near(doc.imageRect.height, 1000))
+    #expect(doc.area == doc.imageRect)
+    // redimensionar a metade, sem rodar: o enquadramento é esse e a imagem natural não muda
+    doc.setImageFrame(Rect(x: 0, y: 0, width: 500, height: 300), rotation: 0)
+    #expect(doc.imagePlacement == Rect(x: 0, y: 0, width: 500, height: 300) && doc.canvasWidth == 1000)
+    // voltar ao natural limpa o campo; 360° conta como 0
+    doc.setImageFrame(doc.naturalImageRect, rotation: 360)
+    #expect(doc.imageFrame == nil)
+    // com área própria e expansão automática, mover a imagem para fora alarga a área
+    doc.workArea = WorkArea(Rect(x: 0, y: 0, width: 1000, height: 600))
+    doc.setImageFrame(Rect(x: 200, y: 100, width: 1000, height: 600), rotation: 0)
+    let grew = doc.expandAreaToFitImage()
+    #expect(grew && doc.area.maxX == 1200 && doc.area.maxY == 700)
+    // gravar e reler
+    let back = try JSONDecoder().decode(CaptureDocument.self, from: try CapturePackage.encode(doc))
+    #expect(back.imageFrame == doc.imageFrame)
+}
+
 @Test func stepResizesProportionallyAndKeepsOppositeCorner() {
     let s = Shape.step(center: Point(x: 100, y: 100), number: 3)            // raio padrão (16)
     #expect(s.stepRadius == 16 && s.bounds == Rect(x: 84, y: 84, width: 32, height: 32))

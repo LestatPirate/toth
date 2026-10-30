@@ -55,7 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var scrolls: [Double] = []
             if let k = args.firstIndex(of: "--tools-scroll"), args.count > k + 1 { scrolls = args[k + 1].split(separator: ",").compactMap { Double($0) } }
             AppState.shared.showLibraryStrip = !args.contains("--library-hidden")
-            SelfTests.renderMain(to: args[i + 1], capture: URL(fileURLWithPath: args[i + 2]), select: sel, size: size, panelHidden: args.contains("--panel-hidden"), clicks: clicks, toolScroll: scrolls)
+            let tool = args.firstIndex(of: "--tool").flatMap { args.count > $0 + 1 ? Tool(rawValue: args[$0 + 1]) : nil }
+            SelfTests.renderMain(to: args[i + 1], capture: URL(fileURLWithPath: args[i + 2]), select: sel, size: size, panelHidden: args.contains("--panel-hidden"), clicks: clicks, toolScroll: scrolls,
+                                 tool: tool, canvasImage: args.contains("--canvas-image"), editHold: args.contains("--edit-hold"))
             print("RENDER-MAIN: OK"); exit(0)
         }
         if let i = args.firstIndex(of: "--defaults-selftest"), args.count > i + 2 {
@@ -77,6 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let i = args.firstIndex(of: "--selection-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("SELECTION-SELFTEST") { SelfTests.selectionSelfTest(dir: dir) }
+        }
+        if let i = args.firstIndex(of: "--rotate-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1]); later("ROTATE-SELFTEST") { SelfTests.rotateSelfTest(dir: dir) }
         }
         if let i = args.firstIndex(of: "--steps-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("STEPS-SELFTEST") { SelfTests.stepsSelfTest(dir: dir) }
