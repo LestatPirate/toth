@@ -108,9 +108,11 @@ enum RichText {
         return max(lm.usedRect(for: container).height, lm.extraLineFragmentRect.maxY)
     }
 
-    static func verticalOffset(_ v: TextFormat.VAlign, free: CGFloat) -> CGFloat {
-        let f = max(0, free)
-        switch v { case .top: return 0; case .middle: return f / 2; case .bottom: return f }
+    /// Deslocamento vertical do texto dentro da caixa. Ao desenhar, um texto maior do que a caixa centrado fica centrado na
+    /// mesma (sai por cima e por baixo em partes iguais); no editor em linha a margem não pode ser negativa.
+    static func verticalOffset(_ v: TextFormat.VAlign, free: CGFloat, allowNegative: Bool = false) -> CGFloat {
+        let f = allowNegative ? free : max(0, free)
+        switch v { case .top: return 0; case .middle: return f / 2; case .bottom: return max(allowNegative ? -.greatestFiniteMagnitude : 0, f) }
     }
 
     /// Desenha o texto dentro de `rect` (coordenadas da imagem, contexto "flipped").
@@ -118,7 +120,7 @@ enum RichText {
         let (storage, lm, container) = makeLayout(string, format: f, size: size, color: color, width: rect.width)
         _ = storage
         let h = textHeight(lm, container)
-        let dy = vertical ? verticalOffset(f.vAlign, free: rect.height - h) : 0
+        let dy = vertical ? verticalOffset(f.vAlign, free: rect.height - h, allowNegative: true) : 0
         lm.drawGlyphs(forGlyphRange: lm.glyphRange(for: container), at: CGPoint(x: rect.minX, y: rect.minY + dy))
     }
 }
