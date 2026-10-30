@@ -25,7 +25,7 @@
 
 **Editor (não destrutivo: a imagem original nunca é alterada)**
 - **Ferramentas:** Mover, Seta, Linha, Texto, Balão, Retângulo, Elipse, Etapa, Marcador, Pixelização, Blur e Tela.
-- **Texto no próprio objeto** (texto, balão, retângulo, elipse): fonte, tamanho (até 400), negrito/itálico/sublinhado, cor, alinhamento horizontal e vertical, listas de marcadores ou numeradas. A caixa **ajusta-se ao texto enquanto escreve**, e ao redimensionar o objeto **a letra acompanha** (maior ou menor).
+- **Texto no próprio objeto** (texto, balão, retângulo, elipse): fonte, tamanho (até 400), negrito/itálico/sublinhado, cor, alinhamento horizontal e vertical, listas de marcadores ou numeradas. A caixa **ajusta-se ao texto enquanto escreve**, e ao redimensionar o objeto **a letra acompanha** (maior ou menor) se «Redimensionar em proporção» estiver marcado; desmarcado, só a caixa muda e o texto quebra de linha.
 - **Cores da linha e do preenchimento** à escolha, espessura, opacidade e sombra.
 - **Etapas numeradas** (1, 2, 3 · I, II, III · i, ii, iii · A, B, C · a, b, c), com cor do círculo e do número, fonte e **reinício da sequência**. **Redimensionam-se pelos cantos mantendo a proporção** (ou pelo controlo *Tamanho*), e o número ou a letra acompanha a escala e fica sempre centrado; o último tamanho usado é lembrado.
 - **Blur e Pixelização** com intensidade ajustável, para ocultar informação sensível. Atuam sobre **tudo o que está por baixo**: a imagem e também os objetos inseridos em camadas inferiores (um objeto por cima do efeito continua nítido).
@@ -77,7 +77,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 
 **Editor (non-destructive: the original image is never changed)**
 - **Tools:** Move, Arrow, Line, Text, Callout, Rectangle, Ellipse, Step, Highlighter, Pixelate, Blur and Canvas.
-- **Text directly in the object** (text, callout, rectangle, ellipse): font, size (up to 400), bold/italic/underline, color, horizontal and vertical alignment, bulleted or numbered lists. The box **fits the text as you type**, and when you resize the object **the text scales along** (bigger or smaller).
+- **Text directly in the object** (text, callout, rectangle, ellipse): font, size (up to 400), bold/italic/underline, color, horizontal and vertical alignment, bulleted or numbered lists. The box **fits the text as you type**, and when you resize the object **the text scales along** (bigger or smaller) if “Resize proportionally” is on; off, only the box changes and the text wraps.
 - Your choice of **line and fill colors**, thickness, opacity and shadow.
 - **Numbered steps** (1, 2, 3 · I, II, III · i, ii, iii · A, B, C · a, b, c), with circle and number colors, font, and **sequence restart**. They **resize by their corners keeping the proportions** (or with the *Size* control), and the number or letter scales along and stays centered; the last size used is remembered.
 - **Blur and Pixelate** with adjustable strength, to hide sensitive information. They act on **everything beneath them**: the image and also objects on lower layers (an object above the effect stays sharp).

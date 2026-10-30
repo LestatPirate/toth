@@ -102,6 +102,8 @@ enum Translations {
         "Fim do trecho": "End of part",
         "Mover para aqui": "Move to here",
         "Manter proporção": "Keep proportions",
+        "Redimensionar em proporção": "Resize proportionally",
+        "Marcado: ao redimensionar o objeto, a letra acompanha. Desmarcado: só a caixa muda e o texto quebra de linha (sem hifenização).": "On: when you resize the object, the text scales along. Off: only the box changes and the text wraps (no hyphenation).",
         "Escala": "Scale",
         "Rotação": "Rotation",
         "Rodar 90° para a esquerda": "Rotate 90° left",

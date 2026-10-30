@@ -334,7 +334,7 @@ final class CanvasView: NSView {
                 if near(p, rotationHandlePoint(a)) { model.checkpoint(); rotating = true; return }
                 if let h = a.handle(at: p, tolerance: 8 / Double(scale)) {
                     model.checkpoint(); resizing = h
-                    resizeStart = a.effectiveFontSize.map { (a.shape.bodyBounds, $0) }
+                    resizeStart = model.textScalesWithBox ? a.effectiveFontSize.map { (a.shape.bodyBounds, $0) } : nil
                     return
                 }
             }
@@ -703,6 +703,13 @@ final class CanvasView: NSView {
         check(model.selected?.effectiveFontSize == 300, "a letra pode passar dos 120")
         model.undo(); model.undo(); model.undo()
         check(model.selected?.effectiveFontSize == f0, "desfazer repõe a letra (\(model.selected?.effectiveFontSize ?? -1))")
+        // 4) sem «proporção»: só a caixa muda e a letra fica igual
+        model.textScalesWithBox = false
+        let b3 = model.selected!.handlePoints[2]
+        debugMouse(at: b3, dragTo: Point(x: b3.x + 100, y: b3.y + 100))
+        check(model.selected?.effectiveFontSize == f0 && (model.selected?.shape.bodyBounds.width ?? 0) > 300, "sem proporção a letra não devia mudar (\(model.selected?.effectiveFontSize ?? -1))")
+        model.undo()
+        model.textScalesWithBox = true
         return fails
     }
 

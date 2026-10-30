@@ -72,6 +72,7 @@ struct PropertiesPanel: View {
     private var imageScale: Binding<Double> { Binding(get: { model.imageScale * 100 }, set: { model.setImageScale(max(1, $0) / 100) }) }
     private var imageRotation: Binding<Double> { Binding(get: { model.imageRotation }, set: { model.setImageRotation($0) }) }
     private var rotation: Binding<Double> { Binding(get: { model.currentRotation }, set: { model.setRotation($0) }) }
+    private var textScales: Binding<Bool> { Binding(get: { model.textScalesWithBox }, set: { model.textScalesWithBox = $0 }) }
 
     private var imageSection: some View {
         section(L("Imagem")) {
@@ -285,6 +286,9 @@ struct PropertiesPanel: View {
                 }.labelsHidden().frame(maxWidth: 150)
             }
             slider(L("Tamanho"), value: fontSize, range: 8...400, format: "%.0f")
+            row(L("Redimensionar em proporção")) { Toggle("", isOn: textScales).labelsHidden() }
+            Text(L("Marcado: ao redimensionar o objeto, a letra acompanha. Desmarcado: só a caixa muda e o texto quebra de linha (sem hifenização)."))
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             row(L("Estilo")) {
                 HStack(spacing: 4) {
                     toggleButton("bold", on: model.currentStyle.text.bold, help: L("Negrito")) { v in edit { $0.text.bold = v } }

@@ -42,6 +42,12 @@ final class EditorModel: ObservableObject {
     @Published var canvasTarget: CanvasTarget = .area
     /// Ao redimensionar a imagem pelos cantos, manter a proporção (⇧ inverte).
     @Published var keepImageAspect = true
+    /// Ao redimensionar um objeto com texto: com «proporção» a letra acompanha o tamanho; sem, só a caixa muda e o texto
+    /// quebra de linha (por palavras, sem hifenização). Guardado entre sessões.
+    var textScalesWithBox: Bool {
+        get { (UserDefaults.standard.object(forKey: "textScalesWithBox") as? Bool) ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "textScalesWithBox"); objectWillChange.send() }
+    }
     /// Estilo da ferramenta atual: o último que o utilizador usou (guardado entre sessões, ver `ToolDefaults`).
     var style: Style {
         get { ToolDefaults.shared.style(for: tool) }
