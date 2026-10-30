@@ -284,7 +284,7 @@ struct PropertiesPanel: View {
                     ForEach(RichText.fontChoices, id: \.self) { Text($0).tag($0) }
                 }.labelsHidden().frame(maxWidth: 150)
             }
-            slider(L("Tamanho"), value: fontSize, range: 8...120, format: "%.0f")
+            slider(L("Tamanho"), value: fontSize, range: 8...400, format: "%.0f")
             row(L("Estilo")) {
                 HStack(spacing: 4) {
                     toggleButton("bold", on: model.currentStyle.text.bold, help: L("Negrito")) { v in edit { $0.text.bold = v } }

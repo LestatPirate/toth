@@ -44,6 +44,9 @@ final class CanvasView: NSView {
     /// A rodar o elemento selecionado pela alça redonda.
     private var rotating = false
     private var gestureMoved = false
+    /// Ao redimensionar um objeto com texto, a letra acompanha o tamanho da caixa (a partir destes valores de partida).
+    private var resizeStart: (bounds: Rect, font: Double)?
+    private var textObserver: NSObjectProtocol?
     /// Objeto existente sob o rato quando se começou a desenhar: se for só um clique (sem arrastar), seleciona-se esse objeto.
     private var clickCandidate: UUID?
 
@@ -329,7 +332,11 @@ final class CanvasView: NSView {
         case .select:
             if let id = model.selection, let a = model.doc.annotations.first(where: { $0.id == id }) {
                 if near(p, rotationHandlePoint(a)) { model.checkpoint(); rotating = true; return }
-                if let h = a.handle(at: p, tolerance: 8 / Double(scale)) { model.checkpoint(); resizing = h; return }
+                if let h = a.handle(at: p, tolerance: 8 / Double(scale)) {
+                    model.checkpoint(); resizing = h
+                    resizeStart = a.effectiveFontSize.map { (a.shape.bodyBounds, $0) }
+                    return
+                }
             }
             let hit = model.doc.topmost(at: p, tolerance: tol)
             model.selection = hit?.id
@@ -414,7 +421,15 @@ final class CanvasView: NSView {
             return   // a vista não muda de ponto de referência: não é preciso atualizar lastPoint
         }
         if let h = resizing, let id = model.selection {
-            update(id) { $0 = $0.movingHandle(h, to: p) }
+            update(id) {
+                $0 = $0.movingHandle(h, to: p)
+                // a letra cresce e encolhe com a caixa (média geométrica das duas escalas)
+                if let start = resizeStart, start.bounds.width > 0, start.bounds.height > 0 {
+                    let b = $0.shape.bodyBounds
+                    let k = ((b.width / start.bounds.width) * (b.height / start.bounds.height)).squareRoot()
+                    $0.setEffectiveFontSize(min(max(start.font * k, 4), 400))
+                }
+            }
             expandAreaIfNeeded(for: id)
         } else if let id = creating, let start = dragStart {
             update(id) { $0.shape = shape(model.tool, from: start, to: p) }
@@ -427,7 +442,7 @@ final class CanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false }
+        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil }
         if imageDrag != nil {
             if gestureMoved { model.commit() } else { model.dropLastCheckpoint() }   // só clicar na imagem não altera nada
             endGesture(); return
@@ -528,6 +543,7 @@ final class CanvasView: NSView {
             model.commit()
         }
         guard Renderer.textArea(a) != nil else { return }
+        if !isNew { model.checkpoint() }   // texto e tamanho da caixa mudam juntos; um só ponto de undo
 
         let storage = NSTextStorage()
         let lm = MarkerLayoutManager()
@@ -546,6 +562,9 @@ final class CanvasView: NSView {
         view.string = a.editableString ?? ""
         addSubview(view)
         editor = view
+        textObserver = NotificationCenter.default.addObserver(forName: NSText.didChangeNotification, object: view, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitBoxToText() }
+        }
         editingID = id
         editingIsNew = isNew
         originalString = a.editableString ?? ""
@@ -582,12 +601,34 @@ final class CanvasView: NSView {
         view.needsDisplay = true
     }
 
-    /// Fecha o editor e grava o texto (cada edição é um ponto de undo).
+    /// Enquanto se escreve, a caixa ajusta-se ao texto: a altura acompanha-o (caixa de texto e balão crescem e encolhem,
+    /// até ao mínimo; retângulo e elipse só crescem). A largura não muda, para o texto continuar a quebrar onde o utilizador quis.
+    private func fitBoxToText() {
+        guard let view = editor, let id = editingID, var a = model.doc.annotations.first(where: { $0.id == id }),
+              let lm = view.layoutManager as? MarkerLayoutManager, let container = view.textContainer else { return }
+        let needed = Double(RichText.textHeight(lm, container) / scale) + 2 * Double(RichText.padY)
+        let b = a.shape.bodyBounds
+        let minimum = max(48, (a.effectiveFontSize ?? 20) * 2.2)
+        let target: Double
+        switch a.shape {
+        case .textBox, .callout: target = max(minimum, needed.rounded(.up))
+        case .rect: target = max(b.height, needed.rounded(.up))
+        case .ellipse: target = max(b.height, (needed / (1 - 2 * 0.146)).rounded(.up))   // o texto vive no retângulo inscrito
+        default: return
+        }
+        guard abs(target - b.height) >= 0.5 else { return }
+        a.shape = a.shape.withBodyHeight(target)
+        model.mutate { $0.update(a); _ = $0.expandAreaToFit(ids: [id]) }
+        refreshEditor()
+    }
+
+    /// Fecha o editor e grava o texto (cada edição é um ponto de undo, que inclui o ajuste da caixa).
     private func finishEditing() {
         guard let view = editor, let id = editingID else { return }
         let text = view.string
         let isNew = editingIsNew, original = originalString
         view.onFinish = nil
+        if let o = textObserver { NotificationCenter.default.removeObserver(o); textObserver = nil }
         editor = nil; editingID = nil
         view.removeFromSuperview()
 
@@ -601,8 +642,13 @@ final class CanvasView: NSView {
                 model.mutate { $0.update(a) }
                 model.commit()
             }
-        } else if text != original {
-            model.updateString(id: id, to: text)
+        } else if var a = model.doc.annotations.first(where: { $0.id == id }) {
+            let boxChanged = a.shape != model.undoShape(of: id)
+            if text != original || boxChanged {
+                a.setEditableString(text)
+                model.mutate { $0.update(a) }
+                model.commit()
+            } else { model.dropLastCheckpoint() }
         }
         needsDisplay = true
         window?.makeFirstResponder(self)
@@ -610,6 +656,55 @@ final class CanvasView: NSView {
 
     /// Abre o editor no elemento selecionado e deixa-o aberto (flag `--edit-hold`, para captura de ecrã).
     func debugHoldEditing() { if let id = model.selection { beginEditing(id, isNew: false) } }
+
+    /// Autoteste: a caixa ajusta-se ao texto enquanto se escreve, e a letra acompanha o redimensionar.
+    func selfTestTextFit() -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        // 1) balão: escrever 6 linhas faz a caixa crescer; apagar faz encolher (até ao mínimo)
+        let id = model.addAnnotation(.callout(origin: Point(x: 100, y: 100), width: 220, height: 50, tail: Point(x: 60, y: 300), string: "", fontSize: 24))
+        model.tool = .select; model.selection = id
+        let h0 = model.selected?.shape.bodyBounds.height ?? 0
+        beginEditing(id, isNew: false)
+        editor?.insertText("um\ndois\ntrês\nquatro\ncinco\nseis", replacementRange: NSRange(location: 0, length: 0))
+        let hTyping = model.selected?.shape.bodyBounds.height ?? 0
+        check(hTyping > h0 + 100, "a caixa devia crescer enquanto se escreve (\(h0) → \(hTyping))")
+        check(model.selected?.shape.bodyBounds.width == 220, "a largura não devia mudar")
+        editor?.insertText("", replacementRange: NSRange(location: 0, length: editor?.string.utf16.count ?? 0))
+        editor?.insertText("só uma", replacementRange: NSRange(location: 0, length: 0))
+        let hShort = model.selected?.shape.bodyBounds.height ?? 0
+        check(hShort < hTyping && hShort >= 48, "ao apagar a caixa devia encolher (\(hTyping) → \(hShort))")
+        finishEditing()
+        check(model.selected?.editableString == "só uma", "texto gravado")
+        model.undo()
+        check(model.selected?.shape.bodyBounds.height == h0 && model.selected?.editableString == "", "desfazer devia repor o texto e o tamanho (\(model.selected?.shape.bodyBounds.height ?? -1))")
+        model.redo()
+        // 2) retângulo com texto: só cresce
+        let rid = model.addAnnotation(.rect(origin: Point(x: 400, y: 100), width: 200, height: 120))
+        model.selection = rid
+        beginEditing(rid, isNew: false)
+        editor?.insertText("a", replacementRange: NSRange(location: 0, length: 0))
+        check(model.selected?.shape.bounds.height == 120, "com pouco texto o retângulo não encolhe")
+        editor?.insertText("\n1\n2\n3\n4\n5\n6\n7", replacementRange: NSRange(location: 1, length: 0))
+        check((model.selected?.shape.bounds.height ?? 0) > 120, "com muito texto o retângulo cresce")
+        finishEditing()
+        // 3) redimensionar pela alça: a letra acompanha (maior e menor)
+        model.selection = id
+        guard let a = model.selected, let f0 = a.effectiveFontSize else { return fails + ["sem balão"] }
+        let br = a.handlePoints[2]
+        debugMouse(at: br, dragTo: Point(x: br.x + a.shape.bodyBounds.width, y: br.y + a.shape.bodyBounds.height))   // o dobro
+        let f1 = model.selected?.effectiveFontSize ?? 0
+        check(abs(f1 - f0 * 2) < 0.5, "ao duplicar a caixa a letra devia duplicar (\(f0) → \(f1))")
+        let b2 = model.selected!.handlePoints[2]
+        debugMouse(at: b2, dragTo: Point(x: b2.x - model.selected!.shape.bodyBounds.width * 0.75, y: b2.y - model.selected!.shape.bodyBounds.height * 0.75))
+        let f2 = model.selected?.effectiveFontSize ?? 0
+        check(abs(f2 - f0 * 0.5) < 0.5, "ao reduzir a um quarto a letra devia ficar a metade (\(f0) → \(f2))")
+        model.setFontSize(300)
+        check(model.selected?.effectiveFontSize == 300, "a letra pode passar dos 120")
+        model.undo(); model.undo(); model.undo()
+        check(model.selected?.effectiveFontSize == f0, "desfazer repõe a letra (\(model.selected?.effectiveFontSize ?? -1))")
+        return fails
+    }
 
     /// Autoteste do editor em linha (flag `--edit-selftest`): devolve uma descrição das falhas, vazia se tudo bem.
     func selfTestEditing() -> [String] {

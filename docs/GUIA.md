@@ -17,7 +17,7 @@
 - **Quebra** (tecla B, ícone, ou botão direito): divide o clipe em dois blocos sem cortar nada.
 - **Por linha:** a marcação, o corte, a cópia e o movimento aplicam-se só à linha escolhida. O **olho** inclui ou **suprime** a linha no resultado (também na reprodução e ao guardar) e o **cadeado** protege-a de alterações.
 - **Zoom** da linha de tempo (lupas, + − 0, pinça ou ⌘+roda) e deslocamento horizontal.
-- **Tamanho do vídeo** (botão na barra): largura e altura em proporção ou livres, 25/50/75 % ou original. Aplica-se à reprodução e ao ficheiro guardado.
+- **Tela do vídeo** (botão na barra): aparecem alças sobre o vídeo para o **redimensionar com o rato** (cantos em proporção, ⇧ para livre; lados mudam só uma medida) e uma alça redonda para o **rodar**; ou use os campos de largura, altura e rotação, 25/50/75 % e «Original». Aplica-se à reprodução e ao ficheiro guardado (rodado, o ficheiro fica com a caixa envolvente).
 - Edição **não destrutiva** (o vídeo original não muda), com **desfazer/refazer** e memória ao reabrir. **Guardar** cria um MP4 novo, com o áudio misturado numa só faixa.
 - **Ecrã inteiro** pelo menu da barra de menus.
 - **Imagem nova**, para além das capturas: **em branco** (tamanho, cor de fundo ou transparente) ou **a partir da área de transferência** (botão *Novo*, menu *Ficheiro*; ⌘N e ⇧⌘N).
@@ -25,7 +25,7 @@
 
 **Editor (não destrutivo: a imagem original nunca é alterada)**
 - **Ferramentas:** Mover, Seta, Linha, Texto, Balão, Retângulo, Elipse, Etapa, Marcador, Pixelização, Blur e Tela.
-- **Texto no próprio objeto** (texto, balão, retângulo, elipse): fonte, tamanho, negrito/itálico/sublinhado, cor, alinhamento horizontal e vertical, listas de marcadores ou numeradas.
+- **Texto no próprio objeto** (texto, balão, retângulo, elipse): fonte, tamanho (até 400), negrito/itálico/sublinhado, cor, alinhamento horizontal e vertical, listas de marcadores ou numeradas. A caixa **ajusta-se ao texto enquanto escreve**, e ao redimensionar o objeto **a letra acompanha** (maior ou menor).
 - **Cores da linha e do preenchimento** à escolha, espessura, opacidade e sombra.
 - **Etapas numeradas** (1, 2, 3 · I, II, III · i, ii, iii · A, B, C · a, b, c), com cor do círculo e do número, fonte e **reinício da sequência**. **Redimensionam-se pelos cantos mantendo a proporção** (ou pelo controlo *Tamanho*), e o número ou a letra acompanha a escala e fica sempre centrado; o último tamanho usado é lembrado.
 - **Blur e Pixelização** com intensidade ajustável, para ocultar informação sensível. Atuam sobre **tudo o que está por baixo**: a imagem e também os objetos inseridos em camadas inferiores (um objeto por cima do efeito continua nítido).
@@ -69,7 +69,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - **Break** (B key, icon, or right-click): splits a clip into two blocks without cutting anything.
 - **Per lane:** marking, cutting, copying and moving apply only to the chosen lane. The **eye** includes or **mutes/hides** a lane in the result (in playback and when saving) and the **lock** protects it from changes.
 - **Timeline zoom** (magnifier buttons, + − 0, pinch or ⌘+wheel) and horizontal panning.
-- **Video size** (toolbar button): width and height, proportional or free, 25/50/75 % or original. It applies to playback and to the saved file.
+- **Video canvas** (toolbar button): handles appear over the video to **resize it with the mouse** (corners proportionally, ⇧ for free; sides change one dimension) and a round handle to **rotate** it; or use the width, height and rotation fields, 25/50/75 % and “Original”. It applies to playback and to the saved file (rotated, the file gets the bounding box).
 - **Non-destructive** editing (the original video never changes), with **undo/redo** and memory on reopening. **Save** creates a new MP4 with the audio mixed into a single track.
 - **Full-screen capture** from the menu bar.
 - **New images** besides captures: **blank** (size, background color or transparent) or **from the clipboard** (*New* button, *File* menu; ⌘N and ⇧⌘N).
@@ -77,7 +77,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 
 **Editor (non-destructive: the original image is never changed)**
 - **Tools:** Move, Arrow, Line, Text, Callout, Rectangle, Ellipse, Step, Highlighter, Pixelate, Blur and Canvas.
-- **Text directly in the object** (text, callout, rectangle, ellipse): font, size, bold/italic/underline, color, horizontal and vertical alignment, bulleted or numbered lists.
+- **Text directly in the object** (text, callout, rectangle, ellipse): font, size (up to 400), bold/italic/underline, color, horizontal and vertical alignment, bulleted or numbered lists. The box **fits the text as you type**, and when you resize the object **the text scales along** (bigger or smaller).
 - Your choice of **line and fill colors**, thickness, opacity and shadow.
 - **Numbered steps** (1, 2, 3 · I, II, III · i, ii, iii · A, B, C · a, b, c), with circle and number colors, font, and **sequence restart**. They **resize by their corners keeping the proportions** (or with the *Size* control), and the number or letter scales along and stays centered; the last size used is remembered.
 - **Blur and Pixelate** with adjustable strength, to hide sensitive information. They act on **everything beneath them**: the image and also objects on lower layers (an object above the effect stays sharp).

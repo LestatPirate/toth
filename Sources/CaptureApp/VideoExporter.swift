@@ -78,6 +78,7 @@ enum VideoExporter {
             }
             if !progressed { try await Task.sleep(nanoseconds: 3_000_000) }
             if reader.status == .failed { throw Failure.io(reader.error?.localizedDescription ?? "?") }
+            if writer.status == .failed { throw Failure.io(writer.error?.localizedDescription ?? "?") }   // senão ficava à espera para sempre
         }
         writer.endSession(atSourceTime: CMTime(seconds: total, preferredTimescale: 90_000))
         await writer.finishWriting()

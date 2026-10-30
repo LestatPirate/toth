@@ -80,6 +80,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--selection-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("SELECTION-SELFTEST") { SelfTests.selectionSelfTest(dir: dir) }
         }
+        if let i = args.firstIndex(of: "--textfit-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1])
+            later("TEXTFIT-SELFTEST") {
+                CaptureStore.overrideFolder = dir
+                if let e = AppState.shared.createBlankImage(width: 800, height: 500, backgroundHex: "#FFFFFF", transparent: false) { return ["não criou a imagem: \(e)"] }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+                guard let canvas = CanvasView.current else { return ["sem editor"] }
+                AppState.shared.model?.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+                return canvas.selfTestTextFit()
+            }
+        }
         if let i = args.firstIndex(of: "--rotate-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("ROTATE-SELFTEST") { SelfTests.rotateSelfTest(dir: dir) }
         }
@@ -366,7 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { VideoHUD.renderForTests(to: args[i + 1]); print("RENDER-VIDEO-HUD: OK"); exit(0) }
         }
         if let i = args.firstIndex(of: "--render-videoeditor"), args.count > i + 1 {
-            Task { @MainActor in await VideoEditSelfTest.render(to: args[i + 1]); print("RENDER-VIDEOEDITOR: OK"); exit(0) }
+            Task { @MainActor in await VideoEditSelfTest.render(to: args[i + 1], frameMode: args.contains("--frame-mode")); print("RENDER-VIDEOEDITOR: OK"); exit(0) }
         }
         if let i = args.firstIndex(of: "--video-inspect"), args.count > i + 1 {
             Task { @MainActor in print(await VideoEditSelfTest.inspect(url: URL(fileURLWithPath: args[i + 1]))); exit(0) }

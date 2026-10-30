@@ -102,6 +102,8 @@ final class EditorModel: ObservableObject {
 
     func checkpoint() { undoStack.append(doc); redoStack.removeAll() }
     func dropLastCheckpoint() { _ = undoStack.popLast() }
+    /// A forma do objeto no último ponto de undo (para saber se um gesto a mudou).
+    func undoShape(of id: UUID) -> Shape? { undoStack.last?.annotations.first { $0.id == id }?.shape }
 
     /// Altera sem criar ponto de undo (usar entre checkpoint() e commit()).
     func mutate(_ f: (inout CaptureDocument) -> Void) { f(&doc) }

@@ -47,49 +47,56 @@ private struct VideoIconButton: View {
 /// O vídeo no editor: leitor, barra de edição e linha de tempo com uma linha por faixa. Marca-se um trecho na linha de tempo
 /// (o leitor mostra o ponto exato da ponta que se move), e cortam-se, copiam-se, colam-se ou invertem-se esse trecho nas
 /// linhas escolhidas. O que sobra pode juntar-se (toca seguido) ou ficar com um espaço.
-/// Tamanho com que o vídeo toca e é guardado: largura, altura, manter proporção, atalhos de escala e voltar ao natural.
-/// Estado da vista sem `@State` (sem o Xcode não há o plugin de macros do SwiftUI).
-private final class OutputSizeFields: ObservableObject {
+/// A barra da «Tela» do vídeo (sob o leitor, só no modo de enquadramento): largura, altura, manter proporção, rotação,
+/// atalhos de escala e voltar ao natural. Os mesmos valores que as alças mudam com o rato.
+private final class OutputFields: ObservableObject {
     @Published var width = 0.0
     @Published var height = 0.0
-    @Published var shown = false
+    @Published var rotation = 0.0
 }
 
-private struct OutputSizePopover: View {
+private struct OutputFrameBar: View {
     @ObservedObject var model: VideoEditorModel
-    @ObservedObject var fields: OutputSizeFields
+    @ObservedObject var fields: OutputFields
 
-    private func sync() { fields.width = model.effectiveOutputSize.width; fields.height = model.effectiveOutputSize.height }
-    private func field(_ title: String, _ value: Binding<Double>, apply: @escaping (Double) -> Void) -> some View {
-        HStack { Text(title).font(.system(size: 12)); Spacer()
-            TextField("", value: value, format: .number.precision(.fractionLength(0))).frame(width: 70).multilineTextAlignment(.trailing)
+    private func sync() { fields.width = model.effectiveOutputSize.width; fields.height = model.effectiveOutputSize.height; fields.rotation = model.outputRotation }
+    private func field(_ title: String, _ value: Binding<Double>, unit: String, width: CGFloat = 64, apply: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 4) { Text(title).font(.system(size: 11)).fixedSize()
+            TextField("", value: value, format: .number.precision(.fractionLength(0...1))).frame(width: width).multilineTextAlignment(.trailing).font(.system(size: 11))
                 .onSubmit { apply(value.wrappedValue) }
-            Text("px").font(.caption).foregroundStyle(.secondary) }
+            Text(unit).font(.caption2).foregroundStyle(.secondary) }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L("Tamanho do vídeo")).font(.headline)
-            Text(L("Original: %@", "\(Int(model.sourceSize.width)) × \(Int(model.sourceSize.height))")).font(.caption).foregroundStyle(.secondary)
-            field(L("Largura"), $fields.width) { v in Task { await model.setOutputSize(width: v); sync() } }
-            field(L("Altura"), $fields.height) { v in Task { await model.setOutputSize(height: v); sync() } }
-            Toggle(L("Manter proporção"), isOn: $model.outputKeepAspect).font(.system(size: 12))
-            HStack(spacing: 4) {
-                ForEach([25, 50, 75], id: \.self) { k in Button("\(k)%") { Task { await model.setOutputScale(Double(k) / 100); sync() } } }
-                Button(L("Original")) { Task { await model.resetOutputSize(); sync() } }.disabled(model.outputSize == nil)
-            }.controlSize(.small)
-            Text(L("Tamanho com que o vídeo toca e é guardado (em proporção ou livre)")).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 10) {
+            Image(systemName: "aspectratio").foregroundStyle(Color.accentColor)
+            field(L("Largura"), $fields.width, unit: "px") { v in Task { await model.setOutputSize(width: v); sync() } }
+            field(L("Altura"), $fields.height, unit: "px") { v in Task { await model.setOutputSize(height: v); sync() } }
+            Toggle(L("Manter proporção"), isOn: $model.outputKeepAspect).font(.system(size: 11)).toggleStyle(.checkbox)
+            Divider().frame(height: 16)
+            field(L("Rotação"), $fields.rotation, unit: "°", width: 50) { v in Task { await model.setOutputRotation(v); sync() } }
+            Button { Task { await model.rotateOutput(by: -90); sync() } } label: { Image(systemName: "rotate.left") }.help(L("Rodar 90° para a esquerda"))
+            Button { Task { await model.rotateOutput(by: 90); sync() } } label: { Image(systemName: "rotate.right") }.help(L("Rodar 90° para a direita"))
+            Divider().frame(height: 16)
+            ForEach([25, 50, 75], id: \.self) { k in Button("\(k)%") { Task { await model.setOutputScale(Double(k) / 100); sync() } } }
+            Button(L("Original")) { Task { await model.resetOutputSize(); sync() } }.disabled(!model.isOutputTransformed)
+            Spacer()
+            Text(L("Saída: %@", "\(Int(model.canvasSize.width)) × \(Int(model.canvasSize.height))")).font(.system(size: 11)).foregroundStyle(.secondary)
+            Button(L("Concluído")) { model.frameMode = false }.keyboardShortcut(.return, modifiers: [])
         }
-        .padding(14).frame(width: 260)
+        .controlSize(.small)
+        .padding(.horizontal, 10).frame(height: 30)
+        .background(.bar)
         .onAppear(perform: sync)
         .onChange(of: model.outputSize) { _, _ in sync() }
+        .onChange(of: model.outputRotation) { _, _ in sync() }
     }
 }
 
 struct VideoWorkspace: View {
     @StateObject private var model: VideoEditorModel
     @ObservedObject private var state = AppState.shared
-    @StateObject private var sizeFields = OutputSizeFields()
+    @StateObject private var outputFields = OutputFields()
 
     init(url: URL) { _model = StateObject(wrappedValue: VideoEditorModel(url: url)) }
     init(model: VideoEditorModel) { _model = StateObject(wrappedValue: model) }
@@ -121,8 +128,10 @@ struct VideoWorkspace: View {
                             .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 6)).padding(10)
                     }
                 }
+                .overlay { if model.frameMode { VideoFrameOverlay(model: model) } }
                 .overlay { if let w = model.working { ProgressView(w).padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)) } }
-                .onTapGesture { model.togglePlay() }
+                .onTapGesture { if !model.frameMode { model.togglePlay() } }
+            if model.frameMode { OutputFrameBar(model: model, fields: outputFields) }
             Divider()
             HStack(spacing: 4) {
                 VideoIconButton(symbol: model.isPlaying ? "pause.fill" : "play.fill", help: model.isPlaying ? L("Pausar (espaço)") : L("Reproduzir (espaço)")) { model.togglePlay() }
@@ -145,8 +154,7 @@ struct VideoWorkspace: View {
                 VideoIconButton(symbol: "plus.magnifyingglass", help: L("Aproximar a linha de tempo (+)"), disabled: model.zoom >= VideoEditorModel.zoomRange.upperBound - 0.001) { model.zoom(by: 1.5) }
                 VideoIconButton(symbol: "arrow.left.and.right.square", help: L("Ver tudo (0)"), disabled: abs(model.zoom - 1) < 0.001) { model.zoomFit() }
                 Divider().frame(height: 18).padding(.horizontal, 3)
-                VideoIconButton(symbol: "aspectratio", help: L("Tamanho do vídeo"), prominent: model.outputSize != nil, disabled: model.sourceSize.width == 0) { sizeFields.shown.toggle() }
-                    .popover(isPresented: $sizeFields.shown, arrowEdge: .bottom) { OutputSizePopover(model: model, fields: sizeFields) }
+                VideoIconButton(symbol: "aspectratio", help: L("Tela do vídeo: redimensionar e rodar com o rato (ou pelos campos)"), prominent: model.frameMode || model.isOutputTransformed, disabled: model.sourceSize.width == 0) { model.frameMode.toggle() }
                 VideoIconButton(symbol: "arrow.uturn.backward", help: L("Desfazer"), disabled: !model.canUndo) { Task { await model.undo() } }
                 VideoIconButton(symbol: "arrow.uturn.forward", help: L("Refazer"), disabled: !model.canRedo) { Task { await model.redo() } }
                 Spacer()
@@ -167,7 +175,7 @@ struct VideoWorkspace: View {
                 Image(systemName: "video.fill").foregroundStyle(.secondary)
                 Text(model.url.lastPathComponent).font(.system(size: 11, weight: .medium)).lineLimit(1)
                 Text(model.info).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                if let o = model.outputSize { Text("→ \(Int(o.width)) × \(Int(o.height))").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor) }
+                if model.isOutputTransformed { Text("→ \(Int(model.canvasSize.width)) × \(Int(model.canvasSize.height))" + (model.outputRotation != 0 ? " · \(Int(model.outputRotation.rounded()))°" : "")).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor) }
                 Spacer()
                 Text(L("Arraste um bloco para o mover (entra entre blocos). ⇧+arrastar marca um trecho para recortar. Olho: entra no resultado. Cadeado: protege.")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }

@@ -154,6 +154,17 @@ public extension Shape {
         }
     }
 
+    /// A mesma forma com a altura do corpo `h` (o topo fica no sítio; só caixas: texto, balão, retângulo, elipse).
+    func withBodyHeight(_ h: Double) -> Shape {
+        switch self {
+        case let .textBox(o, w, _, s, f): return .textBox(origin: o, width: w, height: h, string: s, fontSize: f)
+        case let .callout(o, w, _, t, s, f): return .callout(origin: o, width: w, height: h, tail: t, string: s, fontSize: f)
+        case let .rect(o, w, _): return .rect(origin: o, width: w, height: h)
+        case let .ellipse(o, w, _): return .ellipse(origin: o, width: w, height: h)
+        default: return self
+        }
+    }
+
     /// Caixa do callout sem o ponteiro.
     var calloutBox: Rect? {
         if case let .callout(o, w, h, _, _, _) = self {
@@ -379,6 +390,15 @@ public extension Annotation {
         switch shape {
         case .rect, .ellipse: caption = s
         default: shape = shape.with(string: s)
+        }
+    }
+
+    /// Define o tamanho da letra onde ele vive (na forma, ou no formato de texto em retângulo/elipse).
+    mutating func setEffectiveFontSize(_ f: Double) {
+        switch shape {
+        case .rect, .ellipse: if style.text.size != nil || !caption.isEmpty { style.text.size = f }
+        case .text, .textBox, .callout: shape = shape.with(fontSize: f)
+        default: break
         }
     }
 

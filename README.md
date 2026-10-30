@@ -63,7 +63,7 @@ Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento 
 | **Quebra** | Divide um clipe em dois blocos sem cortar nada (B, ícone ou botão direito). |
 | **Por linha** | A marcação e as operações aplicam-se só à linha escolhida. O **olho** suprime a linha no resultado (reprodução e exportação) e o **cadeado** protege-a. |
 | **Zoom** | Afaste ou aproxime a linha de tempo (lupas, + − 0, pinça) para clicar e arrastar com mais facilidade. |
-| **Tamanho** | Redimensione o vídeo (em proporção ou livre, 25/50/75 %): vale para a reprodução e para o ficheiro guardado. |
+| **Tela do vídeo** | Redimensione e rode o vídeo com o rato (ou pelos campos; em proporção ou livre): vale para a reprodução e para o ficheiro guardado. |
 | **Sem riscos** | Edição não destrutiva: o vídeo original não muda. Desfazer e refazer, e a edição volta ao reabrir. **Guardar** cria um MP4 novo. |
 
 ### O essencial
@@ -151,7 +151,7 @@ In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**
 | **Break** | Splits a clip into two blocks without cutting anything (B, icon or right-click). |
 | **Per lane** | Marking and operations apply only to the chosen lane. The **eye** mutes or hides the lane in the result (playback and export) and the **lock** protects it. |
 | **Zoom** | Zoom the timeline out or in (magnifiers, + − 0, pinch) to click and drag more easily. |
-| **Size** | Resize the video (proportionally or freely, 25/50/75 %): it applies to playback and to the saved file. |
+| **Video canvas** | Resize and rotate the video with the mouse (or the fields; proportionally or freely): it applies to playback and to the saved file. |
 | **Safe** | Non-destructive editing: the original video never changes. Undo and redo, and the edit returns when you reopen. **Save** creates a new MP4. |
 
 ### The essentials

@@ -609,6 +609,49 @@ enum VideoEditSelfTest {
             reopened.tearDown()
             await model.resetOutputSize()
             check(model.outputSize == nil, "«Original» devia limpar o tamanho")
+
+            // 12) rodar a saída 90°: o ficheiro sai com a caixa envolvente (90×160 para 160×90) e a cor do meio mantém-se
+            model.outputKeepAspect = true; await model.setOutputSize(width: 160)
+            await model.setOutputRotation(90)
+            check(model.canvasSize == CGSize(width: 90, height: 160), "rodado 90°, a saída devia ser 90×160 (\(model.canvasSize))")
+            let turned = try await model.exportEdited()
+            if let vt = try? await AVURLAsset(url: turned).loadTracks(withMediaType: .video).first, let n = try? await vt.load(.naturalSize) {
+                check(n == CGSize(width: 90, height: 160), "o ficheiro rodado devia ter 90×160 (\(n))")
+            }
+            let d12 = await decode(model)
+            check(abs(blue(d12, near: 2.5) - 80) < 25, "rodado, a cor do meio aos 2,5 s devia manter-se (\(blue(d12, near: 2.5)))")
+            let turnedAgain = VideoEditorModel(url: url); await turnedAgain.load()
+            check(turnedAgain.outputRotation == 90, "a rotação devia ficar guardada (\(turnedAgain.outputRotation))")
+            turnedAgain.tearDown()
+            // 13) alças sobre o leitor: redimensionar em proporção e rodar com o rato
+            let overlay = VideoFrameOverlayView(frame: NSRect(x: 0, y: 0, width: 600, height: 400)); overlay.model = model
+            let ow = NSWindow(contentRect: overlay.frame, styleMask: [.titled], backing: .buffered, defer: false); ow.contentView = overlay
+            ow.setFrameOrigin(NSPoint(x: -30000, y: -30000)); ow.makeKeyAndOrderFront(nil)
+            func oev(_ type: NSEvent.EventType, _ p: CGPoint, shift: Bool = false) -> NSEvent {
+                NSEvent.mouseEvent(with: type, location: NSPoint(x: p.x, y: overlay.frame.height - p.y), modifierFlags: shift ? [.shift] : [], timestamp: 0, windowNumber: ow.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            }
+            await model.resetOutputSize()
+            // alça redonda arrastada para a direita do centro → 90°
+            let c = overlay.viewPoint(Point(x: Double(model.canvasSize.width) / 2, y: Double(model.canvasSize.height) / 2))
+            overlay.mouseDown(with: oev(.leftMouseDown, overlay.viewPoint(overlay.rotationHandlePoint())))
+            overlay.mouseDragged(with: oev(.leftMouseDragged, CGPoint(x: c.x + 150, y: c.y + 2)))
+            overlay.mouseUp(with: oev(.leftMouseUp, CGPoint(x: c.x + 150, y: c.y + 2)))
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            check(model.outputRotation == 90, "a alça devia rodar a saída para 90° (\(model.outputRotation))")
+            await model.setOutputRotation(0)
+            // canto inferior direito arrastado para metade da distância ao centro → 50 % em proporção (160×90)
+            let br = overlay.viewPoint(overlay.handlePoints()[4])
+            let half = CGPoint(x: c.x + (br.x - c.x) / 2, y: c.y + (br.y - c.y) / 2)
+            overlay.mouseDown(with: oev(.leftMouseDown, br)); overlay.mouseDragged(with: oev(.leftMouseDragged, half)); overlay.mouseUp(with: oev(.leftMouseUp, half))
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            check(model.outputSize == CGSize(width: 160, height: 90), "o canto a meio caminho devia dar 160×90 (\(String(describing: model.outputSize)))")
+            // lado direito só muda a largura; com ⇧ no canto fica livre
+            let r = overlay.viewPoint(overlay.handlePoints()[3])
+            overlay.mouseDown(with: oev(.leftMouseDown, r)); overlay.mouseDragged(with: oev(.leftMouseDragged, CGPoint(x: c.x + (r.x - c.x) * 1.5, y: r.y))); overlay.mouseUp(with: oev(.leftMouseUp, CGPoint(x: c.x + (r.x - c.x) * 1.5, y: r.y)))
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            check(model.outputSize == CGSize(width: 240, height: 90), "o lado devia mudar só a largura (\(String(describing: model.outputSize)))")
+            ow.orderOut(nil)
+            await model.resetOutputSize()
             model.tearDown()
         } catch { fails.append("exceção: \(error)") }
         fails += await gestures(dir: dir)
@@ -738,7 +781,7 @@ enum VideoEditSelfTest {
 
 extension VideoEditSelfTest {
     /// Desenha a área de trabalho do vídeo (leitor, barra de edição e linha de tempo) com um corte feito e um trecho marcado.
-    static func render(to path: String) async {
+    static func render(to path: String, frameMode: Bool = false) async {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("toth-render-video-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -754,6 +797,7 @@ extension VideoEditSelfTest {
         model.mask = [.video, .system]
         model.selection = TimeSpan(start: 0.4, end: 0.9); model.activeEdge = .end
         model.seek(to: 0.9); model.preview(0.9, label: L("Fim do trecho"))
+        if frameMode { await model.setOutputRotation(20); model.frameMode = true }
         try? await Task.sleep(nanoseconds: 800_000_000)
         let host = NSHostingView(rootView: VideoWorkspace(model: model).environment(\.colorScheme, .light))
         host.frame = NSRect(x: 0, y: 0, width: 1000, height: 640)
