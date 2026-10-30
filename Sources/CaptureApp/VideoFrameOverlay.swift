@@ -31,8 +31,13 @@ final class VideoFrameOverlayView: NSView {
     static let inset: CGFloat = 70
     private var canvas: CGSize { model?.canvasSize ?? CGSize(width: 16, height: 16) }
     private var area: CGRect { bounds.insetBy(dx: Self.inset, dy: Self.inset) }
-    private var scale: CGFloat { min(max(1, area.width) / max(1, canvas.width), max(1, area.height) / max(1, canvas.height)) }
-    private var displayOrigin: CGPoint { CGPoint(x: area.minX + (area.width - canvas.width * scale) / 2, y: area.minY + (area.height - canvas.height * scale) / 2) }
+    /// Durante um gesto a escala e o centro ficam fixos na vista: a saída muda de tamanho a cada movimento e, se a vista se
+    /// reajustasse, o rato "fugia" e o gesto ficava aos solavancos. (O vídeo está sempre centrado na saída.)
+    private var frozen: (scale: CGFloat, center: CGPoint)?
+    private var fitScale: CGFloat { min(max(1, area.width) / max(1, canvas.width), max(1, area.height) / max(1, canvas.height)) }
+    private var scale: CGFloat { frozen?.scale ?? fitScale }
+    private var centerView: CGPoint { frozen?.center ?? CGPoint(x: area.midX, y: area.midY) }
+    private var displayOrigin: CGPoint { CGPoint(x: centerView.x - canvas.width * scale / 2, y: centerView.y - canvas.height * scale / 2) }
     /// Da saída (píxeis do ficheiro) para a vista, e o contrário.
     func viewPoint(_ p: Point) -> CGPoint { CGPoint(x: displayOrigin.x + CGFloat(p.x) * scale, y: displayOrigin.y + CGFloat(p.y) * scale) }
     func canvasPoint(_ v: CGPoint) -> Point { Point(x: Double((v.x - displayOrigin.x) / scale), y: Double((v.y - displayOrigin.y) / scale)) }
@@ -94,8 +99,10 @@ final class VideoFrameOverlayView: NSView {
         guard let model else { return }
         let v = convert(event.locationInWindow, from: nil)
         moved = false; drag = nil
+        frozen = (fitScale, centerView)
         if nearView(v, rotationHandlePoint()) { drag = .rotate; return }
         if let h = handlePoints().firstIndex(where: { nearView(v, $0) }) { drag = .resize(handle: h, size: model.effectiveOutputSize); return }
+        frozen = nil
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -130,7 +137,8 @@ final class VideoFrameOverlayView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard let model else { return }
         if drag != nil, moved { Task { await model.commitOutputTransform() } }
-        drag = nil
+        drag = nil; frozen = nil
+        needsDisplay = true
     }
 }
 
