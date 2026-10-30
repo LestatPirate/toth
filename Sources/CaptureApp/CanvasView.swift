@@ -423,10 +423,10 @@ final class CanvasView: NSView {
         if let h = resizing, let id = model.selection {
             update(id) {
                 $0 = $0.movingHandle(h, to: p)
-                // a letra cresce e encolhe com a caixa (média geométrica das duas escalas)
-                if let start = resizeStart, start.bounds.width > 0, start.bounds.height > 0 {
+                // a letra cresce e encolhe com a altura da caixa (é a altura que dita o tamanho das linhas)
+                if let start = resizeStart, start.bounds.height > 0 {
                     let b = $0.shape.bodyBounds
-                    let k = ((b.width / start.bounds.width) * (b.height / start.bounds.height)).squareRoot()
+                    let k = b.height / start.bounds.height
                     $0.setEffectiveFontSize(min(max(start.font * k, 4), 400))
                 }
             }
@@ -692,13 +692,13 @@ final class CanvasView: NSView {
         model.selection = id
         guard let a = model.selected, let f0 = a.effectiveFontSize else { return fails + ["sem balão"] }
         let br = a.handlePoints[2]
-        debugMouse(at: br, dragTo: Point(x: br.x + a.shape.bodyBounds.width, y: br.y + a.shape.bodyBounds.height))   // o dobro
+        debugMouse(at: br, dragTo: Point(x: br.x + 20, y: br.y + a.shape.bodyBounds.height))   // o dobro da altura, quase a mesma largura
         let f1 = model.selected?.effectiveFontSize ?? 0
-        check(abs(f1 - f0 * 2) < 0.5, "ao duplicar a caixa a letra devia duplicar (\(f0) → \(f1))")
+        check(abs(f1 - f0 * 2) < 0.5, "ao duplicar a altura a letra devia duplicar (\(f0) → \(f1))")
         let b2 = model.selected!.handlePoints[2]
-        debugMouse(at: b2, dragTo: Point(x: b2.x - model.selected!.shape.bodyBounds.width * 0.75, y: b2.y - model.selected!.shape.bodyBounds.height * 0.75))
+        debugMouse(at: b2, dragTo: Point(x: b2.x, y: b2.y - model.selected!.shape.bodyBounds.height * 0.75))
         let f2 = model.selected?.effectiveFontSize ?? 0
-        check(abs(f2 - f0 * 0.5) < 0.5, "ao reduzir a um quarto a letra devia ficar a metade (\(f0) → \(f2))")
+        check(abs(f2 - f0 * 0.5) < 0.5, "ao reduzir a altura a um quarto a letra devia ficar a metade (\(f0) → \(f2))")
         model.setFontSize(300)
         check(model.selected?.effectiveFontSize == 300, "a letra pode passar dos 120")
         model.undo(); model.undo(); model.undo()
