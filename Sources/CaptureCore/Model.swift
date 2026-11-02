@@ -141,6 +141,12 @@ public enum Shape: Codable, Equatable, Sendable {
     case image(origin: Point, width: Double, height: Double, asset: String)
     /// Caixa de texto com ponteiro (`tail`) apontando para algo na imagem.
     case callout(origin: Point, width: Double, height: Double, tail: Point, string: String, fontSize: Double)
+    /// Carimbo: um símbolo do sistema (`"sf:nome"`, pintado com a cor do estilo) ou um emoji/texto curto, ajustado à caixa.
+    case stamp(origin: Point, width: Double, height: Double, symbol: String)
+    /// Reparo por preenchimento: a região é preenchida a partir do que a rodeia (o que está por baixo desaparece).
+    case patch(origin: Point, width: Double, height: Double)
+    /// Reparo por clonagem: a região é coberta com o que está por baixo noutro sítio (`source` = canto superior esquerdo da origem).
+    case clone(origin: Point, width: Double, height: Double, source: Point)
 }
 
 public struct Annotation: Codable, Equatable, Identifiable, Sendable {

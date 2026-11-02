@@ -91,6 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return canvas.selfTestTextFit()
             }
         }
+        if let i = args.firstIndex(of: "--stamps-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1]); later("STAMPS-SELFTEST") { SelfTests.stampsRepairSelfTest(dir: dir) }
+        }
         if let i = args.firstIndex(of: "--rotate-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("ROTATE-SELFTEST") { SelfTests.rotateSelfTest(dir: dir) }
         }

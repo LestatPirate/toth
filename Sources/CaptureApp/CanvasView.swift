@@ -145,6 +145,16 @@ final class CanvasView: NSView {
             ctx.stroke(h.shape.bounds.cg.insetBy(dx: -4 / scale, dy: -4 / scale))
             ctx.restoreGState()
         }
+        if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }), let src = sel.shape.cloneSourceRect {
+            // clonagem: a origem a tracejado, ligada à região por uma linha
+            ctx.saveGState(); Renderer.applyRotation(sel, ctx)
+            ctx.setStrokeColor(NSColor.systemGreen.cgColor); ctx.setLineWidth(1.5 / scale); ctx.setLineDash(phase: 0, lengths: [5 / scale, 3 / scale])
+            ctx.stroke(src.cg)
+            ctx.setLineDash(phase: 0, lengths: []); ctx.setLineWidth(1 / scale)
+            let b = sel.shape.bounds
+            ctx.move(to: CGPoint(x: src.x + src.width / 2, y: src.y + src.height / 2)); ctx.addLine(to: CGPoint(x: b.x + b.width / 2, y: b.y + b.height / 2)); ctx.strokePath()
+            ctx.restoreGState()
+        }
         if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }) {
             let side = 9 / scale
             for h in sel.handlePoints {
@@ -410,6 +420,15 @@ final class CanvasView: NSView {
             } else {
                 model.addStep(at: p)
             }
+        case .stamp:
+            // um clique põe o carimbo com o tamanho padrão; arrastar escolhe o tamanho (como as outras formas)
+            if !event.modifierFlags.contains(.option) { clickCandidate = model.doc.topmost(at: p, tolerance: tol)?.id }
+            model.checkpoint()
+            let id = UUID()
+            let a = Annotation(id: id, z: (model.doc.annotations.map(\.z).max() ?? -1) + 1, shape: .stamp(origin: p, width: 0, height: 0, symbol: model.currentStamp), style: model.style)
+            model.mutate { $0.insert(a) }
+            model.selection = id
+            creating = id
         case .canvas:
             let vp = convert(event.locationInWindow, from: nil)
             if model.canvasTarget == .image {
@@ -541,11 +560,19 @@ final class CanvasView: NSView {
                 beginEditing(id, isNew: true)
                 return
             }
-            if tiny {   // clique sem arrastar não cria nada
+            if tiny && model.tool == .stamp, let start = dragStart {   // clique: carimbo com o tamanho padrão, centrado no clique
+                let s = model.defaultStampSize
+                update(id) { $0.shape = .stamp(origin: Point(x: start.x - s / 2, y: start.y - s / 2), width: s, height: s, symbol: model.currentStamp) }
+                expandAreaIfNeeded(for: id)
+                model.commit(); model.finishedDrawing()
+            } else if tiny {   // clique sem arrastar não cria nada
                 model.mutate { $0.remove(id: id) }
                 model.dropLastCheckpoint()
                 model.selection = nil
-            } else { model.commit(); model.finishedDrawing() }
+            } else {
+                if model.tool == .stamp, let a = model.selected { model.defaultStampSize = max(a.shape.bounds.width, a.shape.bounds.height) }   // o próximo nasce com este tamanho
+                model.commit(); model.finishedDrawing()
+            }
             endGesture()
         } else if moving {
             if let start = moveStart, start.shapes.allSatisfy({ entry in model.doc.annotations.first { a in a.id == entry.key }?.shape == entry.value }) { model.dropLastCheckpoint() }   // não se mexeu
@@ -605,6 +632,11 @@ final class CanvasView: NSView {
         case .gaussian: return .gaussian(origin: o, width: w, height: h, intensity: model.defaultBlurIntensity)
         case .text: return .textBox(origin: o, width: w, height: h, string: "", fontSize: model.defaultFontSize)
         case .callout: return calloutPlaced(tail: a, near: b)
+        case .stamp:   // quadrado (o carimbo mantém a proporção), a partir do ponto de partida
+            let s = max(w, h)
+            return .stamp(origin: Point(x: b.x >= a.x ? a.x : a.x - s, y: b.y >= a.y ? a.y : a.y - s), width: s, height: s, symbol: model.currentStamp)
+        case .repair:
+            return model.repairClones ? .clone(origin: o, width: w, height: h, source: Point(x: o.x - w - 12, y: o.y)) : .patch(origin: o, width: w, height: h)
         default: return .arrow(from: a, to: b)
         }
     }

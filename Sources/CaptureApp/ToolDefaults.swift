@@ -71,6 +71,8 @@ extension Tool {
         case .blur: .blur
         case .gaussian: .gaussian
         case .image: nil
+        case .stamp: .stamp
+        case .patch, .clone: .repair
         }
     }
 }

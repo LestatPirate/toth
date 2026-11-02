@@ -49,7 +49,7 @@ enum Renderer {
 
         for (i, a) in annotations.enumerated() {
             switch a.shape {
-            case .blur, .gaussian:
+            case .blur, .gaussian, .patch, .clone:
                 drawEffect(a, below: Array(annotations[0..<i]), doc: doc, base: base, assets: assets, ctx)
             default:
                 draw(a, base: base, assets: assets, ctx, skipText: a.id == editing)
@@ -62,11 +62,15 @@ enum Renderer {
     /// depende do tamanho da imagem.
     private static func drawEffect(_ a: Annotation, below: [Annotation], doc: CaptureDocument, base: CGImage,
                                    assets: AssetStore?, _ ctx: CGContext) {
-        let gaussian: Double?
-        let pixel: Double?
+        var gaussian: Double?
+        var pixel: Double?
+        var patch = false
+        var cloneFrom: CGRect?
         switch a.shape {
-        case let .gaussian(_, _, _, i): gaussian = i; pixel = nil
-        case let .blur(_, _, _, r): gaussian = nil; pixel = max(2, r)
+        case let .gaussian(_, _, _, i): gaussian = i
+        case let .blur(_, _, _, r): pixel = max(2, r)
+        case .patch: patch = true
+        case .clone: cloneFrom = a.shape.cloneSourceRect!.cg
         default: return
         }
         if let g = gaussian, g <= 0 { return }
@@ -76,8 +80,11 @@ enum Renderer {
         let visible = doc.area.cg.union(doc.imageRect.cg)
         let rect = a.worldBounds.cg.intersection(visible).integral
         guard rect.width >= 1, rect.height >= 1 else { return }
-        let pad: CGFloat = gaussian.map { ceil($0 * 3) } ?? 0
-        let padded = rect.insetBy(dx: -pad, dy: -pad)
+        // margem à volta: o blur precisa de 3 raios; o preenchimento, de uma vizinhança de onde tirar os píxeis
+        var pad: CGFloat = gaussian.map { ceil($0 * 3) } ?? 0
+        if patch { pad = min(240, max(16, ceil(max(rect.width, rect.height) / 2))) }
+        var padded = rect.insetBy(dx: -pad, dy: -pad)
+        if let src = cloneFrom { padded = padded.union(src.integral) }   // a origem da clonagem também tem de ser desenhada
         guard padded.width * padded.height <= 40_000_000 else { return }   // limite de memória (~160 MB)
 
         // 1) o que está por baixo, num bitmap só desta região
@@ -106,6 +113,13 @@ enum Renderer {
             // uma faixa fina numa das bordas (o CIPixellate deixava-a no topo).
             let local = CGRect(x: rect.minX - padded.minX, y: rect.minY - padded.minY, width: rect.width, height: rect.height)
             pixelated = pixelate(below, region: local, cell: CGFloat(size))
+        } else if patch {
+            let local = CGRect(x: rect.minX - padded.minX, y: rect.minY - padded.minY, width: rect.width, height: rect.height)
+            pixelated = inpaint(below, hole: local)
+        } else if let src = cloneFrom {
+            // a região passa a ser o que está por baixo na origem (origem fora do visível: fica o que houver)
+            let from = CGRect(x: src.minX - padded.minX, y: src.minY - padded.minY, width: rect.width, height: rect.height).integral
+            pixelated = below.cropping(to: from.intersection(CGRect(x: 0, y: 0, width: w, height: h)))
         }
         let img: CGImage
         if let pixelated { img = pixelated }
@@ -241,6 +255,22 @@ enum Renderer {
         return dctx.makeImage()
     }
 
+    /// Preenche `hole` (coordenadas da imagem, origem no topo) a partir do que a rodeia (ver `Inpaint`) e devolve só essa região.
+    static func inpaint(_ image: CGImage, hole: CGRect) -> CGImage? {
+        let w = image.width, h = image.height
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let sctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        sctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let hx = Int(hole.minX.rounded()), hy = Int(hole.minY.rounded()), hw = Int(hole.width.rounded()), hh = Int(hole.height.rounded())
+        // o buffer do CGContext tem a origem em baixo: a linha y da imagem é a linha h-1-y do buffer
+        Inpaint.fill(&px, width: w, height: h, hole: (hx, h - hy - hh, hw, hh))
+        guard let dctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let out = dctx.makeImage() else { return nil }
+        return out.cropping(to: CGRect(x: hx, y: hy, width: hw, height: hh))
+    }
+
     enum CalloutSide { case top, right, bottom, left }
 
     /// Onde o ponteiro se liga à caixa. Segue o **raio do centro da caixa até à ponta**: o ponto de ligação desliza de forma
@@ -319,6 +349,28 @@ enum Renderer {
         ctx.textPosition = CGPoint(x: center.x - m.ink.midX, y: center.y + verticalOffset)
         CTLineDraw(m.line, ctx)
         ctx.restoreGState()
+    }
+
+    /// Carimbo: símbolo do sistema (com a cor do estilo) ou emoji/texto, ajustado e centrado na caixa, com a proporção.
+    static func drawStamp(_ symbol: String, in box: CGRect, color: NSColor, _ ctx: CGContext) {
+        guard box.width >= 1, box.height >= 1 else { return }
+        if let name = StampLibrary.symbolName(symbol) {
+            guard let img = StampLibrary.symbolImage(name, color: color, pointSize: 256), img.size.width > 0, img.size.height > 0 else { return }
+            let k = min(box.width / img.size.width, box.height / img.size.height)
+            let r = CGRect(x: box.midX - img.size.width * k / 2, y: box.midY - img.size.height * k / 2, width: img.size.width * k, height: img.size.height * k)
+            // (o contexto tem o eixo y para baixo: desenha-se virado)
+            ctx.saveGState()
+            ctx.translateBy(x: r.minX, y: r.maxY); ctx.scaleBy(x: 1, y: -1)
+            img.draw(in: CGRect(x: 0, y: 0, width: r.width, height: r.height), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.high])
+            ctx.restoreGState()
+            return
+        }
+        // emoji / texto curto: a letra cresce até encher a caixa
+        var size = box.height * 0.9
+        var font = NSFont.systemFont(ofSize: size)
+        var measured = (symbol as NSString).size(withAttributes: [.font: font])
+        if measured.width > box.width, measured.width > 0 { size *= box.width / measured.width; font = NSFont.systemFont(ofSize: size); measured = (symbol as NSString).size(withAttributes: [.font: font]) }
+        (symbol as NSString).draw(at: CGPoint(x: box.midX - measured.width / 2, y: box.midY - measured.height / 2), withAttributes: [.font: font])
     }
 
     /// Área do texto dentro de uma caixa.
@@ -408,8 +460,11 @@ enum Renderer {
             ctx.setShadow(offset: .zero, blur: 0, color: nil)
             drawStepLabel(a.style.stepFormat.label(n), center: CGPoint(x: center.x, y: center.y), radius: r, style: a.style, ctx)
 
-        case .gaussian, .blur:
+        case .gaussian, .blur, .patch, .clone:
             break   // tratados em drawEffect: precisam do que está por baixo
+
+        case let .stamp(_, _, _, symbol):
+            drawStamp(symbol, in: a.shape.bounds.cg, color: c, ctx)
 
         case let .image(_, _, _, asset):
             let box = a.shape.bounds.cg

@@ -139,6 +139,75 @@ struct PropertiesPanel: View {
     }
 
     private var isHighlight: Bool { if case .highlight = model.selected?.shape { return true }; return model.selected == nil && model.tool == .highlight }
+    private var isStamp: Bool { if case .stamp = model.selected?.shape { return true }; return model.selected == nil && model.tool == .stamp }
+    private var isRepair: Bool { if model.selected?.shape.isRepair == true { return true }; return model.selected == nil && model.tool == .repair }
+    private var stampSize: Binding<Double> { Binding(get: { model.defaultStampSize }, set: { model.defaultStampSize = $0 }) }
+    private var repairClones: Binding<Bool> { Binding(get: { model.currentRepairClones }, set: { model.setRepairClones($0) }) }
+    @ObservedObject private var stamps = StampLibrary.shared
+
+    /// Carimbos: símbolos (com a cor do estilo), emojis, um campo para outro emoji, e as imagens importadas.
+    private var stampSection: some View {
+        section(L("Carimbo")) {
+            row(L("Cor")) { ColorPicker("", selection: lineColor).labelsHidden() }
+            if model.selected == nil { slider(L("Tamanho"), value: stampSize, range: 16...512, format: "%.0f") }
+            let cols = [GridItem(.adaptive(minimum: 30), spacing: 4)]
+            LazyVGrid(columns: cols, spacing: 4) {
+                ForEach(StampLibrary.symbols, id: \.self) { name in
+                    stampCell(selected: model.currentStamp == StampLibrary.symbolKey(name)) { Image(systemName: name).font(.system(size: 16)).foregroundStyle(Color(nsColor: NSColor(hex: model.currentStyle.colorHex))) }
+                        .onTapGesture { model.chooseStamp(StampLibrary.symbolKey(name)) }
+                }
+            }
+            LazyVGrid(columns: cols, spacing: 4) {
+                ForEach(StampLibrary.emojis, id: \.self) { e in
+                    stampCell(selected: model.currentStamp == e) { Text(e).font(.system(size: 17)) }.onTapGesture { model.chooseStamp(e) }
+                }
+            }
+            row(L("Outro emoji ou texto")) {
+                TextField("", text: Binding(get: { StampLibrary.isSymbol(model.currentStamp) ? "" : model.currentStamp }, set: { if !$0.isEmpty { model.chooseStamp(String($0.prefix(8))) } })).frame(width: 90)
+            }
+            Text(L("Clique na imagem para pôr o carimbo (arraste para escolher o tamanho). As imagens importadas entram como imagem.")).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if !stamps.images.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 4)], spacing: 4) {
+                    ForEach(stamps.images, id: \.self) { url in
+                        stampCell(selected: false) { if let img = NSImage(contentsOf: url) { Image(nsImage: img).resizable().scaledToFit().padding(3) } }
+                            .frame(height: 44)
+                            .onTapGesture { model.addImageStamp(url, at: model.visibleCenter) }
+                            .contextMenu { Button(L("Remover da biblioteca de carimbos")) { stamps.remove(url) } }
+                            .help(url.deletingPathExtension().lastPathComponent)
+                    }
+                }
+            }
+            Button(L("Importar imagens…")) { importStamps() }.controlSize(.small)
+        }
+    }
+
+    private func stampCell<C: View>(selected: Bool, @ViewBuilder _ content: () -> C) -> some View {
+        content().frame(width: 30, height: 30).frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 5).fill(selected ? Color.accentColor.opacity(0.3) : Color.secondary.opacity(0.1)))
+            .contentShape(Rectangle())
+    }
+
+    private func importStamps() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = true
+        panel.message = L("Escolha imagens para usar como carimbos (PNG, JPEG, HEIC, SVG…)")
+        guard panel.runModal() == .OK else { return }
+        let failed = stamps.importImages(panel.urls)
+        if !failed.isEmpty { AppState.shared.errorMessage = L("Não foi possível importar: %@", failed.joined(separator: ", ")) }
+    }
+
+    private var repairSection: some View {
+        section(L("Reparo")) {
+            Picker("", selection: repairClones) {
+                Text(L("Preencher")).tag(false)
+                Text(L("Clonar")).tag(true)
+            }.pickerStyle(.segmented).labelsHidden()
+            Text(model.currentRepairClones
+                 ? L("A região é coberta com o que está por baixo noutro sítio: arraste a alça verde (a origem) para escolher de onde copiar.")
+                 : L("A região é preenchida a partir do que a rodeia (apaga o que lá está). Funciona melhor em fundos lisos ou com gradientes."))
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
     private var isPixelate: Bool { if case .blur = model.selected?.shape { return true }; return model.selected == nil && model.tool == .blur }
 
     // Etapa
@@ -203,8 +272,8 @@ struct PropertiesPanel: View {
     }
     private var isStep: Bool { if case .step = model.selected?.shape { return true }; return model.selected == nil && model.tool == .step }
     private var hasLine: Bool {
-        if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image: return false; default: return true } }
-        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas].contains(model.tool)
+        if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image, .stamp, .patch, .clone: return false; default: return true } }
+        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair].contains(model.tool)
     }
 
     var body: some View {
@@ -234,6 +303,8 @@ struct PropertiesPanel: View {
                     }
                 }
                 if isStep { stepSection }
+                if isStamp { stampSection }
+                if isRepair { repairSection }
                 if isHighlight {
                     section(L("Marcador")) { row(L("Cor")) { ColorPicker("", selection: lineColor).labelsHidden() } }
                 }

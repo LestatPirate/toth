@@ -392,6 +392,97 @@ enum SelfTests {
         return [a(0, 0), a(img.width - 1, 0), a(0, img.height - 1), a(img.width - 1, img.height - 1), a(img.width / 2, 0), a(0, img.height / 2), a(img.width / 2, img.height - 1)]
     }
 
+    /// Carimbos e Reparo: desenho do símbolo e do emoji, preenchimento por vizinhança, clonagem; e o fluxo no editor.
+    static func stampsRepairSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir
+        StampLibrary.overrideFolder = dir.appendingPathComponent("stamps")
+        // base 600×400 branca com um retângulo vermelho pintado nos píxeis
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 600, pixelsHigh: 400, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 600, height: 400).fill()
+        NSColor.red.setFill(); NSRect(x: 100, y: 200, width: 200, height: 100).fill()   // (y de baixo: fica em y 100…200 da imagem)
+        NSColor.black.setFill(); NSRect(x: 400, y: 100, width: 60, height: 60).fill()   // mancha a apagar: imagem y 240…300
+        NSGraphicsContext.restoreGraphicsState()
+        guard let base = rep.cgImage else { return ["sem imagem base"] }
+        func rgb(_ png: Data?, _ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            guard let png, let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil), let p = pixel(img, x, y) else { return nil }
+            return (p.r, p.g, p.b)
+        }
+
+        // 1) Reparo por preenchimento: a mancha preta sobre fundo branco desaparece (fica branco)
+        var doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+        doc.add(.patch(origin: Point(x: 395, y: 235), width: 70, height: 70))
+        var png = Renderer.png(doc, base: base)
+        if let p = rgb(png, 430, 270) { check(p.0 > 245 && p.1 > 245 && p.2 > 245, "o preenchimento devia apagar a mancha (ficou \(p))") } else { fails.append("sem PNG do preenchimento") }
+        // uma faixa vertical que atravessa o retângulo vermelho: no meio fica vermelho (vizinhos vermelhos), em cima branco
+        doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+        doc.add(.patch(origin: Point(x: 180, y: 60), width: 40, height: 180))
+        png = Renderer.png(doc, base: base)
+        if let p = rgb(png, 200, 150) { check(p.0 > 200 && p.1 < 80 && p.2 < 80, "dentro do retângulo o preenchimento devia ser vermelho (ficou \(p))") }
+        if let p = rgb(png, 200, 70) { check(p.0 > 230 && p.1 > 230 && p.2 > 230, "acima do retângulo o preenchimento devia ser branco (ficou \(p))") }
+
+        // 2) Clonagem: a região em branco passa a ter o vermelho da origem
+        doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+        doc.add(.clone(origin: Point(x: 400, y: 20), width: 80, height: 60, source: Point(x: 120, y: 110)))
+        png = Renderer.png(doc, base: base)
+        if let p = rgb(png, 440, 50) { check(p.0 > 200 && p.1 < 80 && p.2 < 80, "a clonagem devia copiar o vermelho (ficou \(p))") }
+        // a 5.ª alça é a origem e move-a
+        let cl = Annotation(z: 0, shape: .clone(origin: Point(x: 400, y: 20), width: 80, height: 60, source: Point(x: 120, y: 110)))
+        check(cl.shape.handles.count == 5 && cl.shape.handles[4] == Point(x: 160, y: 140), "alça da origem (\(cl.shape.handles))")
+        check(cl.shape.movingHandle(4, to: Point(x: 300, y: 300)).cloneSource == Point(x: 260, y: 270), "mover a alça da origem")
+        check(cl.shape.asRepair(clone: false).isRepair && cl.shape.asRepair(clone: false).cloneSource == nil, "trocar para preenchimento")
+
+        // 3) Carimbos: símbolo azul e emoji desenham-se dentro da caixa
+        doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+        doc.add(.stamp(origin: Point(x: 20, y: 20), width: 80, height: 80, symbol: StampLibrary.symbolKey("checkmark.circle.fill")), style: Style(colorHex: "#0000FF"))
+        doc.add(.stamp(origin: Point(x: 480, y: 300), width: 80, height: 80, symbol: "🔥"))
+        png = Renderer.png(doc, base: base)
+        if let p = rgb(png, 40, 60) { check(p.2 > 200 && p.0 < 80, "o símbolo devia ser azul (ficou \(p))") }
+        if let p = rgb(png, 520, 345) { check(!(p.0 > 245 && p.1 > 245 && p.2 > 245), "o emoji devia pintar a caixa (ficou \(p))") }
+        if let p = rgb(png, 10, 10) { check(p.0 > 245 && p.1 > 245 && p.2 > 245, "fora da caixa do carimbo fica a imagem (ficou \(p))") }
+        // redimensionar mantém a proporção
+        let st = Annotation(z: 0, shape: .stamp(origin: Point(x: 20, y: 20), width: 80, height: 40, symbol: "x"))
+        let r = st.shape.movingHandle(2, to: Point(x: 200, y: 100)).bounds   // canto inferior direito; o superior esquerdo fica fixo
+        check(abs(r.width / r.height - 2) < 0.01 && r.x == 20 && r.y == 20, "o carimbo devia manter a proporção (\(r))")
+
+        // 4) No editor: ferramenta Carimbo com clique e arrasto, Reparo por arrasto, imagem importada como carimbo
+        let state = AppState.shared
+        if let e = state.createBlankImage(width: 600, height: 400, backgroundHex: "#FFFFFF", transparent: false) { return fails + ["não criou a imagem: \(e)"] }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        guard let m = state.model, let canvas = CanvasView.current else { return fails + ["sem editor"] }
+        m.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        m.tool = .stamp; m.chooseStamp("⭐️"); m.defaultStampSize = 50
+        canvas.debugMouse(at: Point(x: 300, y: 200))
+        check(m.doc.annotations.count == 1 && m.selected?.shape.stampSymbol == "⭐️" && m.selected?.shape.bounds == Rect(x: 275, y: 175, width: 50, height: 50), "clique devia pôr um carimbo de 50 centrado (\(String(describing: m.selected?.shape)))")
+        check(m.tool == .select, "depois do carimbo volta a Mover")
+        m.tool = .stamp
+        canvas.debugMouse(at: Point(x: 100, y: 100), dragTo: Point(x: 220, y: 160))
+        check(m.selected?.shape.bounds == Rect(x: 100, y: 100, width: 120, height: 120), "arrastar devia dar um carimbo quadrado de 120 (\(String(describing: m.selected?.shape.bounds)))")
+        check(m.defaultStampSize == 120, "o tamanho arrastado passa a ser o padrão")
+        m.tool = .repair; m.setRepairClones(false)
+        canvas.debugMouse(at: Point(x: 400, y: 100), dragTo: Point(x: 460, y: 150))
+        check(m.selected?.shape.isRepair == true && m.selected?.shape.cloneSource == nil, "arrastar com Reparo cria um preenchimento")
+        m.setRepairClones(true)
+        check(m.selected?.shape.cloneSource != nil, "trocar para Clonar no painel muda o elemento")
+        m.undo()
+        check(m.selected?.shape.cloneSource == nil, "desfazer repõe o preenchimento")
+        // imagem importada: fica na biblioteca de carimbos e entra como imagem
+        let imgURL = dir.appendingPathComponent("logo.png")
+        try? NSBitmapImageRep(cgImage: image(120, 60, .systemPink, .systemOrange, label: "")).representation(using: .png, properties: [:])?.write(to: imgURL)
+        let lib = StampLibrary.shared; lib.reload()
+        check(lib.importImages([imgURL]).isEmpty && lib.images.count == 1, "importar a imagem para a biblioteca (\(lib.images))")
+        let n = m.doc.annotations.count
+        if let u = lib.images.first { m.addImageStamp(u, at: Point(x: 300, y: 300)) }
+        check(m.doc.annotations.count == n + 1 && m.selected?.shape.imageAsset != nil && m.selected?.shape.bounds.width == 120 && m.selected?.shape.bounds.height == 60, "a imagem entra como `image` com a proporção (\(String(describing: m.selected?.shape.bounds)))")
+        if let u = lib.images.first { lib.remove(u) }
+        check(lib.images.isEmpty, "remover da biblioteca")
+        return fails
+    }
+
     static func effectsSelfTest() -> [String] {
         var fails: [String] = []
         func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }

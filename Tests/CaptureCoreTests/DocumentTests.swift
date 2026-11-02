@@ -909,3 +909,40 @@ import Foundation
         #expect(t.move(TimeSpan(start: 10, end: 20), tracks: [], to: 30, ripple: false) == nil)             // nenhuma linha
     }
 }
+
+@Suite struct InpaintTests {
+    /// Buffer RGBA `w×h` com a metade esquerda de uma cor e a direita de outra.
+    func halves(_ w: Int, _ h: Int, left: [UInt8], right: [UInt8]) -> [UInt8] {
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        for y in 0..<h { for x in 0..<w { let c = x < w / 2 ? left : right; for k in 0..<4 { px[(y * w + x) * 4 + k] = c[k] } } }
+        return px
+    }
+
+    @Test func uniformHoleKeepsColor() {
+        let w = 24, h = 24
+        var px = halves(w, h, left: [200, 100, 50, 255], right: [200, 100, 50, 255])
+        px[(12 * w + 12) * 4] = 0; px[(12 * w + 12) * 4 + 1] = 0; px[(12 * w + 12) * 4 + 2] = 0   // uma mancha
+        Inpaint.fill(&px, width: w, height: h, hole: (8, 8, 8, 8))
+        let i = (12 * w + 12) * 4
+        #expect(abs(Int(px[i]) - 200) <= 1 && abs(Int(px[i + 1]) - 100) <= 1 && abs(Int(px[i + 2]) - 50) <= 1 && px[i + 3] == 255)
+    }
+
+    @Test func holeAcrossEdgeFollowsEachSide() {
+        let w = 40, h = 20
+        var px = halves(w, h, left: [255, 0, 0, 255], right: [0, 0, 255, 255])
+        for y in 5..<15 { for x in 10..<30 { for k in 0..<3 { px[(y * w + x) * 4 + k] = 128 } } }   // mancha cinzenta
+        Inpaint.fill(&px, width: w, height: h, hole: (10, 5, 20, 10))
+        let l = (10 * w + 12) * 4, r = (10 * w + 27) * 4
+        #expect(px[l] > 200 && px[l + 2] < 60)   // perto da esquerda: vermelho
+        #expect(px[r + 2] > 200 && px[r] < 60)   // perto da direita: azul
+    }
+
+    @Test func largeHoleIsSolvedByLevels() {
+        let w = 160, h = 120
+        var px = halves(w, h, left: [10, 200, 10, 255], right: [10, 200, 10, 255])
+        for y in 20..<100 { for x in 30..<130 { px[(y * w + x) * 4] = 250; px[(y * w + x) * 4 + 1] = 0 } }
+        Inpaint.fill(&px, width: w, height: h, hole: (30, 20, 100, 80))
+        let c = (60 * w + 80) * 4
+        #expect(abs(Int(px[c]) - 10) <= 2 && abs(Int(px[c + 1]) - 200) <= 2)
+    }
+}

@@ -5,12 +5,13 @@ import AppKit
 import CaptureCore
 
 enum Tool: String, CaseIterable, Identifiable {
-    case select, arrow, line, text, callout, rect, ellipse, step, highlight, blur, gaussian, canvas
+    case select, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, canvas
     var id: String { rawValue }
     var title: String {
         switch self {
         case .select: L("Mover"); case .arrow: L("Seta"); case .line: L("Linha"); case .callout: L("Balão"); case .rect: L("Retângulo")
         case .ellipse: L("Elipse"); case .text: L("Texto"); case .step: L("Etapa"); case .highlight: L("Marcador"); case .blur: L("Pixelização"); case .gaussian: L("Blur"); case .canvas: L("Tela")
+        case .stamp: L("Carimbo"); case .repair: L("Reparo")
         }
     }
     /// Estilo inicial de cada ferramenta (cada uma lembra o seu último estilo).
@@ -26,6 +27,7 @@ enum Tool: String, CaseIterable, Identifiable {
         switch self {
         case .select: "cursorarrow"; case .arrow: "arrow.up.right"; case .line: "line.diagonal"; case .callout: "bubble.left"; case .rect: "rectangle"
         case .ellipse: "circle"; case .text: "textformat"; case .step: "1.circle"; case .highlight: "highlighter"; case .blur: "square.grid.3x3"; case .gaussian: "drop"; case .canvas: "aspectratio"
+        case .stamp: "checkmark.seal"; case .repair: "bandage"
         }
     }
 }
@@ -96,6 +98,54 @@ final class EditorModel: ObservableObject {
     }
     /// Tamanho da letra da ferramenta atual.
     var defaultFontSize: Double { fontSize(for: tool) }
+
+    // MARK: Carimbos
+
+    /// O carimbo escolhido (`"sf:nome"` ou emoji) e o tamanho com que nascem (lado maior, em px do documento).
+    var currentStamp: String {
+        get { UserDefaults.standard.string(forKey: "stampSymbol") ?? StampLibrary.symbolKey("checkmark.circle.fill") }
+        set { UserDefaults.standard.set(newValue, forKey: "stampSymbol"); objectWillChange.send() }
+    }
+    var defaultStampSize: Double {
+        get { ToolDefaults.shared.value("size", for: .stamp, default: 64) }
+        set { ToolDefaults.shared.setValue(max(8, newValue), "size", for: .stamp); objectWillChange.send() }
+    }
+    /// Escolhe um carimbo: muda o selecionado (se for um carimbo) ou passa a ser o das próximas.
+    func chooseStamp(_ symbol: String) {
+        currentStamp = symbol
+        if var a = selected, a.shape.stampSymbol != nil { a.shape = a.shape.with(stampSymbol: symbol); perform { $0.update(a) } }
+    }
+    /// Põe um carimbo (símbolo/emoji) centrado em `p`, com o tamanho padrão.
+    func addStamp(at p: Point, symbol: String? = nil) {
+        let s = defaultStampSize
+        let id = addAnnotation(.stamp(origin: Point(x: p.x - s / 2, y: p.y - s / 2), width: s, height: s, symbol: symbol ?? currentStamp))
+        mutate { _ = $0.expandAreaToFit(ids: [id]) }
+        finishedDrawing()
+    }
+    /// Põe uma imagem da biblioteca de carimbos centrada em `p` (fica dentro do documento como `image`).
+    func addImageStamp(_ url: URL, at p: Point) {
+        guard let png = try? Data(contentsOf: url), let rep = NSBitmapImageRep(data: png), let name = try? assets.add(png: png) else { NSSound.beep(); return }
+        let s = defaultStampSize, ratio = Double(rep.pixelsWide) / max(1, Double(rep.pixelsHigh))
+        let w = ratio >= 1 ? s : s * ratio, h = ratio >= 1 ? s / ratio : s
+        let id = addAnnotation(.image(origin: Point(x: p.x - w / 2, y: p.y - h / 2), width: w, height: h, asset: name))
+        mutate { _ = $0.expandAreaToFit(ids: [id]) }
+        finishedDrawing()
+    }
+
+    // MARK: Reparo
+
+    /// Modo do Reparo para os próximos: preencher a partir da vizinhança (`false`) ou clonar de outro sítio (`true`).
+    var repairClones: Bool {
+        get { UserDefaults.standard.bool(forKey: "repairClones") }
+        set { UserDefaults.standard.set(newValue, forKey: "repairClones"); objectWillChange.send() }
+    }
+    var currentRepairClones: Bool { if case .clone = selected?.shape { return true }; if case .patch = selected?.shape { return false }; return repairClones }
+    func setRepairClones(_ on: Bool) {
+        repairClones = on
+        guard var a = selected, a.shape.isRepair else { return }
+        a.shape = a.shape.asRepair(clone: on)
+        perform { $0.update(a) }
+    }
 
     /// Tamanho da letra de uma ferramenta. No retângulo/elipse vive no estilo do texto; nas outras é um valor próprio.
     func fontSize(for tool: Tool) -> Double {

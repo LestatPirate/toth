@@ -65,6 +65,26 @@ public extension Shape {
         switch self {
         case .arrow: "Seta"; case .line: "Linha"; case .rect: "Retângulo"; case .ellipse: "Elipse"
         case .text, .textBox: "Texto"; case .step: "Etapa"; case .highlight: "Marcador"; case .blur: "Pixelização"; case .gaussian: "Blur"; case .image: "Imagem"; case .callout: "Balão"
+        case .stamp: "Carimbo"; case .patch, .clone: "Reparo"
+        }
+    }
+
+    /// Símbolo do carimbo (só para `stamp`).
+    var stampSymbol: String? { if case let .stamp(_, _, _, s) = self { return s }; return nil }
+    func with(stampSymbol s: String) -> Shape { if case let .stamp(o, w, h, _) = self { return .stamp(origin: o, width: w, height: h, symbol: s) }; return self }
+    /// É um reparo (preenchimento ou clonagem)?
+    var isRepair: Bool { switch self { case .patch, .clone: return true; default: return false } }
+    /// Origem da clonagem (só para `clone`).
+    var cloneSource: Point? { if case let .clone(_, _, _, s) = self { return s }; return nil }
+    /// A região de origem da clonagem (mesmo tamanho que a região reparada).
+    var cloneSourceRect: Rect? { if case let .clone(_, w, h, s) = self { return Rect(x: s.x, y: s.y, width: abs(w), height: abs(h)) }; return nil }
+    func with(cloneSource s: Point) -> Shape { if case let .clone(o, w, h, _) = self { return .clone(origin: o, width: w, height: h, source: s) }; return self }
+    /// Troca entre preenchimento e clonagem (a clonagem nasce com a origem à esquerda da região).
+    func asRepair(clone: Bool) -> Shape {
+        switch self {
+        case let .patch(o, w, h) where clone: return .clone(origin: o, width: w, height: h, source: Point(x: o.x - abs(w) - 12, y: o.y))
+        case let .clone(o, w, h, _) where !clone: return .patch(origin: o, width: w, height: h)
+        default: return self
         }
     }
 
@@ -184,7 +204,7 @@ public extension Shape {
         let h = handles
         switch self {
         case .arrow, .line: return h.indices.contains(1 - index) ? h[1 - index] : nil
-        case .callout: return index < 4 && h.count >= 4 ? h[(index + 2) % 4] : nil
+        case .callout, .clone: return index < 4 && h.count >= 4 ? h[(index + 2) % 4] : nil
         case .text: return nil
         default: return h.count >= 4 && h.indices.contains(index) ? h[(index + 2) % 4] : nil
         }
@@ -196,7 +216,7 @@ public extension Shape {
         case let .arrow(a, b), let .line(a, b):
             return Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
         case let .rect(o, w, h), let .ellipse(o, w, h), let .highlight(o, w, h), let .blur(o, w, h, _), let .textBox(o, w, h, _, _),
-             let .gaussian(o, w, h, _), let .image(o, w, h, _):
+             let .gaussian(o, w, h, _), let .image(o, w, h, _), let .stamp(o, w, h, _), let .patch(o, w, h), let .clone(o, w, h, _):
             return Rect(x: min(o.x, o.x + w), y: min(o.y, o.y + h), width: abs(w), height: abs(h))
         case let .text(o, s, size):
             let lines = s.split(separator: "\n", omittingEmptySubsequences: false)
@@ -228,6 +248,9 @@ public extension Shape {
         case let .gaussian(o, w, h, i): return .gaussian(origin: m(o), width: w, height: h, intensity: i)
         case let .image(o, w, h, a): return .image(origin: m(o), width: w, height: h, asset: a)
         case let .callout(o, w, h, t, s, f): return .callout(origin: m(o), width: w, height: h, tail: m(t), string: s, fontSize: f)
+        case let .stamp(o, w, h, s): return .stamp(origin: m(o), width: w, height: h, symbol: s)
+        case let .patch(o, w, h): return .patch(origin: m(o), width: w, height: h)
+        case let .clone(o, w, h, s): return .clone(origin: m(o), width: w, height: h, source: m(s))
         }
     }
 
@@ -266,8 +289,9 @@ public extension Shape {
     var handles: [Point] {
         switch self {
         case let .arrow(a, b), let .line(a, b): return [a, b]
-        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image: return Shape.corners(bounds)
+        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image, .stamp, .patch: return Shape.corners(bounds)
         case let .callout(_, _, _, tail, _, _): return Shape.corners(calloutBox!) + [tail]
+        case .clone: let s = cloneSourceRect!; return Shape.corners(bounds) + [Point(x: s.x + s.width / 2, y: s.y + s.height / 2)]   // 5.ª alça: a origem
         case .step: return Shape.corners(bounds)   // 4 cantos: o círculo cresce mantendo a proporção
         case .text: return []
         }
@@ -286,12 +310,31 @@ public extension Shape {
         switch self {
         case let .arrow(a, b): return index == 0 ? .arrow(from: p, to: b) : .arrow(from: a, to: p)
         case let .line(a, b): return index == 0 ? .line(from: p, to: b) : .line(from: a, to: p)
-        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image:
+        case let .clone(_, w0, h0, src):
+            let h = handles
+            if index == 4 { return .clone(origin: bounds.originPoint, width: w0, height: h0, source: Point(x: p.x - abs(w0) / 2, y: p.y - abs(h0) / 2)) }
+            guard index < 4 else { return self }
+            let (o, w, hh) = rectFrom(h[(index + 2) % 4])
+            return .clone(origin: o, width: w, height: hh, source: src)
+        case let .stamp(_, _, _, sym):
+            // o carimbo mantém a proporção: o canto oposto fica fixo e o tamanho segue a maior das duas distâncias
+            let h = handles
+            guard h.indices.contains(index) else { return self }
+            let fixed = h[(index + 2) % 4], b = bounds
+            let ratio = b.width / max(1e-6, b.height)
+            let dx = p.x - fixed.x, dy = p.y - fixed.y
+            var w = max(abs(dx), abs(dy) * ratio); w = max(w, 8)
+            let hh = w / ratio
+            let sx: Double = dx != 0 ? (dx > 0 ? 1 : -1) : (h[index].x >= fixed.x ? 1 : -1)
+            let sy: Double = dy != 0 ? (dy > 0 ? 1 : -1) : (h[index].y >= fixed.y ? 1 : -1)
+            return .stamp(origin: Point(x: min(fixed.x, fixed.x + sx * w), y: min(fixed.y, fixed.y + sy * hh)), width: w, height: hh, symbol: sym)
+        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image, .patch:
             let h = handles
             guard h.indices.contains(index) else { return self }
             let (o, w, hh) = rectFrom(h[(index + 2) % 4])
             switch self {
             case .rect: return .rect(origin: o, width: w, height: hh)
+            case .patch: return .patch(origin: o, width: w, height: hh)
             case .ellipse: return .ellipse(origin: o, width: w, height: hh)
             case .highlight: return .highlight(origin: o, width: w, height: hh)
             case let .blur(_, _, _, r): return .blur(origin: o, width: w, height: hh, radius: r)
@@ -418,7 +461,7 @@ public extension Annotation {
         let b = shape.bounds
         let pad: Double
         switch shape {
-        case .highlight, .blur, .gaussian, .image, .step: pad = 0
+        case .highlight, .blur, .gaussian, .image, .step, .stamp, .patch, .clone: pad = 0
         default: pad = style.lineVisible ? style.lineWidth / 2 : 0
         }
         return b.insetBy(dx: -pad, dy: -pad)
