@@ -155,8 +155,11 @@ struct ToolsBar: View {
                 // área visível: o conteúdo desliza com `offset` (ou fica centrado, se cabe tudo)
                 HStack(spacing: ToolsScroll.spacing) {
                     ForEach(tools) { t in
-                        BarButton(symbol: t.symbol, label: t.title, selected: model.tool == t, fixedWidth: ToolsScroll.buttonWidth) { model.tool = t }
-                            .help(t.title)
+                        BarButton(symbol: t.symbol, label: t.title, selected: model.tool == t, fixedWidth: ToolsScroll.buttonWidth,
+                                  badge: model.tool == t && model.toolLocked ? "lock.fill" : nil) { model.tool = t }
+                            // duplo clique prende a ferramenta: continua ativa depois de desenhar (outro duplo clique solta)
+                            .simultaneousGesture(TapGesture(count: 2).onEnded { if t != .select && t != .canvas { model.tool = t; model.toolLocked.toggle() } })
+                            .help(model.tool == t && model.toolLocked ? L("Ferramenta presa: continua ativa depois de desenhar (duplo clique solta)") : (t == .select || t == .canvas ? t.title : L("%@ (duplo clique prende a ferramenta)", t.title)))
                     }
                 }
                 .fixedSize()

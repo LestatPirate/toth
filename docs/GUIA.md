@@ -34,6 +34,7 @@
 - **Camadas:** ordem, ocultar, remover. Qualquer elemento pode ser removido ou editado **mais tarde**, mesmo depois de fechar e reabrir.
 - **Copiar, colar, duplicar**; cola **imagens e texto de outras apps**. Desfazer/refazer, zoom e deslocamento.
 - **Seleção rápida:** com uma ferramenta de desenho ativa, **clicar** num objeto existente seleciona-o e mostra as opções desse objeto; **arrastar** continua a desenhar um novo (por exemplo, uma seta a partir de uma caixa). **⌥ + clique** força a criação por cima de um objeto (útil para as etapas).
+- **Ferramentas de uma vez:** depois de desenhar, a ferramenta volta a Mover; **duplo clique** no ícone prende-a para desenhar vários seguidos. **Esc** volta a Mover, e outro Esc limpa a seleção (na Tela, Esc cancela as alterações). **Setas** deslocam o objeto selecionado (⇧: 10 px); **começar a escrever** num objeto de texto abre a edição; o objeto sob o rato fica destacado e o **botão direito** abre um menu com as ações mais comuns.
 - **Exportar PNG** ou **copiar tudo** para a área de transferência.
 
 **Biblioteca**
@@ -86,6 +87,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - **Layers:** order, hide, remove. Any element can be removed or edited **later**, even after closing and reopening.
 - **Copy, paste, duplicate**; pastes **images and text from other apps**. Undo/redo, zoom and pan.
 - **Quick selection:** with a drawing tool active, **clicking** an existing object selects it and shows its options; **dragging** keeps drawing a new one (for example an arrow from a box). **⌥ + click** forces creation on top of an object (handy for steps).
+- **One-shot tools:** after drawing, the tool returns to Move; **double-click** the icon to lock it and draw several in a row. **Esc** returns to Move, and another Esc clears the selection (in Canvas, Esc cancels the changes). **Arrow keys** nudge the selected object (⇧: 10 px); **starting to type** on a text object opens editing; the object under the mouse is highlighted and the **right button** opens a menu with the common actions.
 - **Export PNG** or **copy all** to the clipboard.
 
 **Library**

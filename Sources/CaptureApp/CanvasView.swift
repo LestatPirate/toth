@@ -58,6 +58,22 @@ final class CanvasView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(t); tracking = t
+    }
+
+    /// Passar por cima: destaca o objeto que um clique selecionaria.
+    override func mouseMoved(with event: NSEvent) { updateHover(at: imagePoint(event)) }
+    private func updateHover(at p: Point) {
+        let id = model.doc.topmost(at: p, tolerance: 6 / Double(scale))?.id
+        if id != model.hover { model.hover = id }
+    }
+    override func mouseExited(with event: NSEvent) { if model.hover != nil { model.hover = nil } }
 
     init(model: EditorModel) {
         self.model = model
@@ -68,6 +84,7 @@ final class CanvasView: NSView {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.needsDisplay = true
+                self.window?.invalidateCursorRects(for: self)
                 if let id = self.editingID {
                     if self.model.selection != id { self.finishEditing() } else { self.refreshEditor() }
                 }
@@ -114,6 +131,14 @@ final class CanvasView: NSView {
         ctx.interpolationQuality = .high
         if model.doc.transparentBackground { drawChecker(ctx) }
         Renderer.draw(model.doc, base: model.base, in: ctx, selected: model.selection, editing: editingID, assets: model.assets)
+        if editingID == nil, model.tool != .canvas, let hid = model.hover, hid != model.selection, let h = model.doc.annotations.first(where: { $0.id == hid }) {
+            // contorno leve no objeto sob o rato
+            ctx.saveGState()
+            Renderer.applyRotation(h, ctx)
+            ctx.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(0.55).cgColor); ctx.setLineWidth(1.5 / scale)
+            ctx.stroke(h.shape.bounds.cg.insetBy(dx: -4 / scale, dy: -4 / scale))
+            ctx.restoreGState()
+        }
         if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }) {
             let side = 9 / scale
             for h in sel.handlePoints {
@@ -477,7 +502,7 @@ final class CanvasView: NSView {
                 model.mutate { $0.remove(id: id) }
                 model.dropLastCheckpoint()
                 model.selection = nil
-            } else { model.commit() }
+            } else { model.commit(); model.finishedDrawing() }
             endGesture()
         } else if moving { model.commit(); endGesture() }
     }
@@ -643,6 +668,7 @@ final class CanvasView: NSView {
                 a.setEditableString(text)
                 model.mutate { $0.update(a) }
                 model.commit()
+                model.finishedDrawing()
             }
         } else if var a = model.doc.annotations.first(where: { $0.id == id }) {
             let boxChanged = a.shape != model.undoShape(of: id)
@@ -655,6 +681,10 @@ final class CanvasView: NSView {
         needsDisplay = true
         window?.makeFirstResponder(self)
     }
+
+    var debugEditorString: String? { editor?.string }
+    func debugFinishEditing() { finishEditing() }
+    func debugHover(at p: Point) { updateHover(at: p) }
 
     /// Abre o editor no elemento selecionado e deixa-o aberto (flag `--edit-hold`, para captura de ecrã).
     func debugHoldEditing() { if let id = model.selection { beginEditing(id, isNew: false) } }
@@ -746,6 +776,50 @@ final class CanvasView: NSView {
         return fails
     }
 
+    // MARK: Cursores
+
+    override func resetCursorRects() {
+        guard editingID == nil else { return }
+        if model.tool == .select, let sel = model.selected {
+            for h in sel.handlePoints { addCursorRect(viewSquare(h, 16), cursor: .crosshair) }
+            addCursorRect(viewSquare(rotationHandlePoint(sel), 16), cursor: .pointingHand)
+        }
+        if model.tool == .canvas && model.canvasTarget == .image {
+            for h in imageHandlePoints() { addCursorRect(viewSquare(h, 18), cursor: .crosshair) }
+            addCursorRect(viewSquare(imageRotationHandlePoint(), 18), cursor: .pointingHand)
+        }
+    }
+    private func viewSquare(_ p: Point, _ side: CGFloat) -> NSRect {
+        NSRect(x: origin.x + CGFloat(p.x) * scale - side / 2, y: origin.y + CGFloat(p.y) * scale - side / 2, width: side, height: side)
+    }
+
+    // MARK: Menu de contexto
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        if editor != nil { return super.menu(for: event) }
+        let p = imagePoint(event)
+        // botão direito sobre um objeto: seleciona-o primeiro
+        if let hit = model.doc.topmost(at: p, tolerance: 6 / Double(scale)) { model.selection = hit.id; if model.tool != .select { model.tool = .select } }
+        let has = model.selected != nil
+        let m = NSMenu()
+        func add(_ title: String, _ sel: Selector, _ enabled: Bool, key: String = "") { let i = NSMenuItem(title: title, action: sel, keyEquivalent: key); i.target = self; i.isEnabled = enabled; m.addItem(i) }
+        m.autoenablesItems = false
+        if has && model.selected?.editableString != nil { add(L("Editar texto"), #selector(menuEditText), true); m.addItem(.separator()) }
+        add(L("Cortar"), #selector(cut(_:)), has, key: "x"); add(L("Copiar"), #selector(copy(_:)), has, key: "c"); add(L("Colar"), #selector(paste(_:)), model.canPaste, key: "v")
+        add(L("Duplicar"), #selector(duplicate(_:)), has, key: "d"); add(L("Apagar"), #selector(menuDelete), has)
+        m.addItem(.separator())
+        add(L("Trazer para frente"), #selector(menuFront), has); add(L("Enviar para trás"), #selector(menuBack), has)
+        m.addItem(.separator())
+        add(L("Rodar 90° para a esquerda"), #selector(menuRotateLeft), has); add(L("Rodar 90° para a direita"), #selector(menuRotateRight), has)
+        return m
+    }
+    @objc private func menuEditText() { if let id = model.selection { beginEditing(id, isNew: false) } }
+    @objc private func menuDelete() { model.deleteSelection() }
+    @objc private func menuFront() { if let id = model.selection { model.bringToFront(id) } }
+    @objc private func menuBack() { if let id = model.selection { model.sendToBack(id) } }
+    @objc private func menuRotateLeft() { model.rotateSelection(by: -90) }
+    @objc private func menuRotateRight() { model.rotateSelection(by: 90) }
+
     // MARK: Zoom e deslocamento
 
     override func scrollWheel(with event: NSEvent) {
@@ -795,13 +869,25 @@ final class CanvasView: NSView {
     // MARK: Teclado
 
     override func keyDown(with event: NSEvent) {
+        let step = event.modifierFlags.contains(.shift) ? 10.0 : 1.0
         switch event.keyCode {
         case 51, 117: model.deleteSelection()   // Delete / Forward delete
-        case 53: model.selection = nil          // Esc
+        case 53: model.escape()                 // Esc: ferramenta → Mover; Tela → cancelar; Mover → limpar a seleção
         case 36:                                // Return: confirma a área (Tela) ou edita o texto do elemento selecionado
             if model.tool == .canvas { model.tool = .select }
             else if let id = model.selection, model.selected?.editableString != nil { beginEditing(id, isNew: false) }
-        default: super.keyDown(with: event)
+        case 123: if model.selection != nil { model.nudgeSelection(dx: -step, dy: 0) } else { super.keyDown(with: event) }
+        case 124: if model.selection != nil { model.nudgeSelection(dx: step, dy: 0) } else { super.keyDown(with: event) }
+        case 126: if model.selection != nil { model.nudgeSelection(dx: 0, dy: -step) } else { super.keyDown(with: event) }
+        case 125: if model.selection != nil { model.nudgeSelection(dx: 0, dy: step) } else { super.keyDown(with: event) }
+        default:
+            // começar a escrever com um objeto de texto selecionado abre a edição e já leva a letra
+            if let id = model.selection, model.selected?.editableString != nil, !event.modifierFlags.contains(.command),
+               let chars = event.characters, let c = chars.unicodeScalars.first, !CharacterSet.controlCharacters.contains(c), !chars.isEmpty {
+                beginEditing(id, isNew: false)
+                editor?.selectAll(nil)
+                editor?.insertText(chars, replacementRange: NSRange(location: 0, length: editor?.string.utf16.count ?? 0))
+            } else { super.keyDown(with: event) }
         }
     }
 

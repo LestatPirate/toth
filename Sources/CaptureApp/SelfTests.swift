@@ -470,7 +470,7 @@ enum SelfTests {
         m.tool = .arrow; m.selection = nil
         canvas.debugMouse(at: Point(x: 150, y: 140), dragTo: Point(x: 380, y: 300))
         check(count() == n0 + 1, "arrastar sobre A devia criar uma seta (\(count()) vs \(n0 + 1))")
-        check(m.tool == .arrow, "criar por arrasto mantém a ferramenta")
+        check(m.tool == .select, "depois de desenhar, a ferramenta volta a Mover (é \(m.tool))")
         if case .arrow? = m.selected?.shape {} else { fails.append("o objeto novo devia ser uma seta") }
 
         // 3) recém-inserido; clicar noutro objeto existente (B) com a ferramenta de desenho ainda ativa -> passa para B
@@ -497,7 +497,12 @@ enum SelfTests {
         m.tool = .step; m.selection = nil
         canvas.debugMouse(at: inA, option: true)
         check(count() == n2 + 1 && m.selected?.shape.stepNumber != nil, "⌥+clique devia criar a etapa por cima do objeto")
-        check(m.tool == .step, "criar a etapa mantém a ferramenta")
+        check(m.tool == .select, "depois da etapa volta a Mover")
+        // ferramenta presa: continua ativa
+        m.tool = .step; m.toolLocked = true; m.selection = nil
+        canvas.debugMouse(at: Point(x: 700, y: 60))
+        check(m.tool == .step && m.toolLocked, "com a ferramenta presa, continua ativa depois de desenhar")
+        m.tool = .select
 
         // 6) balão: clique sobre objeto existente seleciona-o (não abre o editor de texto); no vazio cria o balão
         m.tool = .callout; m.selection = nil
@@ -519,6 +524,35 @@ enum SelfTests {
         m.tool = .canvas
         canvas.debugMouse(at: Point(x: 2000, y: 2000))
         check(m.tool == .select, "clicar fora da área da Tela devia confirmar (ferramenta \(m.tool))")
+        // 8) Esc em dois tempos: ferramenta → Mover → sem seleção
+        m.tool = .rect; m.selection = idA
+        m.escape(); check(m.tool == .select && m.selection == idA, "primeiro Esc volta a Mover e mantém a seleção")
+        m.escape(); check(m.selection == nil, "segundo Esc limpa a seleção")
+        // 9) Tela: Esc cancela o que foi feito nela
+        m.tool = .canvas
+        m.setAreaSize(width: 900, height: 600); m.setAreaSize(width: 950, height: 650)
+        m.escape()
+        check(m.tool == .select && m.doc.workArea == nil, "Esc na Tela devia desfazer as alterações (área \(m.doc.area))")
+        // 10) setas deslocam o elemento selecionado
+        m.selection = idA
+        let x0 = m.selected!.shape.bounds.x
+        m.nudgeSelection(dx: 10, dy: 0)
+        check(m.selected!.shape.bounds.x == x0 + 10, "setas deviam deslocar o objeto")
+        m.undo()
+        // 11) começar a escrever num objeto de texto abre a edição com essa letra
+        let tid = m.addAnnotation(.textBox(origin: Point(x: 100, y: 400), width: 200, height: 50, string: "abc", fontSize: 20))
+        m.tool = .select; m.selection = tid
+        if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: canvas.window?.windowNumber ?? 0, context: nil, characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6) {
+            canvas.keyDown(with: e)
+        }
+        check(canvas.debugEditorString == "z", "escrever devia abrir a edição com a letra (\(canvas.debugEditorString ?? "nil"))")
+        canvas.debugFinishEditing()
+        check(m.selected?.editableString == "z", "o texto devia ficar gravado")
+        // 12) passar por cima destaca o objeto
+        canvas.debugHover(at: inA)
+        check(m.hover != nil && m.hover == m.doc.topmost(at: inA, tolerance: 1)?.id, "passar por cima devia marcar o objeto de cima como hover (\(String(describing: m.hover)))")
+        canvas.debugHover(at: empty)
+        check(m.hover == nil, "no vazio não há hover")
         return fails
     }
 

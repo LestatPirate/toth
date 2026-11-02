@@ -36,8 +36,19 @@ enum CanvasTarget { case area, image }
 @MainActor
 final class EditorModel: ObservableObject {
     @Published private(set) var doc: CaptureDocument
-    @Published var tool: Tool = .arrow
+    @Published var tool: Tool = .arrow {
+        didSet {
+            if tool != oldValue { toolLocked = false }
+            if tool == .canvas && oldValue != .canvas { canvasEntryDepth = undoStack.count }
+        }
+    }
     @Published var selection: UUID?
+    /// Ferramenta presa (duplo clique no ícone): continua ativa depois de desenhar. Sem isto, depois de um objeto volta a Mover.
+    @Published var toolLocked = false
+    /// Elemento sob o rato (para o destaque ao passar por cima).
+    @Published var hover: UUID?
+    /// Quantos pontos de undo havia ao entrar na Tela (Esc cancela até aqui).
+    private var canvasEntryDepth = 0
     /// Na Tela: a área de trabalho (alças azuis) ou a imagem original (mover, redimensionar, rodar).
     @Published var canvasTarget: CanvasTarget = .area
     /// Ao redimensionar a imagem pelos cantos, manter a proporção (⇧ inverte).
@@ -118,6 +129,29 @@ final class EditorModel: ObservableObject {
 
     func perform(_ f: (inout CaptureDocument) -> Void) { checkpoint(); f(&doc); save() }
 
+    /// Depois de desenhar um objeto: a ferramenta volta a Mover, a não ser que esteja presa.
+    func finishedDrawing() { if !toolLocked && tool != .select { tool = .select } }
+
+    /// Esc: com uma ferramenta de desenho, volta a Mover; na Tela, cancela as alterações feitas nela; em Mover, limpa a seleção.
+    func escape() {
+        if tool == .canvas { cancelCanvas(); return }
+        if tool != .select { tool = .select; return }
+        selection = nil
+    }
+
+    /// Desfaz tudo o que foi feito nesta visita à Tela e volta a Mover.
+    func cancelCanvas() {
+        while undoStack.count > canvasEntryDepth, canUndo { undo() }
+        tool = .select
+    }
+
+    /// Setas: desloca o elemento selecionado (1 px; com ⇧, 10 px).
+    func nudgeSelection(dx: Double, dy: Double) {
+        guard var a = selected else { return }
+        a.shape = a.shape.translated(dx: dx, dy: dy)
+        perform { $0.update(a); _ = $0.expandAreaToFit(ids: [a.id]) }
+    }
+
     func addAnnotation(_ shape: Shape) -> UUID {
         var id = UUID()
         perform { id = $0.add(shape, style: style).id }
@@ -178,6 +212,7 @@ final class EditorModel: ObservableObject {
             $0.nextStepNumber = nil
         }
         selection = id
+        finishedDrawing()
     }
 
     /// Raio com que nascem as etapas novas: o último usado (guardado entre sessões).

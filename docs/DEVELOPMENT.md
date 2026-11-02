@@ -90,6 +90,13 @@ Captura de janela/vídeo/GIF, temporizador, cursor na captura, carimbos, "Elimin
 
 Cada ferramenta lembra o seu último estilo (cor, espessura…). O Marcador tem cor escolhível (amarelo a 40% por omissão); a Pixelização tem o tamanho dos blocos ajustável.
 
+## Comportamento das ferramentas e da seleção
+- **Uma vez ou presa:** depois de desenhar um objeto (ou de terminar o texto de um novo), a ferramenta **volta a Mover** (`EditorModel.finishedDrawing`). **Duplo clique** no ícone prende-a (`toolLocked`, cadeado no ícone): continua ativa; mudar de ferramenta solta-a.
+- **Esc em dois tempos** (`EditorModel.escape`): com uma ferramenta de desenho, volta a Mover; na **Tela**, cancela tudo o que foi feito nessa visita (desfaz até ao ponto de entrada, `canvasEntryDepth`); em Mover, limpa a seleção.
+- **Teclado:** setas deslocam o elemento selecionado 1 px (⇧: 10 px; `nudgeSelection`); começar a escrever com um objeto de texto selecionado abre a edição já com essa letra; Return edita o texto (ou confirma a Tela).
+- **Rato:** o objeto sob o cursor fica com um contorno leve (`EditorModel.hover`, via `NSTrackingArea`); cursores próprios nas alças (cruz) e na alça de rotação (mão); **botão direito** seleciona o objeto e abre o menu de contexto (editar texto, cortar, copiar, colar, duplicar, apagar, ordem, rodar 90°).
+- Testado em `--selection-selftest` (cenários 8–12).
+
 ## Blur, Pixelização e Tela (área de trabalho)
 - **Blur** desfoca (gaussiano) a região escolhida; **Intensidade** no painel (1–60). **Pixelização** tem o tamanho dos blocos. Ambos atuam sobre a imagem original, não sobre outros objetos.
 - **Tela** (substitui o antigo Recorte): mostra 8 alças na área de trabalho; arrastar **aumenta** (acrescenta espaço) ou **diminui** (esconde o que fica de fora). Também se escreve a largura/altura no painel. Há cor de fundo (ou transparente), "Ajustar ao conteúdo" e "Restaurar original". A imagem original nunca é alterada.

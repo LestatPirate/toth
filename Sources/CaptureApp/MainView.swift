@@ -77,6 +77,8 @@ struct BarButton: View {
     var disabled = false
     /// Largura fixa do botão (as ferramentas têm todas a mesma, para o deslize da barra ser exato).
     var fixedWidth: CGFloat? = nil
+    /// Pequeno cadeado no canto (ferramenta presa).
+    var badge: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -84,6 +86,9 @@ struct BarButton: View {
             VStack(spacing: 3) {
                 Image(systemName: symbol).font(.system(size: 18)).frame(height: 22)
                     .foregroundStyle(tint ?? (selected ? Color.accentColor : Color.primary))
+                    .overlay(alignment: .topTrailing) {
+                        if let badge { Image(systemName: badge).font(.system(size: 8, weight: .bold)).foregroundStyle(Color.accentColor).offset(x: 8, y: -4) }
+                    }
                 Text(label).font(.system(size: 10)).lineLimit(1).minimumScaleFactor(fixedWidth == nil ? 1 : 0.75)
                     .fixedSize(horizontal: fixedWidth == nil, vertical: true)
             }
