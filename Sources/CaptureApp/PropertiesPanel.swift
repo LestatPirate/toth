@@ -196,6 +196,36 @@ struct PropertiesPanel: View {
         if !failed.isEmpty { AppState.shared.errorMessage = L("Não foi possível importar: %@", failed.joined(separator: ", ")) }
     }
 
+    /// Alinhar (entre si, ou à área se for só um), distribuir e agrupar.
+    private var arrangeSection: some View {
+        section(model.isMultiSelection ? L("Disposição") : L("Disposição (à área de trabalho)")) {
+            HStack(spacing: 3) {
+                arrangeButton("align.horizontal.left", L("Alinhar à esquerda")) { model.alignSelection(.left) }
+                arrangeButton("align.horizontal.center", L("Alinhar ao centro")) { model.alignSelection(.centerX) }
+                arrangeButton("align.horizontal.right", L("Alinhar à direita")) { model.alignSelection(.right) }
+                Divider().frame(height: 16)
+                arrangeButton("align.vertical.top", L("Alinhar ao topo")) { model.alignSelection(.top) }
+                arrangeButton("align.vertical.center", L("Alinhar ao meio")) { model.alignSelection(.centerY) }
+                arrangeButton("align.vertical.bottom", L("Alinhar à base")) { model.alignSelection(.bottom) }
+            }
+            HStack(spacing: 3) {
+                arrangeButton("distribute.horizontal.center", L("Distribuir na horizontal (3 ou mais)")) { model.distributeSelection(horizontal: true) }.disabled(model.selectedIDs.count < 3)
+                arrangeButton("distribute.vertical.center", L("Distribuir na vertical (3 ou mais)")) { model.distributeSelection(horizontal: false) }.disabled(model.selectedIDs.count < 3)
+                Divider().frame(height: 16)
+                Button(L("Agrupar")) { model.groupSelection() }.disabled(!model.canGroup).help(L("Juntar num grupo: clicar num membro seleciona todos (⌘G)"))
+                Button(L("Desagrupar")) { model.ungroupSelection() }.disabled(!model.canUngroup).help(L("Separar o grupo (⇧⌘G)"))
+            }.controlSize(.small)
+            if model.isMultiSelection {
+                Text(L("Arraste um canto da caixa do grupo para o redimensionar em proporção, ou a alça redonda para o rodar todo.")).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func arrangeButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).frame(width: 24, height: 20).background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12))) }
+            .buttonStyle(.plain).help(help)
+    }
+
     private var repairSection: some View {
         section(L("Reparo")) {
             Picker("", selection: repairClones) {
@@ -335,6 +365,7 @@ struct PropertiesPanel: View {
                         }.controlSize(.small)
                     }
                 } }
+                if model.selected != nil { arrangeSection }
 
                 Divider()
                 Text(L("Camadas")).font(.headline)
@@ -441,7 +472,7 @@ private struct LayerRow: View {
         .padding(.horizontal, 6).padding(.vertical, 4)
         .background(RoundedRectangle(cornerRadius: 5).fill(model.selection == annotation.id ? Color.accentColor.opacity(0.2) : .clear))
         .contentShape(Rectangle())
-        .onTapGesture { model.selection = annotation.id; model.tool = .select }
+        .onTapGesture { model.selectWithGroup(annotation.id); model.tool = .select }
     }
 }
 

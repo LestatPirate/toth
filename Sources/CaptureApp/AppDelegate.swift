@@ -91,6 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return canvas.selfTestTextFit()
             }
         }
+        if let i = args.firstIndex(of: "--arrange-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1]); later("ARRANGE-SELFTEST") { SelfTests.arrangeSelfTest(dir: dir) }
+        }
         if let i = args.firstIndex(of: "--stamps-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("STAMPS-SELFTEST") { SelfTests.stampsRepairSelfTest(dir: dir) }
         }
@@ -499,6 +502,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func copy(_ sender: Any?) { if let m = AppState.shared.model { if m.selection != nil { m.copySelection() } else { m.copyToPasteboard() } } }
     @objc func paste(_ sender: Any?) { AppState.shared.model?.paste() }
     @objc func duplicate(_ sender: Any?) { AppState.shared.model?.duplicateSelection() }
+    @objc func groupSelection() { AppState.shared.model?.groupSelection() }
+    @objc func ungroupSelection() { AppState.shared.model?.ungroupSelection() }
+    @objc func alignLeft() { AppState.shared.model?.alignSelection(.left) }
+    @objc func alignCenterX() { AppState.shared.model?.alignSelection(.centerX) }
+    @objc func alignRight() { AppState.shared.model?.alignSelection(.right) }
+    @objc func alignTop() { AppState.shared.model?.alignSelection(.top) }
+    @objc func alignCenterY() { AppState.shared.model?.alignSelection(.centerY) }
+    @objc func alignBottom() { AppState.shared.model?.alignSelection(.bottom) }
+    @objc func distributeH() { AppState.shared.model?.distributeSelection(horizontal: true) }
+    @objc func distributeV() { AppState.shared.model?.distributeSelection(horizontal: false) }
+    @objc func bringToFront() { if let m = AppState.shared.model, let id = m.selection { m.bringToFront(id) } }
+    @objc func sendToBack() { if let m = AppState.shared.model, let id = m.selection { m.sendToBack(id) } }
 
     /// Clique no ícone do Dock: mostra o editor.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

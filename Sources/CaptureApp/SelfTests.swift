@@ -288,6 +288,7 @@ enum SelfTests {
         let state = AppState.shared
         if capture.lastPathComponent != "none" { state.open(capture) }   // "none": ecrã vazio (sem captura aberta)
         if let n = select, let m = state.model, m.doc.ordered.indices.contains(n) { m.selection = m.doc.ordered[n].id; m.tool = .select }
+        if select == -1, let m = state.model { m.selectAll(); m.tool = .select }   // --select -1: tudo
         if let tool, let m = state.model { m.tool = tool }
         if canvasImage, let m = state.model { m.tool = .canvas; m.canvasTarget = .image }
         let host = NSHostingView(rootView: MainView(state: state))
@@ -390,6 +391,92 @@ enum SelfTests {
         func a(_ x: Int, _ y: Int) -> Int { Int(p[(y * img.width + x) * 4 + 3]) }
         // cantos e meio das bordas (os cantos de uma janela são redondos: transparentes mesmo sem sombra)
         return [a(0, 0), a(img.width - 1, 0), a(0, img.height - 1), a(img.width - 1, img.height - 1), a(img.width / 2, 0), a(0, img.height / 2), a(img.width / 2, img.height - 1)]
+    }
+
+    /// Alinhar, distribuir, agrupar e transformar o grupo (redimensionar em proporção e rodar) com o rato.
+    static func arrangeSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir
+        let state = AppState.shared
+        if let e = state.createBlankImage(width: 800, height: 500, backgroundHex: "#FFFFFF", transparent: false) { return ["não criou a imagem: \(e)"] }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        guard let m = state.model, let canvas = CanvasView.current else { return ["sem editor"] }
+        m.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        var st = Style(); st.lineVisible = false
+        let a = m.addAnnotation(.rect(origin: Point(x: 100, y: 100), width: 100, height: 60))
+        let b = m.addAnnotation(.rect(origin: Point(x: 300, y: 150), width: 60, height: 60))
+        let c = m.addAnnotation(.rect(origin: Point(x: 600, y: 200), width: 80, height: 40))
+        func ann(_ id: UUID) -> Annotation { m.doc.annotations.first { $0.id == id }! }
+        for id in [a, b, c] { var x = ann(id); x.style = st; m.perform { $0.update(x) } }
+
+        // 1) alinhar entre si e distribuir
+        m.selectIDs([a, b, c])
+        m.alignSelection(.left)
+        check([a, b, c].allSatisfy { ann($0).shape.bounds.minX == 100 }, "alinhar à esquerda")
+        m.alignSelection(.centerY)
+        let midY = ann(a).shape.bounds.minY + 30
+        check([b, c].allSatisfy { abs(ann($0).shape.bounds.minY + ann($0).shape.bounds.height / 2 - midY) < 0.01 }, "alinhar ao meio")
+        m.undo(); m.undo()
+        m.selectIDs([a, b, c])
+        m.distributeSelection(horizontal: true)
+        let bs = [a, b, c].map { ann($0).shape.bounds }
+        let g1 = bs[1].minX - bs[0].maxX, g2 = bs[2].minX - bs[1].maxX
+        check(abs(g1 - g2) < 0.01 && bs[0].minX == 100 && bs[2].maxX == 680, "distribuir na horizontal (intervalos \(g1) e \(g2))")
+        m.undo()
+        // um só: alinha-se à área
+        m.selectIDs([c])
+        m.alignSelection(.right)
+        check(ann(c).shape.bounds.maxX == 800, "um só alinha-se à área (\(ann(c).shape.bounds))")
+        m.undo()
+
+        // 2) agrupar: clicar num membro seleciona o grupo; ⇧+clique tira o grupo todo; desagrupar
+        m.tool = .select
+        m.selectIDs([a, b]); m.groupSelection()
+        check(ann(a).group != nil && ann(a).group == ann(b).group && ann(c).group == nil, "agrupar a e b")
+        m.selection = nil
+        canvas.debugMouse(at: Point(x: 150, y: 130))
+        check(m.selectedIDs == [a, b], "clicar num membro seleciona o grupo (\(m.selectedIDs.count))")
+        canvas.debugMouse(at: Point(x: 640, y: 220), shift: true)
+        check(m.selectedIDs == [a, b, c], "⇧+clique junta o terceiro")
+        canvas.debugMouse(at: Point(x: 330, y: 180), shift: true)
+        check(m.selectedIDs == [c], "⇧+clique num membro tira o grupo todo (\(m.selectedIDs.count))")
+        // laço que apanha só um membro apanha o grupo
+        m.selection = nil
+        canvas.debugMouse(at: Point(x: 80, y: 80), dragTo: Point(x: 220, y: 180))
+        check(m.selectedIDs == [a, b], "o laço estende-se ao grupo (\(m.selectedIDs.count))")
+        // duplicar: as cópias formam um grupo novo
+        m.duplicateSelection()
+        let copies = m.selectedAll
+        check(copies.count == 2 && copies[0].group != nil && copies[0].group == copies[1].group && copies[0].group != ann(a).group, "as cópias ficam num grupo novo")
+        m.undo()
+        m.selectIDs([a, b]); m.ungroupSelection()
+        check(ann(a).group == nil && ann(b).group == nil, "desagrupar")
+
+        // 3) redimensionar o grupo em proporção pelo canto inferior direito (o superior esquerdo fica fixo)
+        m.selectIDs([a, b])
+        guard let gb = m.selectionBounds else { return fails + ["sem caixa do grupo"] }
+        check(gb == Rect(x: 100, y: 100, width: 260, height: 110), "caixa do grupo (\(gb))")
+        canvas.debugMouse(at: Point(x: gb.maxX, y: gb.maxY), dragTo: Point(x: gb.minX + gb.width * 2, y: gb.minY + gb.height * 2))
+        let gb2 = m.selectionBounds!
+        check(abs(gb2.width - 520) < 0.5 && abs(gb2.height - 220) < 0.5 && gb2.x == 100 && gb2.y == 100, "o grupo devia duplicar (\(gb2))")
+        check(abs(ann(b).shape.bounds.width - 120) < 0.5 && abs(ann(b).shape.bounds.minX - 500) < 0.5, "cada membro escala à volta do canto fixo (\(ann(b).shape.bounds))")
+        m.undo()
+        check(m.selectionBounds == gb, "desfazer repõe o grupo")
+
+        // 4) rodar o grupo 90°: cada membro roda e gira à volta do centro do grupo
+        m.selectIDs([a, b])
+        let gc = Point(x: gb.x + gb.width / 2, y: gb.y + gb.height / 2)
+        let handle = Point(x: gc.x, y: gb.minY - 22 / m.fitScale)
+        canvas.debugMouse(at: handle, dragTo: Point(x: gc.x + (gc.y - handle.y), y: gc.y))   // 90° para a direita
+        check(abs(ann(a).rotation - 90) < 0.5 && abs(ann(b).rotation - 90) < 0.5, "os membros rodam 90° (\(ann(a).rotation), \(ann(b).rotation))")
+        let ca = ann(a).shape.rotationCenter
+        let expected = Geometry.rotate(Point(x: 150, y: 130), around: gc, degrees: 90)
+        check(abs(ca.x - expected.x) < 0.5 && abs(ca.y - expected.y) < 0.5, "o centro de a gira à volta do centro do grupo (\(ca) vs \(expected))")
+        m.undo()
+        check(ann(a).rotation == 0 && ann(a).shape.rotationCenter == Point(x: 150, y: 130), "desfazer repõe a rotação")
+        return fails
     }
 
     /// Carimbos e Reparo: desenho do símbolo e do emoji, preenchimento por vizinhança, clonagem; e o fluxo no editor.

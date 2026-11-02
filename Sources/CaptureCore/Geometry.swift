@@ -254,6 +254,28 @@ public extension Shape {
         }
     }
 
+    /// A forma escalada por `k` à volta de `c` (tudo cresce: posição, tamanho, letra, raio da etapa).
+    func scaled(by k: Double, around c: Point) -> Shape {
+        func m(_ p: Point) -> Point { Point(x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k) }
+        switch self {
+        case let .arrow(a, b): return .arrow(from: m(a), to: m(b))
+        case let .line(a, b): return .line(from: m(a), to: m(b))
+        case let .rect(o, w, h): return .rect(origin: m(o), width: w * k, height: h * k)
+        case let .ellipse(o, w, h): return .ellipse(origin: m(o), width: w * k, height: h * k)
+        case let .text(o, s, f): return .text(origin: m(o), string: s, fontSize: f * k)
+        case let .textBox(o, w, h, s, f): return .textBox(origin: m(o), width: w * k, height: h * k, string: s, fontSize: f * k)
+        case let .step(ce, n, r): return .step(center: m(ce), number: n, radius: (r ?? Shape.defaultStepRadius) * k)
+        case let .highlight(o, w, h): return .highlight(origin: m(o), width: w * k, height: h * k)
+        case let .blur(o, w, h, r): return .blur(origin: m(o), width: w * k, height: h * k, radius: r)
+        case let .gaussian(o, w, h, i): return .gaussian(origin: m(o), width: w * k, height: h * k, intensity: i)
+        case let .image(o, w, h, a): return .image(origin: m(o), width: w * k, height: h * k, asset: a)
+        case let .callout(o, w, h, t, s, f): return .callout(origin: m(o), width: w * k, height: h * k, tail: m(t), string: s, fontSize: f * k)
+        case let .stamp(o, w, h, s): return .stamp(origin: m(o), width: w * k, height: h * k, symbol: s)
+        case let .patch(o, w, h): return .patch(origin: m(o), width: w * k, height: h * k)
+        case let .clone(o, w, h, s): return .clone(origin: m(o), width: w * k, height: h * k, source: m(s))
+        }
+    }
+
     /// `true` se o ponto toca na forma (com tolerância em pixels da imagem).
     func hits(_ p: Point, tolerance t: Double) -> Bool {
         switch self {
@@ -421,6 +443,25 @@ public extension Annotation {
 
 
 public extension Annotation {
+    /// O elemento escalado por `k` à volta de `c` (a letra do retângulo/elipse também cresce).
+    func scaled(by k: Double, around c: Point) -> Annotation {
+        var out = self
+        out.shape = shape.scaled(by: k, around: c)
+        if case .rect = shape, let f = style.text.size { out.style.text.size = f * k }
+        if case .ellipse = shape, let f = style.text.size { out.style.text.size = f * k }
+        return out
+    }
+
+    /// O elemento rodado por `d` graus à volta de `c` (o centro do elemento gira à volta de `c` e ele roda sobre si).
+    func rotated(by d: Double, around c: Point) -> Annotation {
+        var out = self
+        let before = shape.rotationCenter
+        let after = Geometry.rotate(before, around: c, degrees: d)
+        out.shape = shape.translated(dx: after.x - before.x, dy: after.y - before.y)
+        out.rotation = Geometry.normalizedDegrees(rotation + d)
+        return out
+    }
+
     /// Texto editável no objeto, se a forma o suporta (vazio ≠ não suportado).
     var editableString: String? {
         switch shape {

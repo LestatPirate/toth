@@ -946,3 +946,32 @@ import Foundation
         #expect(abs(Int(px[c]) - 10) <= 2 && abs(Int(px[c + 1]) - 200) <= 2)
     }
 }
+
+@Suite struct GroupTransformTests {
+    @Test func scaledShapeGrowsAroundPoint() {
+        let s = Shape.textBox(origin: Point(x: 10, y: 10), width: 100, height: 50, string: "x", fontSize: 20).scaled(by: 2, around: Point(x: 0, y: 0))
+        #expect(s.bounds == Rect(x: 20, y: 20, width: 200, height: 100) && s.fontSize == 40)
+        let st = Shape.step(center: Point(x: 50, y: 50), number: 1, radius: nil).scaled(by: 0.5, around: Point(x: 50, y: 50))
+        #expect(st.stepRadius == Shape.defaultStepRadius / 2 && st.bounds.minX == 42)
+    }
+
+    @Test func rotatedAnnotationOrbitsCenter() {
+        let a = Annotation(z: 0, shape: .rect(origin: Point(x: 100, y: 0), width: 20, height: 20))
+        let r = a.rotated(by: 90, around: Point(x: 0, y: 0))
+        #expect(r.rotation == 90)
+        let c = r.shape.rotationCenter
+        #expect(abs(c.x - (-10)) < 1e-9 && abs(c.y - 110) < 1e-9)
+    }
+
+    @Test func groupsRoundTripAndMembers() throws {
+        var d = CaptureDocument(canvasWidth: 10, canvasHeight: 10)
+        let a = d.add(.rect(origin: Point(x: 0, y: 0), width: 1, height: 1)), b = d.add(.rect(origin: Point(x: 2, y: 2), width: 1, height: 1)), c = d.add(.rect(origin: Point(x: 4, y: 4), width: 1, height: 1))
+        d.group([a.id, b.id])
+        #expect(Set(d.groupMembers(of: a.id)) == [a.id, b.id] && d.groupMembers(of: c.id) == [c.id])
+        let data = try CapturePackage.encode(d)
+        let back = try JSONDecoder().decode(CaptureDocument.self, from: data)
+        #expect(Set(back.groupMembers(of: a.id)) == [a.id, b.id])
+        d.ungroup([a.id, b.id])
+        #expect(d.groupMembers(of: a.id) == [a.id])
+    }
+}

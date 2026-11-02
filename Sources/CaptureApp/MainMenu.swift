@@ -60,6 +60,24 @@ enum MainMenu {
         add(edit, L("Duplicar"), Selector(("duplicate:")), "d")
         add(edit, L("Selecionar tudo"), #selector(NSText.selectAll(_:)), "a")
 
+        // Organizar
+        let arrange = submenu(L("Organizar"))
+        add(arrange, L("Agrupar"), #selector(AppDelegate.groupSelection), "g", target: t)
+        add(arrange, L("Desagrupar"), #selector(AppDelegate.ungroupSelection), "g", mods: [.command, .shift], target: t)
+        arrange.addItem(.separator())
+        add(arrange, L("Alinhar à esquerda"), #selector(AppDelegate.alignLeft), target: t)
+        add(arrange, L("Alinhar ao centro"), #selector(AppDelegate.alignCenterX), target: t)
+        add(arrange, L("Alinhar à direita"), #selector(AppDelegate.alignRight), target: t)
+        add(arrange, L("Alinhar ao topo"), #selector(AppDelegate.alignTop), target: t)
+        add(arrange, L("Alinhar ao meio"), #selector(AppDelegate.alignCenterY), target: t)
+        add(arrange, L("Alinhar à base"), #selector(AppDelegate.alignBottom), target: t)
+        arrange.addItem(.separator())
+        add(arrange, L("Distribuir na horizontal"), #selector(AppDelegate.distributeH), target: t)
+        add(arrange, L("Distribuir na vertical"), #selector(AppDelegate.distributeV), target: t)
+        arrange.addItem(.separator())
+        add(arrange, L("Trazer para frente"), #selector(AppDelegate.bringToFront), "]", target: t)
+        add(arrange, L("Enviar para trás"), #selector(AppDelegate.sendToBack), "[", target: t)
+
         // Ver
         let view = submenu(L("Ver"))
         add(view, L("Ampliar"), #selector(AppDelegate.zoomIn), "+", target: t)

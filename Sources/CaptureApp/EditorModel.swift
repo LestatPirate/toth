@@ -50,18 +50,100 @@ final class EditorModel: ObservableObject {
     var selectedIDs: Set<UUID> { var s = extraSelection; if let p = selection { s.insert(p) }; return s }
     var selectedAll: [Annotation] { doc.ordered.filter { selectedIDs.contains($0.id) } }
     func isSelected(_ id: UUID) -> Bool { selectedIDs.contains(id) }
-    /// Seleciona `id`; com `extend`, junta-o ou tira-o da seleção.
+    /// Seleciona `id` (e o seu grupo); com `extend`, junta-o ou tira-o da seleção (o grupo inteiro de uma vez).
     func select(_ id: UUID, extend: Bool) {
-        guard extend else { selection = id; extraSelection = []; return }
-        if selection == id { selection = extraSelection.first; extraSelection.remove(selection ?? id); return }
-        if extraSelection.contains(id) { extraSelection.remove(id); return }
-        if selection == nil { selection = id } else { extraSelection.insert(id) }
+        let members = Set(doc.groupMembers(of: id))
+        guard extend else { selectWithGroup(id); return }
+        if isSelected(id) {
+            let rest = selectedIDs.subtracting(members)
+            let p = (selection.map { rest.contains($0) } ?? false) ? selection : rest.first
+            selection = p; extraSelection = rest.subtracting(p.map { [$0] } ?? [])
+            return
+        }
+        let p = selection ?? id
+        selection = p; extraSelection = selectedIDs.union(members).subtracting([p])
     }
     func selectIDs(_ ids: Set<UUID>) {
         let ordered = doc.ordered.map(\.id).filter { ids.contains($0) }
         selection = ordered.last; extraSelection = Set(ordered.dropLast())
     }
     func selectAll() { selectIDs(Set(doc.annotations.filter(\.visible).map(\.id))) }
+    /// Seleciona `id` e, se estiver num grupo, o grupo inteiro (com `id` como principal).
+    func selectWithGroup(_ id: UUID) {
+        let members = doc.groupMembers(of: id)
+        selection = id; extraSelection = Set(members).subtracting([id])
+    }
+    /// Estende um conjunto de ids aos grupos inteiros dos seus membros.
+    func withGroups(_ ids: Set<UUID>) -> Set<UUID> { var out = ids; for id in ids { out.formUnion(doc.groupMembers(of: id)) }; return out }
+    var isMultiSelection: Bool { !extraSelection.isEmpty }
+
+    // MARK: Grupos, alinhar e distribuir
+
+    var canGroup: Bool { selectedIDs.count >= 2 }
+    var canUngroup: Bool { selectedAll.contains { $0.group != nil } }
+    func groupSelection() {
+        let ids = selectedIDs
+        guard ids.count >= 2 else { return }
+        perform { $0.group(ids) }
+    }
+    func ungroupSelection() {
+        let ids = selectedIDs
+        guard !ids.isEmpty else { return }
+        perform { $0.ungroup(ids) }
+    }
+
+    enum Alignment { case left, centerX, right, top, centerY, bottom }
+    /// Alinha os selecionados entre si (pela caixa envolvente da seleção); com um só, alinha-o à área de trabalho.
+    func alignSelection(_ edge: Alignment) {
+        let all = selectedAll
+        guard !all.isEmpty else { return }
+        let ref = all.count == 1 ? doc.area : selectionBounds!
+        perform { d in
+            for var a in all {
+                let b = a.worldBounds
+                var dx = 0.0, dy = 0.0
+                switch edge {
+                case .left: dx = ref.minX - b.minX
+                case .centerX: dx = (ref.minX + ref.width / 2) - (b.minX + b.width / 2)
+                case .right: dx = ref.maxX - b.maxX
+                case .top: dy = ref.minY - b.minY
+                case .centerY: dy = (ref.minY + ref.height / 2) - (b.minY + b.height / 2)
+                case .bottom: dy = ref.maxY - b.maxY
+                }
+                a.shape = a.shape.translated(dx: dx, dy: dy); d.update(a)
+            }
+            _ = d.expandAreaToFit(ids: all.map(\.id))
+        }
+    }
+
+    /// Espaça os selecionados por igual (3 ou mais): as pontas ficam, os do meio distribuem-se com intervalos iguais.
+    func distributeSelection(horizontal: Bool) {
+        let all = selectedAll
+        guard all.count >= 3 else { return }
+        let sorted = all.sorted { horizontal ? $0.worldBounds.minX < $1.worldBounds.minX : $0.worldBounds.minY < $1.worldBounds.minY }
+        let first = sorted.first!.worldBounds, last = sorted.last!.worldBounds
+        let total = horizontal ? last.maxX - first.minX : last.maxY - first.minY
+        let content = sorted.reduce(0.0) { $0 + (horizontal ? $1.worldBounds.width : $1.worldBounds.height) }
+        let gap = (total - content) / Double(sorted.count - 1)
+        perform { d in
+            var cursor = horizontal ? first.minX : first.minY
+            for var a in sorted {
+                let b = a.worldBounds
+                if horizontal { a.shape = a.shape.translated(dx: cursor - b.minX, dy: 0); cursor += b.width + gap }
+                else { a.shape = a.shape.translated(dx: 0, dy: cursor - b.minY); cursor += b.height + gap }
+                d.update(a)
+            }
+        }
+    }
+
+    /// Durante um gesto (sem ponto de undo): os elementos de partida `start` escalados por `k` à volta de `c`.
+    func scaleLive(_ start: [Annotation], by k: Double, around c: Point) {
+        mutate { d in for a in start { d.update(a.scaled(by: max(0.02, k), around: c)) }; _ = d.expandAreaToFit(ids: start.map(\.id)) }
+    }
+    /// Durante um gesto (sem ponto de undo): os elementos de partida rodados por `d` graus à volta de `c`.
+    func rotateLive(_ start: [Annotation], by deg: Double, around c: Point) {
+        mutate { d in for a in start { d.update(a.rotated(by: deg, around: c)) }; _ = d.expandAreaToFit(ids: start.map(\.id)) }
+    }
     /// Ferramenta presa (duplo clique no ícone): continua ativa depois de desenhar. Sem isto, depois de um objeto volta a Mover.
     @Published var toolLocked = false
     /// Elemento sob o rato (para o destaque ao passar por cima).
@@ -227,11 +309,18 @@ final class EditorModel: ObservableObject {
     }
 
     /// ⌥+arrastar: duplica os selecionados no mesmo sítio e passa a seleção para as cópias (que depois se arrastam).
-    func duplicateSelectionInPlace() {
-        let all = selectedAll
-        guard !all.isEmpty else { return }
+    func duplicateSelectionInPlace() { duplicate(selectedAll, dx: 0, dy: 0) }
+
+    /// Cópias de `items` (com deslocamento), em que cada grupo original vira um grupo novo entre as cópias.
+    private func duplicate(_ items: [Annotation], dx: Double, dy: Double) {
+        guard !items.isEmpty else { return }
         var ids: [UUID] = []
-        perform { d in for a in all { ids.append(d.insertCopy(of: a).id) } }
+        var groups: [UUID: UUID] = [:]
+        for a in items { if let g = a.group, groups[g] == nil { groups[g] = UUID() } }
+        perform { d in
+            for a in items { ids.append(d.insertCopy(of: a, dx: dx, dy: dy, group: a.group.flatMap { groups[$0] }).id) }
+            _ = d.expandAreaToFit(ids: ids)
+        }
         selectIDs(Set(ids))
     }
 
@@ -491,13 +580,7 @@ final class EditorModel: ObservableObject {
 
     func cutSelection() { copySelection(); deleteSelection() }
 
-    func duplicateSelection() {
-        let all = selectedAll
-        guard !all.isEmpty else { return }
-        var ids: [UUID] = []
-        perform { d in for a in all { ids.append(d.insertCopy(of: a, dx: 24, dy: 24).id) }; _ = d.expandAreaToFit(ids: ids) }
-        selectIDs(Set(ids))
-    }
+    func duplicateSelection() { duplicate(selectedAll, dx: 24, dy: 24) }
 
     var canPaste: Bool {
         let pb = NSPasteboard.general
@@ -525,12 +608,7 @@ final class EditorModel: ObservableObject {
         // Colar no mesmo documento: desloca para não ficar escondido por baixo do original.
         let sameDoc = doc.annotations.contains { $0.id == clip.annotation.id }
         let off = sameDoc ? 24.0 : 0.0
-        var ids: [UUID] = []
-        perform { d in
-            for a in clip.all { ids.append(d.insertCopy(of: a, dx: off, dy: off).id) }
-            _ = d.expandAreaToFit(ids: ids)
-        }
-        selectIDs(Set(ids))
+        duplicate(clip.all, dx: off, dy: off)
         tool = .select
     }
 

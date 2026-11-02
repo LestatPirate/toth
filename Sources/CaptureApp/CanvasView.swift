@@ -55,6 +55,9 @@ final class CanvasView: NSView {
     private var marquee: (anchor: Point, rect: Rect)?
     /// Objeto existente sob o rato quando se começou a desenhar: se for só um clique (sem arrastar), seleciona-se esse objeto.
     private var clickCandidate: UUID?
+    /// Gesto sobre a seleção múltipla: redimensionar o grupo por um canto (em proporção, à volta do canto oposto) ou rodá-lo.
+    private enum GroupDrag { case resize(fixed: Point, corner: Point, start: [Annotation]), rotate(center: Point, angle0: Double, start: [Annotation]) }
+    private var groupDrag: GroupDrag?
 
     // Edição de texto em linha
     private var editor: InlineTextView?
@@ -155,7 +158,18 @@ final class CanvasView: NSView {
             ctx.move(to: CGPoint(x: src.x + src.width / 2, y: src.y + src.height / 2)); ctx.addLine(to: CGPoint(x: b.x + b.width / 2, y: b.y + b.height / 2)); ctx.strokePath()
             ctx.restoreGState()
         }
-        if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }) {
+        if editingID == nil, model.isMultiSelection, let gb = model.selectionBounds {
+            // seleção múltipla: caixa do grupo com 4 cantos (redimensionar em proporção) e a alça de rodar
+            ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1 / scale); ctx.setLineDash(phase: 0, lengths: [4 / scale, 3 / scale])
+            ctx.stroke(gb.cg); ctx.setLineDash(phase: 0, lengths: [])
+            let side = 9 / scale
+            for h in groupHandlePoints(gb) {
+                let r = CGRect(x: h.x - side / 2, y: h.y - side / 2, width: side, height: side)
+                ctx.setFillColor(NSColor.white.cgColor); ctx.fill(r)
+                ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1.5 / scale); ctx.stroke(r)
+            }
+            drawRotationHandle(at: groupRotationHandlePoint(gb), from: topCenter(gb), color: .systemBlue, ctx)
+        } else if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }) {
             let side = 9 / scale
             for h in sel.handlePoints {
                 let r = CGRect(x: h.x - side / 2, y: h.y - side / 2, width: side, height: side)
@@ -236,6 +250,39 @@ final class CanvasView: NSView {
         if free { return d }
         let snapped = (d / 15).rounded() * 15
         return abs(d - snapped) <= 3 ? Geometry.normalizedDegrees(snapped) : d
+    }
+
+    // MARK: Grupo (seleção múltipla)
+
+    private func groupHandlePoints(_ b: Rect) -> [Point] { [Point(x: b.minX, y: b.minY), Point(x: b.maxX, y: b.minY), Point(x: b.maxX, y: b.maxY), Point(x: b.minX, y: b.maxY)] }
+    private func groupRotationHandlePoint(_ b: Rect) -> Point { Point(x: b.x + b.width / 2, y: b.y - rotationHandleGap) }
+
+    /// Começa um gesto sobre as alças do grupo, se o rato estiver numa. Devolve `true` se começou.
+    private func beginGroupDrag(at p: Point) -> Bool {
+        guard model.isMultiSelection, let gb = model.selectionBounds else { return false }
+        let start = model.selectedAll
+        if near(p, groupRotationHandlePoint(gb)) {
+            let c = Point(x: gb.x + gb.width / 2, y: gb.y + gb.height / 2)
+            model.checkpoint(); groupDrag = .rotate(center: c, angle0: Geometry.degrees(from: c, to: p), start: start); return true
+        }
+        let hs = groupHandlePoints(gb)
+        if let i = hs.firstIndex(where: { near(p, $0) }) { model.checkpoint(); groupDrag = .resize(fixed: hs[(i + 2) % 4], corner: hs[i], start: start); return true }
+        return false
+    }
+
+    private func dragGroup(_ drag: GroupDrag, to p: Point, free: Bool) {
+        switch drag {
+        case let .resize(fixed, corner, start):
+            // a escala segue a projeção do rato na diagonal do canto fixo ao canto arrastado
+            let vx = corner.x - fixed.x, vy = corner.y - fixed.y
+            let k = ((p.x - fixed.x) * vx + (p.y - fixed.y) * vy) / max(1, vx * vx + vy * vy)
+            model.scaleLive(start, by: k, around: fixed)
+        case let .rotate(c, a0, start):
+            var d = Geometry.normalizedDegrees(Geometry.degrees(from: c, to: p) - a0)
+            if !free { let s = (d / 15).rounded() * 15; if abs(d - s) <= 3 { d = s } }
+            model.rotateLive(start, by: d, around: c)
+        }
+        for a in model.selectedAll { expandAreaIfNeeded(for: a.id) }
     }
 
     // MARK: Imagem original (Tela → Imagem)
@@ -388,7 +435,8 @@ final class CanvasView: NSView {
 
         switch model.tool {
         case .select:
-            if let id = model.selection, let a = model.doc.annotations.first(where: { $0.id == id }) {
+            if beginGroupDrag(at: p) { return }
+            if let id = model.selection, !model.isMultiSelection, let a = model.doc.annotations.first(where: { $0.id == id }) {
                 if near(p, rotationHandlePoint(a)) { model.checkpoint(); rotating = true; return }
                 if let h = a.handle(at: p, tolerance: 8 / Double(scale)) {
                     model.checkpoint(); resizing = h
@@ -405,7 +453,7 @@ final class CanvasView: NSView {
                 return
             }
             if let hit {
-                if !model.isSelected(hit.id) { model.selection = hit.id }                // já selecionado: mantém o grupo
+                if !model.isSelected(hit.id) { model.selectWithGroup(hit.id) }           // já selecionado: mantém o conjunto
                 if event.modifierFlags.contains(.option) { model.duplicateSelectionInPlace() }   // ⌥+arrastar: arrasta cópias
                 model.checkpoint(); moving = true
                 moveStart = (p, Dictionary(uniqueKeysWithValues: model.selectedAll.map { ($0.id, $0.shape) }))
@@ -463,6 +511,7 @@ final class CanvasView: NSView {
     override func mouseDragged(with event: NSEvent) {
         let p = imagePoint(event)
         if let start = dragStart, hypot((p.x - start.x) * Double(scale), (p.y - start.y) * Double(scale)) >= 3 { gestureMoved = true }
+        if let g = groupDrag { dragGroup(g, to: p, free: event.modifierFlags.contains(.option)); lastPoint = p; return }
         if let drag = imageDrag {
             let free = event.modifierFlags.contains(.option)
             switch drag {
@@ -523,15 +572,16 @@ final class CanvasView: NSView {
             m.rect = Rect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
             marquee = m
             let inside = model.doc.annotations.filter { $0.visible && intersects($0.worldBounds, m.rect) }.map(\.id)
-            model.selectIDs(Set(inside))
+            model.selectIDs(model.withGroups(Set(inside)))
             needsDisplay = true
         }
         lastPoint = imagePoint(event)
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; needsDisplay = true }
+        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; groupDrag = nil; needsDisplay = true }
         if marquee != nil { return }   // laço: a seleção já foi feita ao arrastar (um clique só limpa)
+        if groupDrag != nil { if gestureMoved { model.commit() } else { model.dropLastCheckpoint() }; endGesture(); return }
         if imageDrag != nil {
             if gestureMoved { model.commit() } else { model.dropLastCheckpoint() }   // só clicar na imagem não altera nada
             endGesture(); return
@@ -886,7 +936,10 @@ final class CanvasView: NSView {
 
     override func resetCursorRects() {
         guard editingID == nil else { return }
-        if model.tool == .select, let sel = model.selected {
+        if model.tool == .select, model.isMultiSelection, let gb = model.selectionBounds {
+            for h in groupHandlePoints(gb) { addCursorRect(viewSquare(h, 16), cursor: .crosshair) }
+            addCursorRect(viewSquare(groupRotationHandlePoint(gb), 16), cursor: .pointingHand)
+        } else if model.tool == .select, let sel = model.selected {
             for h in sel.handlePoints { addCursorRect(viewSquare(h, 16), cursor: .crosshair) }
             addCursorRect(viewSquare(rotationHandlePoint(sel), 16), cursor: .pointingHand)
         }
@@ -905,7 +958,7 @@ final class CanvasView: NSView {
         if editor != nil { return super.menu(for: event) }
         let p = imagePoint(event)
         // botão direito sobre um objeto: seleciona-o primeiro
-        if let hit = model.doc.topmost(at: p, tolerance: 6 / Double(scale)) { model.selection = hit.id; if model.tool != .select { model.tool = .select } }
+        if let hit = model.doc.topmost(at: p, tolerance: 6 / Double(scale)), !model.isSelected(hit.id) { model.selectWithGroup(hit.id); if model.tool != .select { model.tool = .select } }
         let has = model.selected != nil
         let m = NSMenu()
         func add(_ title: String, _ sel: Selector, _ enabled: Bool, key: String = "") { let i = NSMenuItem(title: title, action: sel, keyEquivalent: key); i.target = self; i.isEnabled = enabled; m.addItem(i) }
@@ -917,8 +970,27 @@ final class CanvasView: NSView {
         add(L("Trazer para frente"), #selector(menuFront), has); add(L("Enviar para trás"), #selector(menuBack), has)
         m.addItem(.separator())
         add(L("Rodar 90° para a esquerda"), #selector(menuRotateLeft), has); add(L("Rodar 90° para a direita"), #selector(menuRotateRight), has)
+        m.addItem(.separator())
+        add(L("Agrupar"), #selector(menuGroup), model.canGroup, key: "g"); add(L("Desagrupar"), #selector(menuUngroup), model.canUngroup)
+        let alignMenu = NSMenu()
+        for (title, sel) in [(L("À esquerda"), #selector(menuAlignLeft)), (L("Ao centro (horizontal)"), #selector(menuAlignCenterX)), (L("À direita"), #selector(menuAlignRight)),
+                             (L("Ao topo"), #selector(menuAlignTop)), (L("Ao meio (vertical)"), #selector(menuAlignCenterY)), (L("À base"), #selector(menuAlignBottom))] {
+            let i = NSMenuItem(title: title, action: sel, keyEquivalent: ""); i.target = self; alignMenu.addItem(i)
+        }
+        let alignItem = NSMenuItem(title: model.isMultiSelection ? L("Alinhar") : L("Alinhar à área"), action: nil, keyEquivalent: ""); alignItem.submenu = alignMenu; alignItem.isEnabled = has; m.addItem(alignItem)
+        add(L("Distribuir na horizontal"), #selector(menuDistributeH), model.selectedIDs.count >= 3); add(L("Distribuir na vertical"), #selector(menuDistributeV), model.selectedIDs.count >= 3)
         return m
     }
+    @objc private func menuGroup() { model.groupSelection() }
+    @objc private func menuUngroup() { model.ungroupSelection() }
+    @objc private func menuAlignLeft() { model.alignSelection(.left) }
+    @objc private func menuAlignCenterX() { model.alignSelection(.centerX) }
+    @objc private func menuAlignRight() { model.alignSelection(.right) }
+    @objc private func menuAlignTop() { model.alignSelection(.top) }
+    @objc private func menuAlignCenterY() { model.alignSelection(.centerY) }
+    @objc private func menuAlignBottom() { model.alignSelection(.bottom) }
+    @objc private func menuDistributeH() { model.distributeSelection(horizontal: true) }
+    @objc private func menuDistributeV() { model.distributeSelection(horizontal: false) }
     @objc private func menuEditText() { if let id = model.selection { beginEditing(id, isNew: false) } }
     @objc private func menuDelete() { model.deleteSelection() }
     @objc private func menuFront() { if let id = model.selection { model.bringToFront(id) } }
@@ -1011,6 +1083,7 @@ final class CanvasView: NSView {
         case "v": model.paste()
         case "d": model.duplicateSelection()
         case "a": model.selectAll()
+        case "g": if shift { model.ungroupSelection() } else { model.groupSelection() }
         default: return super.performKeyEquivalent(with: event)
         }
         return true

@@ -160,9 +160,11 @@ public struct Annotation: Codable, Equatable, Identifiable, Sendable {
     /// Rotação em graus (sentido dos ponteiros do relógio), à volta do centro da forma. A geometria da forma fica sem rodar;
     /// quem roda é o desenho, o teste de toque e as alças.
     public var rotation: Double
+    /// Grupo a que pertence (`nil` = solto): clicar num membro seleciona o grupo inteiro.
+    public var group: UUID?
 
-    public init(id: UUID = UUID(), z: Int, visible: Bool = true, shape: Shape, style: Style = Style(), caption: String = "", rotation: Double = 0) {
-        self.id = id; self.z = z; self.visible = visible; self.shape = shape; self.style = style; self.caption = caption; self.rotation = rotation
+    public init(id: UUID = UUID(), z: Int, visible: Bool = true, shape: Shape, style: Style = Style(), caption: String = "", rotation: Double = 0, group: UUID? = nil) {
+        self.id = id; self.z = z; self.visible = visible; self.shape = shape; self.style = style; self.caption = caption; self.rotation = rotation; self.group = group
     }
 
     public init(from decoder: Decoder) throws {
@@ -174,6 +176,7 @@ public struct Annotation: Codable, Equatable, Identifiable, Sendable {
         style = try c.decode(Style.self, forKey: .style)
         caption = try c.decodeIfPresent(String.self, forKey: .caption) ?? ""
         rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
+        group = try c.decodeIfPresent(UUID.self, forKey: .group)
     }
 }
 
@@ -371,14 +374,31 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         annotations.append(annotation)
     }
 
-    /// Insere uma cópia (ex.: colar): novo id, no topo, com deslocamento opcional.
+    /// Insere uma cópia (ex.: colar): novo id, no topo, com deslocamento opcional. `group`: o grupo da cópia (por omissão, solta).
     @discardableResult
-    public mutating func insertCopy(of a: Annotation, dx: Double = 0, dy: Double = 0) -> Annotation {
+    public mutating func insertCopy(of a: Annotation, dx: Double = 0, dy: Double = 0, group: UUID? = nil) -> Annotation {
         var n = a
         n.id = UUID()
         n.z = (annotations.map(\.z).max() ?? -1) + 1
         n.shape = a.shape.translated(dx: dx, dy: dy)
+        n.group = group
         annotations.append(n)
         return n
+    }
+
+    /// Os membros do grupo de `id` (o próprio incluído); só ele, se estiver solto.
+    public func groupMembers(of id: UUID) -> [UUID] {
+        guard let a = annotations.first(where: { $0.id == id }), let g = a.group else { return [id] }
+        return ordered.filter { $0.group == g }.map(\.id)
+    }
+
+    /// Junta `ids` num grupo novo (desfazendo grupos anteriores desses elementos).
+    public mutating func group(_ ids: Set<UUID>) {
+        let g = UUID()
+        for i in annotations.indices where ids.contains(annotations[i].id) { annotations[i].group = g }
+    }
+
+    public mutating func ungroup(_ ids: Set<UUID>) {
+        for i in annotations.indices where ids.contains(annotations[i].id) { annotations[i].group = nil }
     }
 }
