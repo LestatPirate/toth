@@ -291,8 +291,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = CommandLine.arguments.firstIndex(of: "--render-selector"), CommandLine.arguments.count > i + 1, let screen = NSScreen.main {
             let size = CGSize(width: 1000, height: 640)
             let img = Self.syntheticSnapshot(for: screen)
-            RegionSelector.renderForTests(image: img, size: size, selection: CGRect(x: 180, y: 120, width: 560, height: 360), to: CommandLine.arguments[i + 1])
+            let wins = args.contains("--window-mode") ? Self.syntheticWindows(for: screen).map { WindowInfo(id: $0.id, frame: CGRect(x: $0.frame.minX * 0.5, y: $0.frame.minY * 0.5, width: $0.frame.width * 0.6, height: $0.frame.height * 0.6), title: $0.title, app: $0.app) } : []
+            RegionSelector.renderForTests(image: img, size: size, selection: CGRect(x: 180, y: 120, width: 560, height: 360), windows: wins, to: CommandLine.arguments[i + 1])
             print("RENDER-SELECTOR: OK"); exit(0)
+        }
+        // `--window-capture-test <pasta>`: lista as janelas do ecrã principal e captura a 1.ª com e sem sombra (só imprime
+        // tamanhos e transparência dos cantos; as imagens ficam na pasta).
+        if let i = args.firstIndex(of: "--window-capture-test"), args.count > i + 1 {
+            Task { @MainActor in
+                let dir = URL(fileURLWithPath: args[i + 1]); try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                guard let screen = NSScreen.main else { print("WINDOW-CAPTURE: sem ecrã"); exit(1) }
+                let wins = await ScreenCapturer.windows(on: screen)
+                print("WINDOW-CAPTURE: \(wins.count) janelas; 1.ª: \(wins.first.map { "\($0.app) \(Int($0.frame.width))×\(Int($0.frame.height)) em \(Int($0.frame.minX)),\(Int($0.frame.minY))" } ?? "-")")
+                guard let w = wins.first else { exit(1) }
+                for shadow in [false, true] {
+                    do {
+                        let img = try await ScreenCapturer.captureWindow(id: w.id, shadow: shadow, scale: screen.backingScaleFactor)
+                        let alpha = SelfTests.cornerAlpha(img)
+                        print("WINDOW-CAPTURE: sombra=\(shadow) \(img.width)×\(img.height) alfa nos cantos=\(alpha)")
+                        try NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("janela-\(shadow ? "sombra" : "sem-sombra").png"))
+                    } catch { print("WINDOW-CAPTURE: erro \(error)") }
+                }
+                exit(0)
+            }
         }
 
         // `--render-hud <saida.png>`: desenha a barra da captura com rolagem nos três estados.
@@ -433,6 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let captureItem = menu.addItem(withTitle: "\(L("Capturar região"))  (\(ShortcutSettings.shared.shortcut.shown))", action: #selector(captureRegion), keyEquivalent: "")
         captureItem.target = self
         captureMenuItem = captureItem
+        menu.addItem(withTitle: L("Capturar janela"), action: #selector(captureWindow), keyEquivalent: "").target = self
         menu.addItem(withTitle: L("Capturar ecrã inteiro"), action: #selector(captureFullScreen), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: L("Nova imagem em branco…"), action: #selector(newBlankImage), keyEquivalent: "").target = self
@@ -500,7 +522,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quantas vezes a captura de região foi pedida (usado no autoteste do atalho).
     private(set) var captureRequests = 0
 
-    @objc func captureRegion() {
+    @objc func captureRegion() { beginCapture(windowMode: false) }
+    /// «Capturar janela»: o seletor abre já no modo «Janela» (clicar numa janela captura só essa janela).
+    @objc func captureWindow() { beginCapture(windowMode: true) }
+
+    func beginCapture(windowMode: Bool) {
         captureRequests += 1
         guard !selector.isActive else { return }
         Task { @MainActor in
@@ -508,10 +534,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !CommandLine.arguments.contains("--capture-hold"), !(await Permissions.ensure()) { return }
             do {
                 var snapshots: [(screen: NSScreen, image: CGImage)] = []
+                var windows: [[WindowInfo]] = []
                 for screen in NSScreen.screens {
                     // `--capture-hold` usa uma imagem sintética em vez do ecrã real (testes visuais sem expor o ecrã).
                     let image = CommandLine.arguments.contains("--capture-hold") ? Self.syntheticSnapshot(for: screen) : try await ScreenCapturer.snapshot(of: screen)
                     snapshots.append((screen, image))
+                    windows.append(CommandLine.arguments.contains("--capture-hold") ? Self.syntheticWindows(for: screen) : await ScreenCapturer.windows(on: screen))
                 }
                 selector.onVideo = { screen, rect in
                     Task { @MainActor in
@@ -521,13 +549,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         MainWindow.show()
                     }
                 }
+                selector.onWindowVideo = { screen, info in
+                    Task { @MainActor in
+                        guard let url = await VideoCaptureSession.record(screen: screen, rect: info.frame, windowID: info.id) else { return }
+                        AppState.shared.open(url)
+                        NSSound(named: "Grab")?.play()
+                        MainWindow.show()
+                    }
+                }
+                selector.onWindow = { [weak self] info, shadow in
+                    // a janela captura-se só a ela (mesmo tapada); com sombra, a margem à volta fica transparente
+                    let scale = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 2)
+                    self?.finish(transparent: shadow) { try await ScreenCapturer.captureWindow(id: info.id, shadow: shadow, scale: scale) }
+                }
                 selector.onScroll = { [weak self] screen, rect, first in
                     Task { @MainActor in
                         guard let image = await ScrollCaptureSession.capture(screen: screen, rect: rect, first: first) else { return }
                         self?.finish { image }
                     }
                 }
-                selector.begin(snapshots: snapshots) { [weak self] image in
+                selector.begin(snapshots: snapshots, screenWindows: windows, windowMode: windowMode) { [weak self] image in
                     guard let image else { return }   // cancelado
                     self?.finish { image }
                 }
@@ -539,6 +580,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func syntheticSnapshotForTests(for screen: NSScreen) -> CGImage { Self.syntheticSnapshot(for: screen) }
+
+    /// Janelas fictícias para os testes visuais do modo «Janela».
+    static func syntheticWindows(for screen: NSScreen) -> [WindowInfo] {
+        [WindowInfo(id: 1, frame: CGRect(x: 160, y: 120, width: 720, height: 460), title: "Documento de teste", app: "Editor"),
+         WindowInfo(id: 2, frame: CGRect(x: 520, y: 300, width: 640, height: 420), title: "", app: "Navegador")]
+    }
 
     private static func syntheticSnapshot(for screen: NSScreen) -> CGImage {
         let size = NSSize(width: screen.frame.width * screen.backingScaleFactor, height: screen.frame.height * screen.backingScaleFactor)
@@ -695,11 +742,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(CaptureStore.folder)
     }
 
-    private func finish(thenQuit: Bool = false, _ work: @escaping () async throws -> CGImage) {
+    private func finish(thenQuit: Bool = false, transparent: Bool = false, _ work: @escaping () async throws -> CGImage) {
         Task { @MainActor in
             do {
                 let image = try await work()
-                let url = try CaptureStore.save(image)
+                let url = try CaptureStore.save(image, transparentBackground: transparent)
                 CaptureStore.copyToPasteboard(image)
                 NSSound(named: "Grab")?.play()
                 NSLog("Toth: captura guardada em \(url.path)")

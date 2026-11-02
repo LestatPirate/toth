@@ -131,6 +131,8 @@ final class VideoCaptureSession {
 
     private let screen: NSScreen
     private let rect: CGRect
+    /// Gravar só uma janela (em vez da área do ecrã): segue-a mesmo tapada ou movida.
+    private let windowID: CGWindowID?
     private let hud: VideoHUD
     private let frame: RegionFrameWindow
     private(set) var state = State.ready
@@ -143,8 +145,8 @@ final class VideoCaptureSession {
     private var systemOn = (UserDefaults.standard.object(forKey: "videoSystemAudio") as? Bool) ?? true
     private var micOn = (UserDefaults.standard.object(forKey: "videoMicrophone") as? Bool) ?? false
 
-    init(screen: NSScreen, rect: CGRect) {
-        self.screen = screen; self.rect = rect
+    init(screen: NSScreen, rect: CGRect, windowID: CGWindowID? = nil) {
+        self.screen = screen; self.rect = rect; self.windowID = windowID
         hud = VideoHUD(near: rect, on: screen)
         frame = RegionFrameWindow(rect: rect, on: screen, color: .systemRed)
         hud.onRecord = { [weak self] in Task { await self?.record() } }
@@ -191,7 +193,7 @@ final class VideoCaptureSession {
                 }
             }
             e.start()
-            try await src.start(screen: screen, rect: rect, microphone: micOn)
+            try await src.start(screen: screen, rect: rect, windowID: windowID, microphone: micOn)
             engine = e; source = src; tempURL = tmp
         } catch {
             NSAlert(error: error).runModal()
@@ -271,7 +273,7 @@ final class VideoCaptureSession {
     }
 
     /// Ponto de entrada: grava a região `rect` (pontos, canto superior esquerdo de `screen`).
-    static func record(screen: NSScreen, rect: CGRect) async -> URL? {
-        await VideoCaptureSession(screen: screen, rect: rect).run()
+    static func record(screen: NSScreen, rect: CGRect, windowID: CGWindowID? = nil) async -> URL? {
+        await VideoCaptureSession(screen: screen, rect: rect, windowID: windowID).run()
     }
 }

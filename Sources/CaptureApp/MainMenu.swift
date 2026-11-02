@@ -43,6 +43,7 @@ enum MainMenu {
         add(file, L("Abrir Biblioteca"), #selector(AppDelegate.openCapture), "o", mods: [.command, .shift], target: t)
         file.addItem(.separator())
         add(file, L("Capturar região"), #selector(AppDelegate.captureRegion), target: t)
+        add(file, L("Capturar janela"), #selector(AppDelegate.captureWindow), target: t)
         add(file, L("Capturar ecrã inteiro"), #selector(AppDelegate.captureFullScreen), target: t)
         file.addItem(.separator())
         add(file, L("Salvar como…"), #selector(AppDelegate.saveAs), "s", mods: [.command, .shift], target: t)

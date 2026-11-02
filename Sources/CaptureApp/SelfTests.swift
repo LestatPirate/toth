@@ -380,6 +380,18 @@ enum SelfTests {
     // MARK: Efeitos sobre camadas
 
     /// Blur e Pixelização têm de atuar sobre os objetos que estão por baixo deles (e só sobre esses).
+    /// Alfa (0…255) dos quatro cantos de uma imagem (para saber se há margem transparente, por exemplo a sombra de uma janela).
+    static func cornerAlpha(_ img: CGImage) -> [Int] {
+        guard let ctx = CGContext(data: nil, width: img.width, height: img.height, bitsPerComponent: 8, bytesPerRow: img.width * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return [] }
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
+        guard let d = ctx.data else { return [] }
+        let p = d.assumingMemoryBound(to: UInt8.self)
+        func a(_ x: Int, _ y: Int) -> Int { Int(p[(y * img.width + x) * 4 + 3]) }
+        // cantos e meio das bordas (os cantos de uma janela são redondos: transparentes mesmo sem sombra)
+        return [a(0, 0), a(img.width - 1, 0), a(0, img.height - 1), a(img.width - 1, img.height - 1), a(img.width / 2, 0), a(0, img.height / 2), a(img.width / 2, img.height - 1)]
+    }
+
     static func effectsSelfTest() -> [String] {
         var fails: [String] = []
         func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }

@@ -336,14 +336,19 @@ final class ScreenRecordingSource: NSObject, SCStreamOutput, SCStreamDelegate, @
         return (max(2, Int(w) / 2 * 2), max(2, Int(h) / 2 * 2))
     }
 
-    func start(screen: NSScreen, rect: CGRect, microphone: Bool) async throws {
+    /// `windowID`: grava só essa janela (mesmo tapada); `rect` é então só o tamanho inicial.
+    func start(screen: NSScreen, rect: CGRect, windowID: CGWindowID? = nil, microphone: Bool) async throws {
         let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == id }) else { throw ScreenCapturer.Failure.displayNotFound }
         let own = content.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier }
-        let filter = SCContentFilter(display: display, excludingWindows: own)
+        let filter: SCContentFilter
+        if let windowID {
+            guard let w = content.windows.first(where: { $0.windowID == windowID }) else { throw ScreenCapturer.Failure.windowNotFound }
+            filter = SCContentFilter(desktopIndependentWindow: w)
+        } else { filter = SCContentFilter(display: display, excludingWindows: own) }
         let c = SCStreamConfiguration()
-        c.sourceRect = rect
+        if windowID == nil { c.sourceRect = rect } else { c.ignoreShadowsSingleWindow = true }
         c.width = engine.width; c.height = engine.height
         c.pixelFormat = kCVPixelFormatType_32BGRA
         c.minimumFrameInterval = CMTime(value: 1, timescale: 30)
