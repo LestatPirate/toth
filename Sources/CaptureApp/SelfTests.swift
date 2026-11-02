@@ -553,6 +553,32 @@ enum SelfTests {
         check(m.hover != nil && m.hover == m.doc.topmost(at: inA, tolerance: 1)?.id, "passar por cima devia marcar o objeto de cima como hover (\(String(describing: m.hover)))")
         canvas.debugHover(at: empty)
         check(m.hover == nil, "no vazio não há hover")
+        // 13) seleção múltipla: ⇧+clique junta; laço apanha; mover em grupo; ⌥+arrastar duplica; guias encostam
+        m.tool = .select; m.selection = nil
+        for a in m.doc.annotations where a.id != idA && a.id != idB { m.perform { $0.remove(id: a.id) } }   // só A e B
+        canvas.debugMouse(at: inA)
+        canvas.debugMouse(at: inB, shift: true)
+        check(m.selectedIDs == [idA, idB], "⇧+clique devia juntar B à seleção (\(m.selectedIDs.count))")
+        canvas.debugMouse(at: inB, shift: true)
+        check(m.selectedIDs == [idA], "⇧+clique num selecionado devia tirá-lo")
+        canvas.debugMouse(at: Point(x: 50, y: 50), dragTo: Point(x: 700, y: 260))             // laço à volta de A e B
+        check(m.selectedIDs == [idA, idB], "o laço devia apanhar A e B (\(m.selectedIDs.count))")
+        let ax = m.doc.annotations.first { $0.id == idA }!.shape.bounds.x, bx = m.doc.annotations.first { $0.id == idB }!.shape.bounds.x
+        canvas.debugMouse(at: inA, dragTo: Point(x: inA.x + 100, y: inA.y + 100), command: true)   // ⌘: sem encosto
+        check(m.doc.annotations.first { $0.id == idA }!.shape.bounds.x == ax + 100 && m.doc.annotations.first { $0.id == idB }!.shape.bounds.x == bx + 100, "arrastar um selecionado devia mover o grupo")
+        m.undo()
+        let n4 = count()
+        canvas.debugMouse(at: inA, dragTo: Point(x: inA.x + 50, y: inA.y + 300), option: true, command: true)
+        check(count() == n4 + 2 && m.selectedIDs.count == 2 && !m.selectedIDs.contains(idA), "⌥+arrastar devia duplicar os dois e arrastar as cópias (\(count()) vs \(n4 + 2))")
+        check(m.doc.annotations.first { $0.id == idA }!.shape.bounds.x == ax, "os originais ficam no sítio")
+        m.undo(); m.undo()   // o arrasto e a duplicação
+        check(count() == n4, "desfazer duas vezes devia tirar as cópias (\(count()) vs \(n4))")
+        // guias: mover B para perto do lado esquerdo de A encosta exatamente (A em x=100; B em x=450, largura 200)
+        m.selection = idB
+        canvas.debugMouse(at: inB, dragTo: Point(x: inB.x - 346, y: inB.y + 200))   // B.x ficaria em 104: encosta a 100
+        check(m.doc.annotations.first { $0.id == idB }!.shape.bounds.x == 100, "mover B devia encostar à borda esquerda de A (x=\(m.doc.annotations.first { $0.id == idB }!.shape.bounds.x))")
+        m.undo()
+        m.selection = nil
         return fails
     }
 

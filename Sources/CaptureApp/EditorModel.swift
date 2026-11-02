@@ -42,7 +42,24 @@ final class EditorModel: ObservableObject {
             if tool == .canvas && oldValue != .canvas { canvasEntryDepth = undoStack.count }
         }
     }
-    @Published var selection: UUID?
+    @Published var selection: UUID? { didSet { if selection == nil { extraSelection = [] } else { extraSelection.remove(selection!) } } }
+    /// Os outros elementos selecionados (⇧+clique, laço): `selection` é o principal (o do painel e das alças).
+    @Published var extraSelection: Set<UUID> = []
+    var selectedIDs: Set<UUID> { var s = extraSelection; if let p = selection { s.insert(p) }; return s }
+    var selectedAll: [Annotation] { doc.ordered.filter { selectedIDs.contains($0.id) } }
+    func isSelected(_ id: UUID) -> Bool { selectedIDs.contains(id) }
+    /// Seleciona `id`; com `extend`, junta-o ou tira-o da seleção.
+    func select(_ id: UUID, extend: Bool) {
+        guard extend else { selection = id; extraSelection = []; return }
+        if selection == id { selection = extraSelection.first; extraSelection.remove(selection ?? id); return }
+        if extraSelection.contains(id) { extraSelection.remove(id); return }
+        if selection == nil { selection = id } else { extraSelection.insert(id) }
+    }
+    func selectIDs(_ ids: Set<UUID>) {
+        let ordered = doc.ordered.map(\.id).filter { ids.contains($0) }
+        selection = ordered.last; extraSelection = Set(ordered.dropLast())
+    }
+    func selectAll() { selectIDs(Set(doc.annotations.filter(\.visible).map(\.id))) }
     /// Ferramenta presa (duplo clique no ícone): continua ativa depois de desenhar. Sem isto, depois de um objeto volta a Mover.
     @Published var toolLocked = false
     /// Elemento sob o rato (para o destaque ao passar por cima).
@@ -145,11 +162,27 @@ final class EditorModel: ObservableObject {
         tool = .select
     }
 
-    /// Setas: desloca o elemento selecionado (1 px; com ⇧, 10 px).
+    /// Setas: desloca os elementos selecionados (1 px; com ⇧, 10 px).
     func nudgeSelection(dx: Double, dy: Double) {
-        guard var a = selected else { return }
-        a.shape = a.shape.translated(dx: dx, dy: dy)
-        perform { $0.update(a); _ = $0.expandAreaToFit(ids: [a.id]) }
+        let all = selectedAll
+        guard !all.isEmpty else { return }
+        perform { d in for var a in all { a.shape = a.shape.translated(dx: dx, dy: dy); d.update(a) }; _ = d.expandAreaToFit(ids: all.map(\.id)) }
+    }
+
+    /// Caixa envolvente (no documento) de todos os selecionados.
+    var selectionBounds: Rect? {
+        let all = selectedAll
+        guard let first = all.first else { return nil }
+        return all.dropFirst().reduce(first.worldBounds) { $0.union($1.worldBounds) }
+    }
+
+    /// ⌥+arrastar: duplica os selecionados no mesmo sítio e passa a seleção para as cópias (que depois se arrastam).
+    func duplicateSelectionInPlace() {
+        let all = selectedAll
+        guard !all.isEmpty else { return }
+        var ids: [UUID] = []
+        perform { d in for a in all { ids.append(d.insertCopy(of: a).id) } }
+        selectIDs(Set(ids))
     }
 
     func addAnnotation(_ shape: Shape) -> UUID {
@@ -346,8 +379,9 @@ final class EditorModel: ObservableObject {
     }
 
     func deleteSelection() {
-        guard let id = selection else { return }
-        perform { $0.remove(id: id) }
+        let ids = selectedIDs
+        guard !ids.isEmpty else { return }
+        perform { d in for id in ids { d.remove(id: id) } }
         selection = nil
     }
 
@@ -356,9 +390,10 @@ final class EditorModel: ObservableObject {
         let target = selected.flatMap { Tool.forShape($0.shape) } ?? tool
         if target != .select { ToolDefaults.shared.setStyle(s, for: target) }
         objectWillChange.send()
-        guard let id = selection, var a = doc.annotations.first(where: { $0.id == id }) else { return }
-        a.style = s
-        perform { $0.update(a) }
+        let all = selectedAll
+        guard !all.isEmpty else { return }
+        // o estilo aplica-se a todos os selecionados (do mesmo tipo do principal: cores e linha fazem sentido entre tipos, por isso a todos)
+        perform { d in for var a in all { a.style = s; d.update(a) } }
     }
 
     func undo() {
@@ -372,7 +407,8 @@ final class EditorModel: ObservableObject {
     }
 
     private func fixSelection() {
-        if let s = selection, !doc.annotations.contains(where: { $0.id == s }) { selection = nil }
+        extraSelection = extraSelection.filter { id in doc.annotations.contains { $0.id == id } }
+        if let s = selection, !doc.annotations.contains(where: { $0.id == s }) { selection = extraSelection.first; if let p = selection { extraSelection.remove(p) } }
     }
 
     // MARK: Copiar e colar
@@ -381,17 +417,21 @@ final class EditorModel: ObservableObject {
     /// (para poder colar noutro documento).
     private struct ClipPayload: Codable {
         var annotation: Annotation
+        /// Vários objetos (seleção múltipla); `annotation` é o primeiro, para as versões antigas.
+        var annotations: [Annotation]?
         var assets: [String: Data]
+        var all: [Annotation] { annotations ?? [annotation] }
     }
     private static let clipType = NSPasteboard.PasteboardType("com.capture.annotation")
 
     func copySelection() {
-        guard let a = selected else { return }
+        let all = selectedAll
+        guard let a = all.first else { return }
         var assetData: [String: Data] = [:]
-        if let name = a.shape.imageAsset, let d = assets.data(named: name) { assetData[name] = d }
+        for x in all { if let name = x.shape.imageAsset, let d = assets.data(named: name) { assetData[name] = d } }
         let pb = NSPasteboard.general
         pb.clearContents()
-        if let data = try? JSONEncoder().encode(ClipPayload(annotation: a, assets: assetData)) {
+        if let data = try? JSONEncoder().encode(ClipPayload(annotation: a, annotations: all, assets: assetData)) {
             pb.setData(data, forType: Self.clipType)
         }
         // Para outras apps: o texto do objeto, ou a imagem colada.
@@ -402,10 +442,11 @@ final class EditorModel: ObservableObject {
     func cutSelection() { copySelection(); deleteSelection() }
 
     func duplicateSelection() {
-        guard let a = selected else { return }
-        var id: UUID?
-        perform { id = $0.insertCopy(of: a, dx: 24, dy: 24).id; if let id { _ = $0.expandAreaToFit(ids: [id]) } }
-        selection = id
+        let all = selectedAll
+        guard !all.isEmpty else { return }
+        var ids: [UUID] = []
+        perform { d in for a in all { ids.append(d.insertCopy(of: a, dx: 24, dy: 24).id) }; _ = d.expandAreaToFit(ids: ids) }
+        selectIDs(Set(ids))
     }
 
     var canPaste: Bool {
@@ -430,18 +471,16 @@ final class EditorModel: ObservableObject {
 
     private func pasteAnnotation(_ clip: ClipPayload) {
         // Imagens: garante o ficheiro neste documento.
-        if let name = clip.annotation.shape.imageAsset, !assets.has(name), let d = clip.assets[name] {
-            try? assets.write(d, as: name)
-        }
+        for a in clip.all { if let name = a.shape.imageAsset, !assets.has(name), let d = clip.assets[name] { try? assets.write(d, as: name) } }
         // Colar no mesmo documento: desloca para não ficar escondido por baixo do original.
         let sameDoc = doc.annotations.contains { $0.id == clip.annotation.id }
         let off = sameDoc ? 24.0 : 0.0
-        var id: UUID?
-        perform {
-            id = $0.insertCopy(of: clip.annotation, dx: off, dy: off).id
-            if let id { _ = $0.expandAreaToFit(ids: [id]) }
+        var ids: [UUID] = []
+        perform { d in
+            for a in clip.all { ids.append(d.insertCopy(of: a, dx: off, dy: off).id) }
+            _ = d.expandAreaToFit(ids: ids)
         }
-        selection = id
+        selectIDs(Set(ids))
         tool = .select
     }
 

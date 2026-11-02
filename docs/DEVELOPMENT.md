@@ -95,7 +95,9 @@ Cada ferramenta lembra o seu último estilo (cor, espessura…). O Marcador tem 
 - **Esc em dois tempos** (`EditorModel.escape`): com uma ferramenta de desenho, volta a Mover; na **Tela**, cancela tudo o que foi feito nessa visita (desfaz até ao ponto de entrada, `canvasEntryDepth`); em Mover, limpa a seleção.
 - **Teclado:** setas deslocam o elemento selecionado 1 px (⇧: 10 px; `nudgeSelection`); começar a escrever com um objeto de texto selecionado abre a edição já com essa letra; Return edita o texto (ou confirma a Tela).
 - **Rato:** o objeto sob o cursor fica com um contorno leve (`EditorModel.hover`, via `NSTrackingArea`); cursores próprios nas alças (cruz) e na alça de rotação (mão); **botão direito** seleciona o objeto e abre o menu de contexto (editar texto, cortar, copiar, colar, duplicar, apagar, ordem, rodar 90°).
-- Testado em `--selection-selftest` (cenários 8–12).
+- **Seleção múltipla:** `selection` é o principal (painel, alças) e `extraSelection` os outros (`selectedIDs`, `selectedAll`, `select(_:extend:)`, `selectIDs`, `selectAll` ⌘A). ⇧+clique junta/tira; arrastar no vazio com Mover faz um **laço** (apanha quem toca no retângulo); arrastar um selecionado move o grupo; **⌥+arrastar** duplica no sítio (`duplicateSelectionInPlace`) e arrasta as cópias. Apagar, duplicar, copiar/colar (`ClipPayload.annotations`, compatível com o campo antigo), setas e estilo aplicam-se a todos.
+- **Guias de alinhamento:** ao mover, o grupo encosta (bordas e centros) às bordas e centros dos outros objetos, da imagem e da área, até ~6 px no ecrã (`CanvasView.snapped`); as guias desenham-se a rosa; ⌘ desliga. O movimento é calculado a partir do ponto de partida (`moveStart`), não incremental, para o encosto não acumular.
+- Testado em `--selection-selftest` (cenários 8–13).
 
 ## Blur, Pixelização e Tela (área de trabalho)
 - **Blur** desfoca (gaussiano) a região escolhida; **Intensidade** no painel (1–60). **Pixelização** tem o tamanho dos blocos. Ambos atuam sobre a imagem original, não sobre outros objetos.

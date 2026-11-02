@@ -35,6 +35,7 @@
 - **Copiar, colar, duplicar**; cola **imagens e texto de outras apps**. Desfazer/refazer, zoom e deslocamento.
 - **Seleção rápida:** com uma ferramenta de desenho ativa, **clicar** num objeto existente seleciona-o e mostra as opções desse objeto; **arrastar** continua a desenhar um novo (por exemplo, uma seta a partir de uma caixa). **⌥ + clique** força a criação por cima de um objeto (útil para as etapas).
 - **Ferramentas de uma vez:** depois de desenhar, a ferramenta volta a Mover; **duplo clique** no ícone prende-a para desenhar vários seguidos. **Esc** volta a Mover, e outro Esc limpa a seleção (na Tela, Esc cancela as alterações). **Setas** deslocam o objeto selecionado (⇧: 10 px); **começar a escrever** num objeto de texto abre a edição; o objeto sob o rato fica destacado e o **botão direito** abre um menu com as ações mais comuns.
+- **Vários de uma vez:** **⇧+clique** junta objetos à seleção, **arrastar no vazio** (com Mover) faz um laço, **⌘A** seleciona tudo. Mover, apagar, duplicar, copiar, setas e cores aplicam-se a todos. **⌥+arrastar** duplica. Ao mover, o objeto **encosta** às bordas e centros dos outros e da imagem (guias rosa; ⌘ desliga).
 - **Exportar PNG** ou **copiar tudo** para a área de transferência.
 
 **Biblioteca**
@@ -88,6 +89,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - **Copy, paste, duplicate**; pastes **images and text from other apps**. Undo/redo, zoom and pan.
 - **Quick selection:** with a drawing tool active, **clicking** an existing object selects it and shows its options; **dragging** keeps drawing a new one (for example an arrow from a box). **⌥ + click** forces creation on top of an object (handy for steps).
 - **One-shot tools:** after drawing, the tool returns to Move; **double-click** the icon to lock it and draw several in a row. **Esc** returns to Move, and another Esc clears the selection (in Canvas, Esc cancels the changes). **Arrow keys** nudge the selected object (⇧: 10 px); **starting to type** on a text object opens editing; the object under the mouse is highlighted and the **right button** opens a menu with the common actions.
+- **Several at once:** **⇧+click** adds objects to the selection, **dragging on empty space** (with Move) draws a marquee, **⌘A** selects all. Moving, deleting, duplicating, copying, arrow keys and colors apply to all. **⌥+drag** duplicates. When moving, the object **snaps** to the edges and centers of the others and of the image (pink guides; ⌘ disables).
 - **Export PNG** or **copy all** to the clipboard.
 
 **Library**

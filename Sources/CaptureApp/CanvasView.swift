@@ -47,6 +47,12 @@ final class CanvasView: NSView {
     /// Ao redimensionar um objeto com texto, a letra acompanha o tamanho da caixa (a partir destes valores de partida).
     private var resizeStart: (bounds: Rect, font: Double)?
     private var textObserver: NSObjectProtocol?
+    /// Mover (um ou vários): ponto de partida do rato e as formas de partida, para o encosto às guias ser absoluto.
+    private var moveStart: (mouse: Point, shapes: [UUID: CaptureCore.Shape])?
+    /// Guias de alinhamento a desenhar durante o arrasto (verticais em x, horizontais em y).
+    private var guides: (xs: [Double], ys: [Double]) = ([], [])
+    /// Laço de seleção (arrastar no vazio com Mover).
+    private var marquee: (anchor: Point, rect: Rect)?
     /// Objeto existente sob o rato quando se começou a desenhar: se for só um clique (sem arrastar), seleciona-se esse objeto.
     private var clickCandidate: UUID?
 
@@ -147,6 +153,23 @@ final class CanvasView: NSView {
                 ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1.5 / scale); ctx.stroke(r)
             }
             drawRotationHandle(at: rotationHandlePoint(sel), from: sel.toWorld(topCenter(sel.shape.bodyBounds)), color: .systemBlue, ctx)
+        }
+        // os outros selecionados: contorno a tracejado, sem alças
+        for id in model.extraSelection { if let a = model.doc.annotations.first(where: { $0.id == id }) {
+            ctx.saveGState(); Renderer.applyRotation(a, ctx)
+            ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1.5 / scale); ctx.setLineDash(phase: 0, lengths: [6 / scale, 4 / scale])
+            ctx.stroke(a.shape.bounds.cg.insetBy(dx: -6, dy: -6)); ctx.restoreGState()
+        } }
+        if let m = marquee {
+            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor); ctx.fill(m.rect.cg)
+            ctx.setStrokeColor(NSColor.controlAccentColor.cgColor); ctx.setLineWidth(1 / scale); ctx.stroke(m.rect.cg)
+        }
+        if !guides.xs.isEmpty || !guides.ys.isEmpty {
+            ctx.setStrokeColor(NSColor.systemPink.cgColor); ctx.setLineWidth(1 / scale)
+            let v = CGRect(x: -origin.x / scale, y: -origin.y / scale, width: bounds.width / scale, height: bounds.height / scale)
+            for x in guides.xs { ctx.move(to: CGPoint(x: x, y: v.minY)); ctx.addLine(to: CGPoint(x: x, y: v.maxY)) }
+            for y in guides.ys { ctx.move(to: CGPoint(x: v.minX, y: y)); ctx.addLine(to: CGPoint(x: v.maxX, y: y)) }
+            ctx.strokePath()
         }
         if model.tool == .canvas && model.canvasTarget == .image {
             // a imagem original: contorno (rodado), 8 alças e a alça de rotação
@@ -364,12 +387,22 @@ final class CanvasView: NSView {
                 }
             }
             let hit = model.doc.topmost(at: p, tolerance: tol)
-            model.selection = hit?.id
+            let shift = event.modifierFlags.contains(.shift)
+            if let hit, shift { model.select(hit.id, extend: true); return }          // ⇧: junta ou tira da seleção
             if let hit, event.clickCount == 2, hit.editableString != nil {
+                model.selection = hit.id
                 beginEditing(hit.id, isNew: false)
                 return
             }
-            if hit != nil { model.checkpoint(); moving = true }
+            if let hit {
+                if !model.isSelected(hit.id) { model.selection = hit.id }                // já selecionado: mantém o grupo
+                if event.modifierFlags.contains(.option) { model.duplicateSelectionInPlace() }   // ⌥+arrastar: arrasta cópias
+                model.checkpoint(); moving = true
+                moveStart = (p, Dictionary(uniqueKeysWithValues: model.selectedAll.map { ($0.id, $0.shape) }))
+            } else {
+                if !shift { model.selection = nil }
+                marquee = (p, Rect(x: p.x, y: p.y, width: 0, height: 0))                  // laço
+            }
         case .step:
             // Clique sobre um objeto existente seleciona-o (⌥ + clique força a criação de uma etapa por cima dele).
             if !event.modifierFlags.contains(.option), let hit = model.doc.topmost(at: p, tolerance: tol) {
@@ -461,15 +494,25 @@ final class CanvasView: NSView {
         } else if let id = creating, let start = dragStart {
             update(id) { $0.shape = shape(model.tool, from: start, to: p) }
             expandAreaIfNeeded(for: id)
-        } else if moving, let id = model.selection, let last = lastPoint {
-            update(id) { $0.shape = $0.shape.translated(dx: p.x - last.x, dy: p.y - last.y) }
-            expandAreaIfNeeded(for: id)
+        } else if moving, let start = moveStart {
+            var dx = p.x - start.mouse.x, dy = p.y - start.mouse.y
+            guides = ([], [])
+            if !event.modifierFlags.contains(.command) { (dx, dy) = snapped(dx: dx, dy: dy, start: start.shapes) }
+            model.mutate { d in for (id, s) in start.shapes { if var a = d.annotations.first(where: { $0.id == id }) { a.shape = s.translated(dx: dx, dy: dy); d.update(a) } } }
+            for id in start.shapes.keys { expandAreaIfNeeded(for: id) }
+        } else if var m = marquee, let start = dragStart {
+            m.rect = Rect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
+            marquee = m
+            let inside = model.doc.annotations.filter { $0.visible && intersects($0.worldBounds, m.rect) }.map(\.id)
+            model.selectIDs(Set(inside))
+            needsDisplay = true
         }
         lastPoint = imagePoint(event)
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil }
+        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; needsDisplay = true }
+        if marquee != nil { return }   // laço: a seleção já foi feita ao arrastar (um clique só limpa)
         if imageDrag != nil {
             if gestureMoved { model.commit() } else { model.dropLastCheckpoint() }   // só clicar na imagem não altera nada
             endGesture(); return
@@ -504,7 +547,38 @@ final class CanvasView: NSView {
                 model.selection = nil
             } else { model.commit(); model.finishedDrawing() }
             endGesture()
-        } else if moving { model.commit(); endGesture() }
+        } else if moving {
+            if let start = moveStart, start.shapes.allSatisfy({ entry in model.doc.annotations.first { a in a.id == entry.key }?.shape == entry.value }) { model.dropLastCheckpoint() }   // não se mexeu
+            else { model.commit() }
+            endGesture()
+        }
+    }
+
+    // MARK: Guias de alinhamento
+
+    private func intersects(_ a: Rect, _ b: Rect) -> Bool { a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY }
+
+    /// Encosta o grupo que se move (bordas e centro) às bordas e centros dos outros objetos, da imagem e da área,
+    /// quando a distância é menor do que ~6 px no ecrã. Devolve o deslocamento corrigido e guarda as guias a desenhar.
+    private func snapped(dx: Double, dy: Double, start: [UUID: CaptureCore.Shape]) -> (Double, Double) {
+        let moving = start.compactMap { id, s -> Rect? in guard var a = model.doc.annotations.first(where: { $0.id == id }) else { return nil }; a.shape = s; return a.worldBounds }
+        guard let first = moving.first else { return (dx, dy) }
+        let g = moving.dropFirst().reduce(first) { $0.union($1) }
+        let group = Rect(x: g.x + dx, y: g.y + dy, width: g.width, height: g.height)
+        var xs: [Double] = [], ys: [Double] = []
+        for r in [model.doc.imageRect, model.doc.area] + model.doc.annotations.filter({ $0.visible && start[$0.id] == nil }).map(\.worldBounds) {
+            xs += [r.minX, r.minX + r.width / 2, r.maxX]; ys += [r.minY, r.minY + r.height / 2, r.maxY]
+        }
+        let tol = 6 / Double(scale)
+        func best(_ mine: [Double], _ targets: [Double]) -> (shift: Double, at: Double)? {
+            var out: (Double, Double)?
+            for m in mine { for t in targets where abs(t - m) <= tol { if out == nil || abs(t - m) < abs(out!.0) { out = (t - m, t) } } }
+            return out
+        }
+        var ddx = dx, ddy = dy
+        if let b = best([group.minX, group.minX + group.width / 2, group.maxX], xs) { ddx += b.shift; guides.xs = [b.at] }
+        if let b = best([group.minY, group.minY + group.height / 2, group.maxY], ys) { ddy += b.shift; guides.ys = [b.at] }
+        return (ddx, ddy)
     }
 
     /// Seleciona um objeto que já existia e passa para a ferramenta Mover: o painel e as opções passam a ser os desse objeto.
@@ -849,10 +923,11 @@ final class CanvasView: NSView {
     }
 
     /// Clique (ou arrasto, se `to` existir) entregue ao editor como se fosse o rato.
-    func debugMouse(at p: Point, dragTo: Point? = nil, option: Bool = false, shift: Bool = false) {
+    func debugMouse(at p: Point, dragTo: Point? = nil, option: Bool = false, shift: Bool = false, command: Bool = false) {
         var flags: NSEvent.ModifierFlags = []
         if option { flags.insert(.option) }
         if shift { flags.insert(.shift) }
+        if command { flags.insert(.command) }
         func event(_ type: NSEvent.EventType, _ pt: Point) -> NSEvent? {
             NSEvent.mouseEvent(with: type, location: debugWindowPoint(pt), modifierFlags: flags,
                                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window?.windowNumber ?? 0, context: nil,
@@ -903,6 +978,7 @@ final class CanvasView: NSView {
         case "x": model.cutSelection()
         case "v": model.paste()
         case "d": model.duplicateSelection()
+        case "a": model.selectAll()
         default: return super.performKeyEquivalent(with: event)
         }
         return true
