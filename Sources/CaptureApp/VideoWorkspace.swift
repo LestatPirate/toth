@@ -291,7 +291,7 @@ struct VideoWorkspace: View {
             .padding(.horizontal, 10).frame(height: 36)
             .background(.bar)
             VideoTimeline(model: model, onAction: perform)
-                .frame(height: TimelineNSView.idealHeight(lanes: max(1, model.timeline.tracks.count), overlays: model.hasOverlays || model.annotateMode))
+                .frame(height: min(TimelineNSView.maxHeight, TimelineNSView.idealHeight(lanes: max(1, model.timeline.tracks.count), overlayRows: model.hasOverlays || model.annotateMode ? max(1, TimelineNSView.packOverlays(model.overlays).count) : 0)))
             Divider()
             HStack(spacing: 8) {
                 Image(systemName: "video.fill").foregroundStyle(.secondary)

@@ -1519,7 +1519,7 @@ enum SelfTests {
         s.wheel(dx: -30, dy: 0); check(close(s.offset, 30), "trackpad horizontal: 30 px (é \(s.offset))")
         s.wheel(dx: 0, dy: -20); check(close(s.offset, 50), "roda vertical também desliza na horizontal (é \(s.offset))")
         s.wheel(dx: 12, dy: 0); check(close(s.offset, 38), "no sentido contrário recua (é \(s.offset))")
-        let wide = ToolsScroll(); wide.viewport = 900     // cabe tudo: nada desliza
+        let wide = ToolsScroll(); wide.viewport = 1200    // cabe tudo: nada desliza
         wide.wheel(dx: -50, dy: 0); check(wide.offset == 0 && !wide.overflows, "se cabe tudo, a roda não move nada")
 
         // 4) trazer uma ferramenta para a vista com o mínimo de movimento

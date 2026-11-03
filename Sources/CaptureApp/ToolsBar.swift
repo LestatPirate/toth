@@ -55,6 +55,9 @@ final class ToolsScroll: ObservableObject {
         DispatchQueue.main.async { [weak self] in self?.reclamp() }
     }
 
+    /// Põe o deslocamento num valor (barra de rolagem arrastada).
+    func setOffset(_ v: CGFloat) { offset = clamp(v) }
+
     func scroll(by dx: CGFloat, animated: Bool = false) {
         let target = clamp(offset + dx)
         if animated { withAnimation(.easeOut(duration: 0.22)) { offset = target } } else { offset = target }
@@ -169,6 +172,25 @@ struct ToolsBar: View {
                 .offset(x: overflow ? -shown : 0)
                 .frame(width: viewport, height: 54, alignment: overflow ? .topLeading : .top)
                 .clipped()
+                // barra de rolagem (como a da faixa de miniaturas): o polegar mostra onde se está e arrasta-se
+                .overlay(alignment: .bottom) {
+                    if overflow {
+                        GeometryReader { track in
+                            let tw = track.size.width
+                            let thumbW = max(28, tw * viewport / max(content, 1))
+                            let thumbX = (tw - thumbW) * (shown / max(content - viewport, 1))
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.secondary.opacity(0.12))
+                                Capsule().fill(Color.secondary.opacity(0.45)).frame(width: thumbW).offset(x: thumbX)
+                            }
+                            .contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                                scroll.setOffset((g.location.x - thumbW / 2) / max(tw - thumbW, 1) * (content - viewport))
+                            })
+                        }
+                        .frame(height: 6).padding(.horizontal, 4).padding(.bottom, 1)
+                    }
+                }
                 if overflow { arrow("chevron.right", direction: 1, enabled: scroll.canScrollRight, help: L("Mais ferramentas")) }
             }
             .frame(width: geo.size.width, height: 54, alignment: .topLeading)

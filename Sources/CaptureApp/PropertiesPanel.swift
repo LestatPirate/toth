@@ -226,6 +226,31 @@ struct PropertiesPanel: View {
             .buttonStyle(.plain).help(help)
     }
 
+    private var isImageObject: Bool { if case .image = model.selected?.shape { return true }; return false }
+    private var objectAspect: Binding<Bool> { Binding(get: { model.keepObjectAspect }, set: { model.keepObjectAspect = $0 }) }
+    private var objWidth: Binding<Double> { Binding(get: { (model.selected?.shape.bounds.width ?? 0).rounded() }, set: { model.setImageObjectSize(width: $0) }) }
+    private var objHeight: Binding<Double> { Binding(get: { (model.selected?.shape.bounds.height ?? 0).rounded() }, set: { model.setImageObjectSize(height: $0) }) }
+
+    /// Imagem colada: tamanho, proporção e voltar ao tamanho real.
+    private var imageObjectSection: some View {
+        section(L("Imagem colada")) {
+            row(L("Largura")) {
+                TextField("", value: objWidth, format: .number.grouping(.never)).frame(width: 70).multilineTextAlignment(.trailing)
+                Text("px").font(.caption).foregroundStyle(.secondary)
+            }
+            row(L("Altura")) {
+                TextField("", value: objHeight, format: .number.grouping(.never)).frame(width: 70).multilineTextAlignment(.trailing)
+                Text("px").font(.caption).foregroundStyle(.secondary)
+            }
+            row(L("Redimensionar em proporção")) { Toggle("", isOn: objectAspect).labelsHidden() }
+            Text(L("Marcado: os cantos mantêm a proporção (⇧ liberta). As imagens coladas entram ao tamanho real.")).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let px = model.selectedImagePixelSize {
+                Button(L("Tamanho real (%@)", "\(Int(px.width)) × \(Int(px.height))")) { model.resetImageObjectSize() }.controlSize(.small)
+                    .disabled(abs((model.selected?.shape.bounds.width ?? 0) - px.width) < 0.5 && abs((model.selected?.shape.bounds.height ?? 0) - px.height) < 0.5)
+            }
+        }
+    }
+
     private var repairSection: some View {
         section(L("Reparo")) {
             Picker("", selection: repairClones) {
@@ -333,6 +358,7 @@ struct PropertiesPanel: View {
                     }
                 }
                 if isStep { stepSection }
+                if isImageObject { imageObjectSection }
                 if isStamp { stampSection }
                 if isRepair { repairSection }
                 if isHighlight {

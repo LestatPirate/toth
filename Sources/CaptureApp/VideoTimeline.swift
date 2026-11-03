@@ -46,21 +46,36 @@ final class TimelineNSView: NSView {
     func x(_ t: Double) -> CGFloat { trackLeft + CGFloat((t - viewStart) * pps) }
     func time(_ x: CGFloat) -> Double { max(0, min(duration, viewStart + Double(x - trackLeft) / pps)) }
     override func layout() { super.layout(); model?.trackWidth = Double(trackWidth) }
-    private func rowHeight(_ t: EditTrack) -> CGFloat { t == .video ? 38 : 50 }
+    // linhas estreitas (muitas coisas cabem; o que não couber rola na vertical)
+    private func rowHeight(_ t: EditTrack) -> CGFloat { t == .video ? 28 : 34 }
+    static let rowGap: CGFloat = 3
     /// Retângulo da linha `t` (na zona das faixas).
     func rowRect(_ t: EditTrack) -> NSRect {
         var y = rulerHeight + 4
-        for l in lanes { if l == t { break }; y += rowHeight(l) + 4 }
+        for l in lanes { if l == t { break }; y += rowHeight(l) + Self.rowGap }
         return NSRect(x: trackLeft, y: y, width: trackWidth, height: rowHeight(t))
     }
     var tracksArea: NSRect {
         let last = lanes.last.map { rowRect($0).maxY } ?? rulerHeight + 4
         return NSRect(x: trackLeft, y: rulerHeight + 4, width: trackWidth, height: max(1, last - rulerHeight - 4))
     }
-    /// A linha das anotações (por baixo das faixas), quando há anotações ou se está a anotar.
+    /// A zona das anotações (por baixo das faixas), quando há anotações ou se está a anotar: uma fila por cada conjunto de
+    /// anotações que não se sobrepõem no tempo (as que se sobrepõem descem para a fila seguinte).
     var showsOverlayRow: Bool { (model?.hasOverlays ?? false) || (model?.annotateMode ?? false) }
-    static let overlayRowHeight: CGFloat = 26
-    var overlayRow: NSRect? { showsOverlayRow ? NSRect(x: trackLeft, y: tracksArea.maxY + 4, width: trackWidth, height: Self.overlayRowHeight) : nil }
+    static let overlayRowHeight: CGFloat = 22
+    /// Filas de anotações (empacotamento guloso por ordem de início).
+    static func packOverlays(_ overlays: [VideoOverlay]) -> [[VideoOverlay]] {
+        var rows: [[VideoOverlay]] = []
+        for o in overlays.sorted(by: { $0.start < $1.start }) {
+            if let i = rows.firstIndex(where: { ($0.last?.end ?? -1) <= o.start + 1e-6 }) { rows[i].append(o) } else { rows.append([o]) }
+        }
+        return rows
+    }
+    var overlayRows: [[VideoOverlay]] { let r = Self.packOverlays(model?.overlays ?? []); return r.isEmpty ? [[]] : r }
+    var overlayRow: NSRect? { showsOverlayRow ? NSRect(x: trackLeft, y: tracksArea.maxY + 4, width: trackWidth, height: Self.overlayRowHeight * CGFloat(overlayRows.count) + Self.rowGap * CGFloat(overlayRows.count - 1)) : nil }
+    func overlayRowRect(_ i: Int) -> NSRect? { overlayRow.map { NSRect(x: $0.minX, y: $0.minY + CGFloat(i) * (Self.overlayRowHeight + Self.rowGap), width: $0.width, height: Self.overlayRowHeight) } }
+    /// Altura de todo o conteúdo (régua, linhas, anotações).
+    var contentHeight: CGFloat { (overlayRow?.maxY ?? tracksArea.maxY) + 8 }
     /// A zona onde o trecho marcado vive: só as linhas em que foi marcado.
     var selectionArea: NSRect {
         let sel = model?.selectionLanes ?? []
@@ -68,7 +83,12 @@ final class TimelineNSView: NSView {
         guard let first = rows.first else { return tracksArea }
         return rows.dropFirst().reduce(first) { $0.union($1) }
     }
-    static func idealHeight(lanes: Int, overlays: Bool = false) -> CGFloat { 22 + 4 + 38 + CGFloat(max(0, lanes - 1)) * 54 + 12 + (overlays ? overlayRowHeight + 4 : 0) }
+    /// Altura ideal para `lanes` linhas e `overlayRows` filas de anotações (0 = sem a zona).
+    static func idealHeight(lanes: Int, overlayRows: Int = 0) -> CGFloat {
+        22 + 4 + 28 + CGFloat(max(0, lanes - 1)) * (34 + rowGap) + 8 + (overlayRows > 0 ? 4 + CGFloat(overlayRows) * overlayRowHeight + CGFloat(overlayRows - 1) * rowGap : 0)
+    }
+    /// A altura que a vista pede ao SwiftUI: até `maxHeight`; o resto rola.
+    static let maxHeight: CGFloat = 230
 
     func title(_ t: EditTrack) -> String {
         switch t {
@@ -163,18 +183,22 @@ final class TimelineNSView: NSView {
     }
 
     /// A linha das anotações: um bloco por anotação (início → fim), com o tipo; a selecionada tem contorno branco.
-    private func drawOverlayRow(_ r: NSRect, model: VideoEditorModel) {
+    private func drawOverlayRow(_ area: NSRect, model: VideoEditorModel) {
         let ctx = NSGraphicsContext.current?.cgContext
-        // cabeçalho
+        // cabeçalho (uma vez, ao lado da primeira fila)
+        let first = overlayRowRect(0) ?? area
         if let icon = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold).applying(.init(paletteColors: [NSColor.systemPurple]))) {
-            icon.draw(in: NSRect(x: 52, y: r.midY - 8, width: 16, height: 16))
+            icon.draw(in: NSRect(x: 52, y: first.midY - 8, width: 16, height: 16))
         }
-        (L("Anotações") as NSString).draw(in: NSRect(x: 72, y: r.midY - 7, width: headerWidth - 74, height: 14), withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(white: 0.9, alpha: 1)])
+        (L("Anotações") as NSString).draw(in: NSRect(x: 72, y: first.midY - 7, width: headerWidth - 74, height: 14), withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(white: 0.9, alpha: 1)])
+        let selected = model.overlayEditor?.selection
+        let rows = overlayRows
+        for (i, row) in rows.enumerated() {
+        guard let r = overlayRowRect(i) else { continue }
         NSColor(white: 0.17, alpha: 1).setFill(); NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
         ctx?.saveGState(); NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).addClip()
-        let selected = model.overlayEditor?.selection
-        for o in model.overlays {
+        for o in row {
             let b = NSRect(x: x(o.start), y: r.minY + 2, width: max(3, x(o.end) - x(o.start)), height: r.height - 4)
             NSColor.systemPurple.withAlphaComponent(o.id == selected ? 0.95 : 0.6).setFill()
             NSBezierPath(roundedRect: b, xRadius: 3, yRadius: 3).fill()
@@ -182,20 +206,25 @@ final class TimelineNSView: NSView {
             if b.width > 30 {
                 let kind = model.overlayEditor?.doc.annotations.first { $0.id == o.id }.map { L($0.shape.kindName) } ?? ""
                 let name = (o.endOffset != nil ? "→ " : "") + kind
-                (name as NSString).draw(in: NSRect(x: b.minX + 5, y: b.minY + 4, width: b.width - 8, height: 14), withAttributes: [.font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.white])
+                (name as NSString).draw(in: NSRect(x: b.minX + 5, y: b.minY + 2, width: b.width - 8, height: 14), withAttributes: [.font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.white])
             }
         }
         ctx?.restoreGState()
         NSColor.white.withAlphaComponent(0.18).setStroke()
         let bp = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5); bp.lineWidth = 1; bp.stroke()
         if model.overlays.isEmpty, r.width > 200 {
-            (L("Desenhe sobre o fotograma: a anotação começa na posição de reprodução e dura 3 s") as NSString).draw(at: NSPoint(x: r.minX + 8, y: r.minY + 6), withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor(white: 0.6, alpha: 1)])
+            (L("Desenhe sobre o fotograma: a anotação começa na posição de reprodução e dura 3 s") as NSString).draw(at: NSPoint(x: r.minX + 8, y: r.minY + 4), withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor(white: 0.6, alpha: 1)])
+        }
         }
     }
 
     private func overlay(at p: NSPoint) -> VideoOverlay? {
-        guard let r = overlayRow, r.contains(p), let model else { return nil }
-        return model.overlays.reversed().first { x($0.start) - 3 <= p.x && p.x <= x($0.end) + 3 }
+        guard let area = overlayRow, area.contains(p) else { return nil }
+        let rows = overlayRows
+        for (i, row) in rows.enumerated() where (overlayRowRect(i)?.contains(p) ?? false) {
+            return row.reversed().first { x($0.start) - 3 <= p.x && p.x <= x($0.end) + 3 }
+        }
+        return nil
     }
 
     private func drawGap(_ g: TimeSpan, in row: NSRect, lane: EditTrack) {
@@ -554,20 +583,44 @@ final class TimelineNSView: NSView {
     }
 }
 
+/// A linha de tempo dentro de uma vista com rolagem vertical: a largura segue a janela; a altura é a do conteúdo.
+final class TimelineScrollView: NSScrollView {
+    let timeline = TimelineNSView()
+    init() {
+        super.init(frame: .zero)
+        documentView = timeline
+        hasVerticalScroller = true; hasHorizontalScroller = false
+        autohidesScrollers = true
+        drawsBackground = true; backgroundColor = NSColor(white: 0.12, alpha: 1)
+        scrollerStyle = .overlay
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() {
+        super.layout()
+        let w = contentView.bounds.width
+        let h = max(timeline.contentHeight, contentView.bounds.height)
+        if abs(timeline.frame.width - w) > 0.5 || abs(timeline.frame.height - h) > 0.5 { timeline.frame = NSRect(x: 0, y: 0, width: w, height: h) }
+    }
+    /// A altura muda com as linhas e as filas de anotações: volta a medir.
+    func refit() { needsLayout = true; layout() }
+}
+
 struct VideoTimeline: NSViewRepresentable {
     @ObservedObject var model: VideoEditorModel
     var onAction: (TimelineNSView.Action) -> Void
 
-    func makeNSView(context: Context) -> TimelineNSView {
-        let v = TimelineNSView()
-        v.model = model
-        v.onAction = onAction
-        return v
+    func makeNSView(context: Context) -> TimelineScrollView {
+        let s = TimelineScrollView()
+        s.timeline.model = model
+        s.timeline.onAction = onAction
+        return s
     }
 
-    func updateNSView(_ v: TimelineNSView, context: Context) {
+    func updateNSView(_ s: TimelineScrollView, context: Context) {
+        let v = s.timeline
         v.model = model
         v.onAction = onAction
+        s.refit()
         v.needsDisplay = true
         v.window?.invalidateCursorRects(for: v)
     }

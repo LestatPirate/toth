@@ -444,5 +444,8 @@ enum Translations {
         "À esquerda": "Left",
         "Área: arraste para escolher (Espaço alterna)": "Area: drag to choose (Space toggles)",
         "Áudio: importar música, gravar uma narração, microfone, volumes…": "Audio: import music, record a narration, microphone, volumes…",
+        "Imagem colada": "Pasted image",
+        "Marcado: os cantos mantêm a proporção (⇧ liberta). As imagens coladas entram ao tamanho real.": "On: the corners keep the proportions (⇧ frees them). Pasted images come in at their real size.",
+        "Tamanho real (%@)": "Real size (%@)",
     ]
 }

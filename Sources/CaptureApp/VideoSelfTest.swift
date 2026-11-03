@@ -858,6 +858,9 @@ enum VideoEditSelfTest {
         await model.load()
         var actions: [TimelineNSView.Action] = []
         let view = TimelineNSView(frame: NSRect(x: 0, y: 0, width: 1000, height: TimelineNSView.idealHeight(lanes: 3)))
+        // filas de anotações: as que se sobrepõem no tempo descem de fila
+        let packed = TimelineNSView.packOverlays([VideoOverlay(id: UUID(), start: 0, end: 2), VideoOverlay(id: UUID(), start: 1, end: 3), VideoOverlay(id: UUID(), start: 2.5, end: 4), VideoOverlay(id: UUID(), start: 3, end: 5)])
+        check(packed.count == 2 && packed[0].count == 2 && packed[1].count == 2, "empacotar anotações em filas (\(packed.map(\.count)))")
         view.model = model
         view.onAction = { actions.append($0) }
         let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)

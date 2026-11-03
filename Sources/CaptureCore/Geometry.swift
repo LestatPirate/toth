@@ -324,10 +324,16 @@ public extension Shape {
         handles.firstIndex { abs($0.x - p.x) <= t && abs($0.y - p.y) <= t }
     }
 
-    /// Move a alça `index` para `p`; nas formas retangulares o canto oposto fica fixo.
-    func movingHandle(_ index: Int, to p: Point) -> Shape {
+    /// Move a alça `index` para `p`; nas formas retangulares o canto oposto fica fixo. Com `keepAspect` (imagens coladas), a
+    /// caixa mantém a proporção, como o carimbo.
+    func movingHandle(_ index: Int, to p: Point, keepAspect: Bool = false) -> Shape {
         func rectFrom(_ fixed: Point) -> (Point, Double, Double) {
             (Point(x: min(fixed.x, p.x), y: min(fixed.y, p.y)), abs(fixed.x - p.x), abs(fixed.y - p.y))
+        }
+        if keepAspect, case let .image(_, _, _, asset) = self, handles.indices.contains(index) {
+            if case let .stamp(o, w, h, _) = Shape.stamp(origin: bounds.originPoint, width: bounds.width, height: bounds.height, symbol: "").movingHandle(index, to: p) {
+                return .image(origin: o, width: w, height: h, asset: asset)
+            }
         }
         switch self {
         case let .arrow(a, b): return index == 0 ? .arrow(from: p, to: b) : .arrow(from: a, to: p)
@@ -418,11 +424,11 @@ public extension Annotation {
 
     /// Move a alça `index` para o ponto `p` do documento. Com rotação, o canto oposto (ou a outra ponta) fica no mesmo sítio
     /// do documento, como se espera ao redimensionar um objeto rodado.
-    func movingHandle(_ index: Int, to p: Point) -> Annotation {
+    func movingHandle(_ index: Int, to p: Point, keepAspect: Bool = false) -> Annotation {
         var out = self
         let local = toLocal(p)
         let before = shape.fixedPoint(forHandle: index).map(toWorld)
-        out.shape = shape.movingHandle(index, to: local)
+        out.shape = shape.movingHandle(index, to: local, keepAspect: keepAspect)
         if rotation != 0, let fixed = shape.fixedPoint(forHandle: index), let before {
             let after = out.toWorld(fixed)
             out.shape = out.shape.translated(dx: before.x - after.x, dy: before.y - after.y)

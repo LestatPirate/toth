@@ -547,8 +547,9 @@ final class CanvasView: NSView {
             return   // a vista não muda de ponto de referência: não é preciso atualizar lastPoint
         }
         if let h = resizing, let id = model.selection {
+            let keep = model.keepObjectAspect != event.modifierFlags.contains(.shift)   // imagens coladas: proporção (⇧ inverte)
             update(id) {
-                $0 = $0.movingHandle(h, to: p)
+                $0 = $0.movingHandle(h, to: p, keepAspect: keep)
                 // a letra cresce e encolhe com a altura útil da caixa (sem as margens, que são fixas): assim o texto que
                 // enchia a caixa continua a enchê-la, sem sair por baixo
                 let pad = 2 * Double(RichText.padY)

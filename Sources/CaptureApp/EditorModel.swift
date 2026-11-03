@@ -625,12 +625,40 @@ final class EditorModel: ObservableObject {
         tool = .select
     }
 
+    /// Ao redimensionar uma imagem colada pelos cantos, manter a proporção (⇧ inverte). Guardado entre sessões.
+    var keepObjectAspect: Bool {
+        get { (UserDefaults.standard.object(forKey: "imageKeepAspect") as? Bool) ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "imageKeepAspect"); objectWillChange.send() }
+    }
+    /// Tamanho em píxeis da imagem colada selecionada.
+    var selectedImagePixelSize: CGSize? {
+        guard let name = selected?.shape.imageAsset, let img = assets.image(named: name) else { return nil }
+        return CGSize(width: img.width, height: img.height)
+    }
+    /// Tamanho da imagem selecionada (mantém o canto superior esquerdo; com «proporção», a outra medida acompanha).
+    func setImageObjectSize(width: Double? = nil, height: Double? = nil) {
+        guard var a = selected, case let .image(o, w0, h0, asset) = a.shape else { return }
+        var w = w0, h = h0
+        let ratio = w0 / max(1e-6, h0)
+        if let width { w = max(4, width); if keepObjectAspect { h = max(4, w / ratio) } }
+        if let height { h = max(4, height); if keepObjectAspect { w = max(4, h * ratio) } }
+        a.shape = .image(origin: o, width: w, height: h, asset: asset)
+        perform { $0.update(a); _ = $0.expandAreaToFit(ids: [a.id]) }
+    }
+    /// A imagem selecionada volta ao tamanho real (os píxeis do ficheiro).
+    func resetImageObjectSize() {
+        guard let px = selectedImagePixelSize, var a = selected, case let .image(o, _, _, asset) = a.shape else { return }
+        a.shape = .image(origin: o, width: px.width, height: px.height, asset: asset)
+        perform { $0.update(a); _ = $0.expandAreaToFit(ids: [a.id]) }
+    }
+
     func pasteImage(_ png: Data) {
         guard let rep = NSBitmapImageRep(data: png), let name = try? assets.add(png: png) else { NSSound.beep(); return }
         var w = Double(rep.pixelsWide), h = Double(rep.pixelsHigh)
-        // Imagens grandes entram a, no máximo, 70% da área visível.
+        // Entra ao tamanho real (píxel a píxel: uma captura da mesma zona fica igual à do Toth); só se for maior do que a
+        // área é que se reduz, para caber.
         let a = doc.area
-        let k = min(1, a.width * 0.7 / w, a.height * 0.7 / h)
+        let k = min(1, a.width / w, a.height / h)
         w *= k; h *= k
         let origin = Point(x: visibleCenter.x - w / 2, y: visibleCenter.y - h / 2)
         add(.image(origin: origin, width: w, height: h, asset: name), style: Style(lineVisible: false))
