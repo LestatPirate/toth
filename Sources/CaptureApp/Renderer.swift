@@ -61,6 +61,11 @@ enum Renderer {
     /// Aplica o efeito de `a` ao que já foi desenhado por baixo (`below`): desenha essa parte num bitmap,
     /// filtra a região e substitui-a no destino. Só se renderiza a região (e uma margem), por isso o custo não
     /// depende do tamanho da imagem.
+    ///
+    /// Tudo se faz **nos píxeis do destino**: numa vista com escala (Retina, zoom), o bitmap de trabalho tem a resolução do
+    /// ecrã e a região encosta aos píxeis do ecrã (arredondada para fora), por isso o resultado desenha-se 1:1, sem
+    /// reamostragem nem meio píxel do original a aparecer na borda, e o blur fica nítido em Retina. Na exportação (escala 1,
+    /// coordenadas inteiras) é o mesmo caminho com escala 1.
     private static func drawEffect(_ a: Annotation, below: [Annotation], doc: CaptureDocument, base: CGImage,
                                    assets: AssetStore?, _ ctx: CGContext) {
         var gaussian: Double?
@@ -76,69 +81,81 @@ enum Renderer {
         }
         if let g = gaussian, g <= 0 { return }
 
-        // Só interessa o que se vê: área exportada + imagem original. Com rotação, filtra-se a caixa envolvente e recorta-se
-        // depois pelo retângulo rodado.
-        let visible = doc.area.cg.union(doc.imageRect.cg)
-        let rect = a.worldBounds.cg.intersection(visible).integral
-        guard rect.width >= 1, rect.height >= 1 else { return }
-        // margem à volta: o blur precisa de 3 raios; o preenchimento, de uma vizinhança de onde tirar os píxeis
-        var pad: CGFloat = gaussian.map { ceil($0 * 3) } ?? 0
-        if patch { pad = min(240, max(16, ceil(max(rect.width, rect.height) / 2))) }
-        // a margem fica dentro do que existe (área ∪ imagem): fora disso é transparente e, junto a uma borda, o blur e o
-        // preenchimento misturavam essa transparência e deixavam uma linha clara/escura na ponta
-        var padded = rect.insetBy(dx: -pad, dy: -pad).intersection(visible).integral
-        if let src = cloneFrom { padded = padded.union(src.integral) }   // a origem da clonagem também tem de ser desenhada
-        guard padded.width * padded.height <= 40_000_000 else { return }   // limite de memória (~160 MB)
+        // escala do destino (píxeis por unidade do documento); só com rotação de 0° ou 180° no CTM (a vista e a exportação)
+        let m = ctx.ctm
+        guard abs(m.b) < 1e-9, abs(m.c) < 1e-9 else { return }
+        let s = CGFloat(max(0.01, abs(m.a)))
+        let pixelAligned = abs(s - 1) < 1e-6 && abs(m.tx.rounded() - m.tx) < 1e-6 && abs(m.ty.rounded() - m.ty) < 1e-6
 
-        // 1) o que está por baixo, num bitmap só desta região
-        let w = Int(padded.width), h = Int(padded.height)
+        // Só interessa o que se vê: área exportada + imagem original. Com rotação, filtra-se a caixa envolvente e recorta-se
+        // depois pelo retângulo rodado. A região e a margem ficam em píxeis inteiros do destino.
+        func toDevice(_ r: CGRect) -> CGRect { r.applying(m).standardized }
+        func toDoc(_ r: CGRect) -> CGRect { r.applying(m.inverted()).standardized }
+        func snapOut(_ r: CGRect) -> CGRect {
+            let x0 = floor(r.minX + 1e-6), y0 = floor(r.minY + 1e-6)
+            return CGRect(x: x0, y: y0, width: ceil(r.maxX - 1e-6) - x0, height: ceil(r.maxY - 1e-6) - y0)
+        }
+        let visibleDev = snapOut(toDevice(doc.area.cg.union(doc.imageRect.cg)))
+        let regionDev = snapOut(toDevice(a.worldBounds.cg)).intersection(visibleDev)
+        guard regionDev.width >= 1, regionDev.height >= 1 else { return }
+        // margem à volta: o blur precisa de 3 raios; o preenchimento, de uma vizinhança de onde tirar os píxeis; nunca sai do que
+        // existe (fora é transparente e, junto a uma borda, entrava na mistura e deixava uma linha)
+        var padDev: CGFloat = gaussian.map { ceil(CGFloat($0) * 3 * s) } ?? 0
+        if patch { padDev = min(240 * s, max(16 * s, ceil(max(regionDev.width, regionDev.height) / 2))) }
+        var paddedDev = regionDev.insetBy(dx: -padDev, dy: -padDev).intersection(visibleDev)
+        if let src = cloneFrom { paddedDev = paddedDev.union(snapOut(toDevice(src))) }   // a origem da clonagem também tem de ser desenhada
+        paddedDev = snapOut(paddedDev)
+        guard paddedDev.width * paddedDev.height <= 40_000_000 else { return }   // limite de memória (~160 MB)
+        let padded = toDoc(paddedDev), region = toDoc(regionDev)
+
+        // 1) o que está por baixo, num bitmap só desta região, à resolução do destino
+        let w = Int(paddedDev.width), h = Int(paddedDev.height)
         guard let tmp = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
         tmp.translateBy(x: 0, y: CGFloat(h))
         tmp.scaleBy(x: 1, y: -1)
+        tmp.scaleBy(x: s, y: s)
         tmp.translateBy(x: -padded.minX, y: -padded.minY)
+        tmp.interpolationQuality = ctx.interpolationQuality
         drawWorld(doc, base: base, assets: assets, annotations: below, editing: nil, in: tmp)
-        guard let below = tmp.makeImage() else { return }
+        guard let belowImage = tmp.makeImage() else { return }
 
-        // 2) filtro (o CoreImage tem a origem em baixo à esquerda)
-        let ciRect = CGRect(x: rect.minX - padded.minX, y: CGFloat(h) - (rect.minY - padded.minY) - rect.height,
-                            width: rect.width, height: rect.height)
-        var output: CIImage?
-        var pixelated: CGImage?
+        // 2) filtro, em píxeis do bitmap (origem em cima, como o documento; o destino pode ter o eixo y ao contrário)
+        let local = CGRect(x: ((region.minX - padded.minX) * s).rounded(), y: ((region.minY - padded.minY) * s).rounded(), width: regionDev.width, height: regionDev.height)
+        var img: CGImage?
         if let radius = gaussian {
             let f = CIFilter(name: "CIGaussianBlur")!
-            f.setValue(CIImage(cgImage: below).clampedToExtent(), forKey: kCIInputImageKey)   // bordas estendidas: sem margens transparentes
-            f.setValue(radius, forKey: kCIInputRadiusKey)
-            output = f.outputImage
+            f.setValue(CIImage(cgImage: belowImage).clampedToExtent(), forKey: kCIInputImageKey)   // bordas estendidas: sem margens transparentes
+            f.setValue(radius * Double(s), forKey: kCIInputRadiusKey)
+            let ciRect = CGRect(x: local.minX, y: CGFloat(h) - local.minY - local.height, width: local.width, height: local.height)   // (o CoreImage tem a origem em baixo)
+            if let out = f.outputImage?.cropped(to: ciRect) { img = ciContext.createCGImage(out, from: ciRect) }
         } else if let size = pixel {
             // Células calculadas à mão: o nº de colunas/linhas é arredondado e a região divide-se por igual, por isso não sobra
             // uma faixa fina numa das bordas (o CIPixellate deixava-a no topo).
-            let local = CGRect(x: rect.minX - padded.minX, y: rect.minY - padded.minY, width: rect.width, height: rect.height)
-            pixelated = pixelate(below, region: local, cell: CGFloat(size))
+            img = pixelate(belowImage, region: local, cell: CGFloat(size) * s)
         } else if patch {
-            let local = CGRect(x: rect.minX - padded.minX, y: rect.minY - padded.minY, width: rect.width, height: rect.height)
-            pixelated = inpaint(below, hole: local)
+            img = inpaint(belowImage, hole: local)
         } else if let src = cloneFrom {
             // a região passa a ser o que está por baixo na origem (origem fora do visível: fica o que houver)
-            let from = CGRect(x: src.minX - padded.minX, y: src.minY - padded.minY, width: rect.width, height: rect.height).integral
-            pixelated = below.cropping(to: from.intersection(CGRect(x: 0, y: 0, width: w, height: h)))
+            let srcDoc = toDoc(snapOut(toDevice(src)))
+            let from = CGRect(x: ((srcDoc.minX - padded.minX) * s).rounded(), y: ((srcDoc.minY - padded.minY) * s).rounded(), width: local.width, height: local.height)
+            img = belowImage.cropping(to: from.intersection(CGRect(x: 0, y: 0, width: w, height: h)))
         }
-        let img: CGImage
-        if let pixelated { img = pixelated }
-        else if let out = output?.cropped(to: ciRect), let blurred = ciContext.createCGImage(out, from: ciRect) { img = blurred }
-        else { return }
+        guard let img else { return }
 
-        // 3) substitui a região (e não compõe por cima, para não deixar o original a transparecer)
+        // 3) substitui a região (1:1 nos píxeis do destino; o recorte encosta aos mesmos píxeis, sem suavização)
         ctx.saveGState()
-        ctx.clip(to: rect)
-        if a.rotation != 0 { ctx.addPath(rotatedPath(a.shape.bounds.cg, degrees: a.rotation)); ctx.clip() }
-        // «copy» substitui mesmo o que está por baixo (o original não transparece onde há transparência), mas numa vista com
-        // escala fracionária a borda fica meio transparente e aparece uma linha clara: por isso só se usa com a escala a 1 (exportação).
-        let m = ctx.ctm
-        let pixelAligned = abs(abs(m.a) - 1) < 1e-6 && abs(abs(m.d) - 1) < 1e-6
-        if a.style.opacity >= 0.999 { if pixelAligned { ctx.setBlendMode(.copy) } } else { ctx.setAlpha(CGFloat(a.style.opacity)) }
-        drawImage(img, in: rect, ctx)
+        ctx.setShouldAntialias(false)
+        // (um terço de píxel para fora: as bordas caem exatamente nas fronteiras dos píxeis e o erro de vírgula flutuante
+        // deixava de fora uma fila)
+        let grow = 0.34 / s
+        ctx.clip(to: region.insetBy(dx: -grow, dy: -grow))
+        if a.rotation != 0 { ctx.setShouldAntialias(true); ctx.addPath(rotatedPath(a.shape.bounds.cg, degrees: a.rotation)); ctx.clip() }
+        // «copy» substitui mesmo o que está por baixo (o original não transparece onde há transparência)
+        if a.style.opacity >= 0.999 { if pixelAligned || a.rotation == 0 { ctx.setBlendMode(.copy) } } else { ctx.setAlpha(CGFloat(a.style.opacity)) }
+        ctx.interpolationQuality = .none
+        drawImage(img, in: region.insetBy(dx: -grow, dy: -grow), ctx)
         ctx.restoreGState()
     }
 

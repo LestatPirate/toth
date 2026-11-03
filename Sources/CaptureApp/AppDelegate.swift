@@ -94,6 +94,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--arrange-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("ARRANGE-SELFTEST") { SelfTests.arrangeSelfTest(dir: dir) }
         }
+        // `--render-effect-edges <pasta> <saida.png> [zoom]`: a vista a 2× com blur, pixelização e reparo sobre texto (para ver as bordas).
+        if let i = args.firstIndex(of: "--render-effect-edges"), args.count > i + 2 {
+            let dir = URL(fileURLWithPath: args[i + 1]), out = args[i + 2], zoom = args.count > i + 3 ? Double(args[i + 3]) ?? 0.73 : 0.73
+            later("RENDER-EFFECT-EDGES") {
+                CaptureStore.overrideFolder = dir
+                if let e = AppState.shared.createBlankImage(width: 700, height: 400, backgroundHex: "#FFFFFF", transparent: false) { return [e] }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+                guard let m = AppState.shared.model, let canvas = CanvasView.current else { return ["sem editor"] }
+                let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 400, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+                NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 700, height: 400).fill()
+                for row in 0..<9 { ("Texto de exemplo para ver as bordas do efeito 0123456789" as NSString).draw(at: NSPoint(x: 10, y: 20 + row * 42), withAttributes: [.font: NSFont.systemFont(ofSize: 22), .foregroundColor: NSColor.black]) }
+                NSGraphicsContext.restoreGraphicsState()
+                m.base = rep.cgImage!
+                _ = m.addAnnotation(.gaussian(origin: Point(x: 40, y: 60), width: 180, height: 120, intensity: 8))
+                _ = m.addAnnotation(.blur(origin: Point(x: 260, y: 60), width: 180, height: 120, radius: 12))
+                _ = m.addAnnotation(.patch(origin: Point(x: 480, y: 60), width: 180, height: 120))
+                m.selection = nil
+                guard let img = canvas.debugRender2x(zoom: zoom) else { return ["sem imagem"] }
+                try? img.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+                return []
+            }
+        }
         if let i = args.firstIndex(of: "--stamps-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("STAMPS-SELFTEST") { SelfTests.stampsRepairSelfTest(dir: dir) }
         }

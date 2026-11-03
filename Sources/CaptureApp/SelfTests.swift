@@ -570,6 +570,8 @@ enum SelfTests {
         check(m.doc.annotations.count == n + 1 && m.selected?.shape.imageAsset != nil && m.selected?.shape.bounds.width == 120 && m.selected?.shape.bounds.height == 60, "a imagem entra como `image` com a proporção (\(String(describing: m.selected?.shape.bounds)))")
         if let u = lib.images.first { lib.remove(u) }
         check(lib.images.isEmpty, "remover da biblioteca")
+        // 5) bordas dos efeitos na vista, a vários zooms
+        fails += canvas.selfTestEffectEdges()
         return fails
     }
 

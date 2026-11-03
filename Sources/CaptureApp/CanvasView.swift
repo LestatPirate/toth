@@ -904,6 +904,57 @@ final class CanvasView: NSView {
         return fails
     }
 
+    /// Imagem da vista a 2× (como num ecrã Retina) com o zoom dado, para inspeção.
+    func debugRender2x(zoom: Double) -> NSBitmapImageRep? {
+        model.zoom = zoom; model.pan = .zero
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(bounds.width) * 2, pixelsHigh: Int(bounds.height) * 2, bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = bounds.size
+        cacheDisplay(in: bounds, to: rep)
+        return rep
+    }
+
+    /// Autoteste: um blur ou uma pixelização sobre riscas finas fica cinzento e **uniforme até à borda**, seja qual for o zoom:
+    /// uma linha ténue do original (riscas) na ponta é um erro.
+    func selfTestEffectEdges() -> [String] {
+        var fails: [String] = []
+        var st = Style(colorHex: "#000000", fillHex: "#000000"); st.lineVisible = false
+        var stripes: [UUID] = []
+        for y in stride(from: 100, to: 300, by: 6) { stripes.append(model.addAnnotation(.rect(origin: Point(x: 100, y: Double(y)), width: 300, height: 2))); model.setStyle(st) }
+        for (name, shape) in [("blur", CaptureCore.Shape.gaussian(origin: Point(x: 131, y: 123), width: 200, height: 120, intensity: 12)),
+                              ("pixelização", .blur(origin: Point(x: 131, y: 123), width: 200, height: 120, radius: 12))] {
+            let id = model.addAnnotation(shape)
+            model.selection = nil; model.hover = nil
+            for zoom in [0.6, 0.73, 1.0, 1.37] {
+                model.zoom = zoom; model.pan = .zero
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                // desenha a 2× exatos (como num ecrã Retina), seja qual for o ecrã onde o teste corre
+                let pw = Int(bounds.width) * 2, ph = Int(bounds.height) * 2
+                guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pw, pixelsHigh: ph, bitsPerSample: 8, samplesPerPixel: 4,
+                                                 hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { continue }
+                rep.size = NSSize(width: CGFloat(pw) / 2, height: CGFloat(ph) / 2)
+                cacheDisplay(in: NSRect(x: 0, y: 0, width: CGFloat(pw) / 2, height: CGFloat(ph) / 2), to: rep)
+                // os píxeis do bitmap (2×) que a região ocupa, arredondados para fora como o desenho faz: todos têm de ser o
+                // cinzento do efeito (uma fila ou coluna «meio a meio» com as riscas é a linha ténue na borda)
+                let r = shape.bounds.cg
+                let dev = CGRect(x: (origin.x + r.minX * scale) * 2, y: (origin.y + r.minY * scale) * 2, width: r.width * scale * 2, height: r.height * scale * 2)
+                let x0 = Int(floor(dev.minX + 1e-6)), y0 = Int(floor(dev.minY + 1e-6)), x1 = Int(ceil(dev.maxX - 1e-6)), y1 = Int(ceil(dev.maxY - 1e-6))
+                guard x1 - x0 > 12, y1 - y0 > 12 else { fails.append("\(name) a \(Int(zoom * 100))%: região fora da vista"); continue }
+                func lum(_ x: Int, _ y: Int) -> Double { let c = rep.colorAt(x: x, y: y) ?? .white; return Double(c.redComponent + c.greenComponent + c.blueComponent) / 3 * 255 }
+                // a fila/coluna da borda tem de ser igual à vizinha de dentro (as células e o blur são uniformes a essa escala)
+                func rowBad(_ y: Int, _ y2: Int) -> Double { var n = 0.0, mm = 0.0; for x in (x0 + 4)...(x1 - 5) { if abs(lum(x, y) - lum(x, y2)) > 16 { n += 1 }; mm += 1 }; return n / max(1, mm) }
+                func colBad(_ x: Int, _ x2: Int) -> Double { var n = 0.0, mm = 0.0; for y in (y0 + 4)...(y1 - 5) { if abs(lum(x, y) - lum(x2, y)) > 16 { n += 1 }; mm += 1 }; return n / max(1, mm) }
+                let worst = [("cima", rowBad(y0, y0 + 1)), ("baixo", rowBad(y1 - 1, y1 - 2)), ("esquerda", colBad(x0, x0 + 1)), ("direita", colBad(x1 - 1, x1 - 2))]
+                for (side, f) in worst where f > 0.25 { fails.append("\(name) a \(Int(zoom * 100))%: fila diferente na borda de \(side) (\(Int(f * 100))% dos píxeis)"); break }
+            }
+            model.delete(id)
+        }
+        for id in stripes { model.delete(id) }
+        model.zoomFit()
+        return fails
+    }
+
     /// Autoteste do editor em linha (flag `--edit-selftest`): devolve uma descrição das falhas, vazia se tudo bem.
     func selfTestEditing() -> [String] {
         var fails: [String] = []
