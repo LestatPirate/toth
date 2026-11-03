@@ -393,7 +393,7 @@ enum VideoEditSelfTest {
         try await e.finish()
     }
 
-    struct Decoded { var blues: [(t: Double, b: Int)] = []; var system: [Float] = []; var mic: [Float] = []; var mixed: [Float] = []; var audioTracks = 0 }
+    struct Decoded { var blues: [(t: Double, b: Int)] = []; var reds: [(t: Double, r: Int)] = []; var system: [Float] = []; var mic: [Float] = []; var mixed: [Float] = []; var audioTracks = 0 }
 
     /// Lê a composição do editor (com os espaços a preto) e o áudio de cada linha.
     static func decode(_ model: VideoEditorModel) async -> Decoded {
@@ -437,6 +437,7 @@ enum VideoEditSelfTest {
                 let base = CVPixelBufferGetBaseAddress(pb)!.assumingMemoryBound(to: UInt8.self)
                 let i = (CVPixelBufferGetHeight(pb) / 2) * CVPixelBufferGetBytesPerRow(pb) + (CVPixelBufferGetWidth(pb) / 2) * 4
                 d.blues.append((CMSampleBufferGetPresentationTimeStamp(sb).seconds, Int(base[i])))
+                d.reds.append((CMSampleBufferGetPresentationTimeStamp(sb).seconds, Int(base[i + 2])))
                 CVPixelBufferUnlockBaseAddress(pb, .readOnly)
             }
         }
@@ -460,6 +461,78 @@ enum VideoEditSelfTest {
         return (s / Double(i1 - i0)).squareRoot()
     }
     static func blue(_ d: Decoded, near t: Double) -> Int { d.blues.min { abs($0.t - t) < abs($1.t - t) }?.b ?? -1 }
+    static func red(_ d: Decoded, near t: Double) -> Int { d.reds.min { abs($0.t - t) < abs($1.t - t) }?.r ?? -1 }
+
+    /// Anotações com início e fim: criadas no modo Anotar, tempos, seguir uma zona, reprodução com o compositor, exportação
+    /// com as anotações no ficheiro e memória ao reabrir.
+    static func overlays(dir: URL) async -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir.appendingPathComponent("biblioteca")
+        let url = dir.appendingPathComponent("origem.mp4")
+        do { try await makeSource(at: url) } catch { return ["não criou o vídeo de origem: \(error)"] }
+        let model = VideoEditorModel(url: url)
+        await model.load()
+        model.annotateMode = true
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        guard let ed = model.overlayEditor else { return ["o modo Anotar não abriu o editor"] }
+        check(ed.isVideoOverlay && ed.doc.canvasWidth == 320 && ed.doc.canvasHeight == 180, "editor das anotações com o tamanho da saída (\(ed.doc.canvasWidth)×\(ed.doc.canvasHeight))")
+        check(ed.base.width == 320 && ed.base.height == 180, "o fundo é o fotograma")
+        // 1) um retângulo vermelho cheio no centro, de 1 s a 3 s
+        var st = Style(colorHex: "#FF0000", fillHex: "#FF0000"); st.lineVisible = false
+        ed.tool = .rect
+        let id = ed.addAnnotation(.rect(origin: Point(x: 140, y: 70), width: 40, height: 40))
+        ed.setStyle(st)
+        check(model.overlays.count == 1 && model.overlay(for: id)?.start == 0 && abs((model.overlay(for: id)?.end ?? 0) - 3) < 1e-6, "a anotação nova ganha 0…3 s (\(model.overlays))")
+        model.setOverlayRange(id, start: 1, end: 2.5)
+        check(model.overlay(for: id) == VideoOverlay(id: id, start: 1, end: 2.5, endOffset: nil), "mudar os tempos")
+        // só se mostra quando a reprodução está dentro do intervalo
+        model.seek(to: 0.5); try? await Task.sleep(nanoseconds: 300_000_000)
+        check(ed.shownIDs == [], "fora do intervalo a anotação não se mostra (\(String(describing: ed.shownIDs)))")
+        model.seek(to: 2); try? await Task.sleep(nanoseconds: 300_000_000)
+        check(ed.shownIDs == [id], "dentro do intervalo mostra-se")
+        // 2) outra, que segue: retângulo à esquerda que se desloca 280 px até ao fim (2…4 s)
+        let id2 = ed.addAnnotation(.rect(origin: Point(x: 0, y: 70), width: 40, height: 40))
+        ed.setStyle(st)
+        model.setOverlayRange(id2, start: 2, end: 4)
+        // «Seguir»: ir ao fim, arrastar o elemento para a posição final, carregar em Seguir
+        model.seek(to: 4 - 1.0 / 30); try? await Task.sleep(nanoseconds: 300_000_000)
+        ed.selection = id2
+        check(model.selectedOverlay?.id == id2, "a anotação selecionada no editor é a da barra")
+        ed.perform { d in if var a = d.annotations.first(where: { $0.id == id2 }) { a.shape = a.shape.translated(dx: 280, dy: 0); d.update(a) } }
+        model.setOverlayFollow(id2)
+        let o2 = model.overlay(for: id2)
+        let k = (4 - 1.0 / 30 - 2) / 2   // a posição foi dada um quadro antes do fim: o deslocamento até ao fim é um pouco maior
+        check(o2?.endOffset != nil && abs((o2?.endOffset?.x ?? 0) - 280 / k) < 1 && abs(o2?.endOffset?.y ?? 1) < 0.01, "seguir: deslocamento até ao fim (\(String(describing: o2?.endOffset)))")
+        check(ed.doc.annotations.first { $0.id == id2 }?.shape.bounds.minX == 0, "depois de Seguir o elemento volta à posição de início")
+        // 3) sair do modo Anotar: o leitor usa o compositor próprio
+        model.annotateMode = false
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        check(model.player.currentItem?.videoComposition?.customVideoCompositorClass == OverlayCompositor.self, "a reprodução usa o compositor das anotações")
+        // 4) exportar: o ficheiro leva as anotações nos seus tempos
+        guard let out = try? await model.exportEdited() else { return fails + ["exportar falhou"] }
+        let d = await decodeAsset(AVURLAsset(url: out))
+        check(red(d, near: 0.5) < 120 && blue(d, near: 0.5) < 30, "antes de 1 s o centro é o vídeo (R=\(red(d, near: 0.5)))")
+        check(red(d, near: 2) > 200 && blue(d, near: 2) < 40, "aos 2 s o centro é vermelho (R=\(red(d, near: 2)) B=\(blue(d, near: 2)))")
+        check(red(d, near: 3.5) < 120, "aos 3,5 s já não há retângulo no centro (R=\(red(d, near: 3.5)))")
+        // o que segue: a meio (3 s) está a ~140 px → cobre o centro (160); no início (2,6 s, já sem o primeiro) ainda está à esquerda
+        check(red(d, near: 3.0) > 200, "o retângulo que segue está no centro a meio do percurso (R=\(red(d, near: 3.0)))")
+        check(red(d, near: 2.6) < 120, "no início do percurso ainda está à esquerda (R=\(red(d, near: 2.6)))")
+        check(d.audioTracks == 1 && !d.mixed.isEmpty, "o MP4 exportado leva o áudio misturado")
+        // 5) reabrir: as anotações continuam lá e desenham-se
+        model.tearDown()
+        let again = VideoEditorModel(url: url)
+        await again.load()
+        check(again.overlays.count == 2 && again.hasOverlays && again.overlayEditor != nil, "as anotações voltam ao reabrir (\(again.overlays.count))")
+        check(again.player.currentItem?.videoComposition?.customVideoCompositorClass == OverlayCompositor.self, "ao reabrir a reprodução já leva as anotações")
+        // apagar uma pela linha de tempo
+        again.deleteOverlay(id)
+        check(again.overlays.count == 1 && !(again.overlayEditor?.doc.annotations.contains { $0.id == id } ?? true), "apagar a anotação")
+        again.tearDown()
+        return fails
+    }
 
     static func run(dir: URL) async -> [String] {
         var fails: [String] = []
@@ -781,7 +854,7 @@ enum VideoEditSelfTest {
 
 extension VideoEditSelfTest {
     /// Desenha a área de trabalho do vídeo (leitor, barra de edição e linha de tempo) com um corte feito e um trecho marcado.
-    static func render(to path: String, frameMode: Bool = false) async {
+    static func render(to path: String, frameMode: Bool = false, annotate: Bool = false) async {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("toth-render-video-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -798,6 +871,20 @@ extension VideoEditSelfTest {
         model.selection = TimeSpan(start: 0.4, end: 0.9); model.activeEdge = .end
         model.seek(to: 0.9); model.preview(0.9, label: L("Fim do trecho"))
         if frameMode { await model.setOutputRotation(20); model.frameMode = true }
+        if annotate {
+            model.annotateMode = true
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if let ed = model.overlayEditor {
+                ed.tool = .arrow
+                let a = ed.addAnnotation(.arrow(from: Point(x: 40, y: 150), to: Point(x: 150, y: 90)))
+                let t = ed.addAnnotation(.textBox(origin: Point(x: 160, y: 20), width: 140, height: 40, string: "Aqui!", fontSize: 18))
+                var st = Style(colorHex: "#FFD60A"); st.lineVisible = false; st.text.colorHex = "#FFFFFF"
+                ed.setStyle(st)
+                model.setOverlayRange(a, start: 0.3, end: 2.5); model.setOverlayRange(t, start: 1, end: 3.2)
+                model.seek(to: 1.5); try? await Task.sleep(nanoseconds: 500_000_000)
+                ed.selection = t
+            }
+        }
         try? await Task.sleep(nanoseconds: 800_000_000)
         let host = NSHostingView(rootView: VideoWorkspace(model: model).environment(\.colorScheme, .light))
         host.frame = NSRect(x: 0, y: 0, width: 1000, height: 640)

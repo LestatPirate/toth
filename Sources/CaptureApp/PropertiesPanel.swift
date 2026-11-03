@@ -50,7 +50,7 @@ struct PropertiesPanel: View {
     private var pixelSize: Binding<Double> { Binding(get: { model.currentPixelSize }, set: { model.setPixelSize($0) }) }
     private var blurIntensity: Binding<Double> { Binding(get: { model.currentBlurIntensity }, set: { model.setBlurIntensity($0) }) }
     private var isGaussian: Bool { if case .gaussian = model.selected?.shape { return true }; return model.selected == nil && model.tool == .gaussian }
-    private var showArea: Bool { model.tool == .canvas || (model.selected == nil && model.tool == .select) }
+    private var showArea: Bool { !model.isVideoOverlay && (model.tool == .canvas || (model.selected == nil && model.tool == .select)) }
 
     private var areaWidth: Binding<Double> {
         Binding(get: { model.doc.area.width.rounded() }, set: { model.setAreaSize(width: $0, height: model.doc.area.height) })
@@ -372,7 +372,7 @@ struct PropertiesPanel: View {
                 if model.doc.annotations.isEmpty {
                     Text(L("Sem elementos.")).font(.caption).foregroundStyle(.secondary)
                 }
-                ForEach(model.doc.ordered.reversed()) { a in LayerRow(model: model, annotation: a) }
+                ForEach(model.doc.ordered.filter { model.isShown($0) }.reversed()) { a in LayerRow(model: model, annotation: a) }
             }
             .padding(14)
         }

@@ -25,6 +25,7 @@ final class ToolsScroll: ObservableObject {
     static let spacing: CGFloat = 2
     static var slot: CGFloat { buttonWidth + 8 + spacing }
     var contentWidth: CGFloat = CGFloat(Tool.allCases.count) * ToolsScroll.slot - ToolsScroll.spacing
+    func setToolCount(_ n: Int) { contentWidth = CGFloat(n) * ToolsScroll.slot - ToolsScroll.spacing }
     /// Largura visível (definida pela barra a cada desenho).
     var viewport: CGFloat = 0
     /// Retângulo da barra nas coordenadas da janela (a partir do topo), para a roda do rato.
@@ -140,11 +141,13 @@ final class ToolsScroll: ObservableObject {
 struct ToolsBar: View {
     @ObservedObject var model: EditorModel
     @StateObject private var scroll = ToolsScroll()
-    private let tools = Tool.allCases
+    /// Nas anotações de um vídeo não há Tela (o enquadramento é o do vídeo).
+    private var tools: [Tool] { model.isVideoOverlay ? Tool.allCases.filter { $0 != .canvas } : Tool.allCases }
     private let arrowWidth: CGFloat = 22
 
     var body: some View {
         GeometryReader { geo in
+            let _ = scroll.setToolCount(tools.count)
             let content = scroll.contentWidth
             let overflow = content > geo.size.width + 1
             let viewport = max(geo.size.width - (overflow ? 2 * arrowWidth : 0), 0)

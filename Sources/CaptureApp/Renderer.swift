@@ -11,10 +11,11 @@ import CaptureCore
 enum Renderer {
     private static let ciContext = CIContext()
 
+    /// `only`: desenha só estas anotações (as anotações do vídeo ativas no instante); `nil` = todas as visíveis.
     static func draw(_ doc: CaptureDocument, base: CGImage, in ctx: CGContext, selected: UUID? = nil, editing: UUID? = nil,
-                     assets: AssetStore? = nil) {
-        drawWorld(doc, base: base, assets: assets, annotations: doc.ordered.filter(\.visible), editing: editing, in: ctx)
-        if let sel = doc.annotations.first(where: { $0.id == selected }) {
+                     assets: AssetStore? = nil, only: Set<UUID>? = nil) {
+        drawWorld(doc, base: base, assets: assets, annotations: doc.ordered.filter { $0.visible && (only?.contains($0.id) ?? true) }, editing: editing, in: ctx)
+        if let sel = doc.annotations.first(where: { $0.id == selected }), only?.contains(sel.id) ?? true {
             let previous = NSGraphicsContext.current
             NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
             defer { NSGraphicsContext.current = previous }

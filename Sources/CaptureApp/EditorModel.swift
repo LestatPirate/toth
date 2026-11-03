@@ -67,7 +67,7 @@ final class EditorModel: ObservableObject {
         let ordered = doc.ordered.map(\.id).filter { ids.contains($0) }
         selection = ordered.last; extraSelection = Set(ordered.dropLast())
     }
-    func selectAll() { selectIDs(Set(doc.annotations.filter(\.visible).map(\.id))) }
+    func selectAll() { selectIDs(Set(doc.annotations.filter { $0.visible && isShown($0) }.map(\.id))) }
     /// Seleciona `id` e, se estiver num grupo, o grupo inteiro (com `id` como principal).
     func selectWithGroup(_ id: UUID) {
         let members = doc.groupMembers(of: id)
@@ -245,7 +245,17 @@ final class EditorModel: ObservableObject {
     private let container: CaptureContainer
     var onSaved: (() -> Void)?
     let url: URL
-    let base: CGImage
+    /// A imagem de fundo. No editor de imagem é o original (nunca muda); nas anotações de um vídeo é o fotograma atual.
+    var base: CGImage { didSet { objectWillChange.send() } }
+    /// Anotações de um vídeo: sem Tela nem área própria, e só se mostram as ativas no instante (`shownIDs`).
+    var isVideoOverlay = false
+    var shownIDs: Set<UUID>? { didSet { if shownIDs != oldValue { objectWillChange.send(); if let s = selection, !isShown(s) { selection = nil } } } }
+    func isShown(_ id: UUID) -> Bool { shownIDs?.contains(id) ?? true }
+    func isShown(_ a: Annotation) -> Bool { isShown(a.id) }
+    /// Anotação mais acima (de entre as mostradas) que toca no ponto.
+    func topmost(at p: Point, tolerance: Double) -> Annotation? { doc.ordered.last { $0.visible && isShown($0) && $0.hits(p, tolerance: tolerance) } }
+    /// Chamado quando o utilizador acaba de criar uma anotação nova (para as anotações do vídeo ganharem início e fim).
+    var onCreated: ((UUID) -> Void)?
     private var undoStack: [CaptureDocument] = []
     private var redoStack: [CaptureDocument] = []
 
@@ -278,8 +288,11 @@ final class EditorModel: ObservableObject {
 
     func perform(_ f: (inout CaptureDocument) -> Void) { checkpoint(); f(&doc); save() }
 
-    /// Depois de desenhar um objeto: a ferramenta volta a Mover, a não ser que esteja presa.
-    func finishedDrawing() { if !toolLocked && tool != .select { tool = .select } }
+    /// Depois de desenhar um objeto: a ferramenta volta a Mover, a não ser que esteja presa. Avisa quem quiser saber do objeto novo.
+    func finishedDrawing() {
+        if !toolLocked && tool != .select { tool = .select }
+        if let id = selection { onCreated?(id) }
+    }
 
     /// Esc: com uma ferramenta de desenho, volta a Mover; na Tela, cancela as alterações feitas nela; em Mover, limpa a seleção.
     func escape() {

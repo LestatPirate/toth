@@ -79,7 +79,7 @@ final class CanvasView: NSView {
     /// Passar por cima: destaca o objeto que um clique selecionaria.
     override func mouseMoved(with event: NSEvent) { updateHover(at: imagePoint(event)) }
     private func updateHover(at p: Point) {
-        let id = model.doc.topmost(at: p, tolerance: 6 / Double(scale))?.id
+        let id = model.topmost(at: p, tolerance: 6 / Double(scale))?.id
         if id != model.hover { model.hover = id }
     }
     override func mouseExited(with event: NSEvent) { if model.hover != nil { model.hover = nil } }
@@ -139,8 +139,8 @@ final class CanvasView: NSView {
         ctx.scaleBy(x: scale, y: scale)
         ctx.interpolationQuality = .high
         if model.doc.transparentBackground { drawChecker(ctx) }
-        Renderer.draw(model.doc, base: model.base, in: ctx, selected: model.selection, editing: editingID, assets: model.assets)
-        if editingID == nil, model.tool != .canvas, let hid = model.hover, hid != model.selection, let h = model.doc.annotations.first(where: { $0.id == hid }) {
+        Renderer.draw(model.doc, base: model.base, in: ctx, selected: model.selection, editing: editingID, assets: model.assets, only: model.shownIDs)
+        if editingID == nil, model.tool != .canvas, let hid = model.hover, hid != model.selection, let h = model.doc.annotations.first(where: { $0.id == hid }), model.isShown(h) {
             // contorno leve no objeto sob o rato
             ctx.saveGState()
             Renderer.applyRotation(h, ctx)
@@ -148,7 +148,7 @@ final class CanvasView: NSView {
             ctx.stroke(h.shape.bounds.cg.insetBy(dx: -4 / scale, dy: -4 / scale))
             ctx.restoreGState()
         }
-        if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }), let src = sel.shape.cloneSourceRect {
+        if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }), model.isShown(sel), let src = sel.shape.cloneSourceRect {
             // clonagem: a origem a tracejado, ligada à região por uma linha
             ctx.saveGState(); Renderer.applyRotation(sel, ctx)
             ctx.setStrokeColor(NSColor.systemGreen.cgColor); ctx.setLineWidth(1.5 / scale); ctx.setLineDash(phase: 0, lengths: [5 / scale, 3 / scale])
@@ -169,7 +169,7 @@ final class CanvasView: NSView {
                 ctx.setStrokeColor(NSColor.systemBlue.cgColor); ctx.setLineWidth(1.5 / scale); ctx.stroke(r)
             }
             drawRotationHandle(at: groupRotationHandlePoint(gb), from: topCenter(gb), color: .systemBlue, ctx)
-        } else if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }) {
+        } else if editingID == nil, let sel = model.doc.annotations.first(where: { $0.id == model.selection }), model.isShown(sel) {
             let side = 9 / scale
             for h in sel.handlePoints {
                 let r = CGRect(x: h.x - side / 2, y: h.y - side / 2, width: side, height: side)
@@ -444,7 +444,7 @@ final class CanvasView: NSView {
                     return
                 }
             }
-            let hit = model.doc.topmost(at: p, tolerance: tol)
+            let hit = model.topmost(at: p, tolerance: tol)
             let shift = event.modifierFlags.contains(.shift)
             if let hit, shift { model.select(hit.id, extend: true); return }          // ⇧: junta ou tira da seleção
             if let hit, event.clickCount == 2, hit.editableString != nil {
@@ -463,14 +463,14 @@ final class CanvasView: NSView {
             }
         case .step:
             // Clique sobre um objeto existente seleciona-o (⌥ + clique força a criação de uma etapa por cima dele).
-            if !event.modifierFlags.contains(.option), let hit = model.doc.topmost(at: p, tolerance: tol) {
+            if !event.modifierFlags.contains(.option), let hit = model.topmost(at: p, tolerance: tol) {
                 selectExisting(hit.id)
             } else {
                 model.addStep(at: p)
             }
         case .stamp:
             // um clique põe o carimbo com o tamanho padrão; arrastar escolhe o tamanho (como as outras formas)
-            if !event.modifierFlags.contains(.option) { clickCandidate = model.doc.topmost(at: p, tolerance: tol)?.id }
+            if !event.modifierFlags.contains(.option) { clickCandidate = model.topmost(at: p, tolerance: tol)?.id }
             model.checkpoint()
             let id = UUID()
             let a = Annotation(id: id, z: (model.doc.annotations.map(\.z).max() ?? -1) + 1, shape: .stamp(origin: p, width: 0, height: 0, symbol: model.currentStamp), style: model.style)
@@ -496,7 +496,7 @@ final class CanvasView: NSView {
                 model.tool = .select   // clique fora da área = confirma
             }
         default:
-            if !event.modifierFlags.contains(.option) { clickCandidate = model.doc.topmost(at: p, tolerance: tol)?.id }
+            if !event.modifierFlags.contains(.option) { clickCandidate = model.topmost(at: p, tolerance: tol)?.id }
             model.checkpoint()
             let id = UUID()
             let style = model.style   // o último estilo usado nesta ferramenta
@@ -571,7 +571,7 @@ final class CanvasView: NSView {
         } else if var m = marquee, let start = dragStart {
             m.rect = Rect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
             marquee = m
-            let inside = model.doc.annotations.filter { $0.visible && intersects($0.worldBounds, m.rect) }.map(\.id)
+            let inside = model.doc.annotations.filter { $0.visible && model.isShown($0) && intersects($0.worldBounds, m.rect) }.map(\.id)
             model.selectIDs(model.withGroups(Set(inside)))
             needsDisplay = true
         }
@@ -958,7 +958,7 @@ final class CanvasView: NSView {
         if editor != nil { return super.menu(for: event) }
         let p = imagePoint(event)
         // botão direito sobre um objeto: seleciona-o primeiro
-        if let hit = model.doc.topmost(at: p, tolerance: 6 / Double(scale)), !model.isSelected(hit.id) { model.selectWithGroup(hit.id); if model.tool != .select { model.tool = .select } }
+        if let hit = model.topmost(at: p, tolerance: 6 / Double(scale)), !model.isSelected(hit.id) { model.selectWithGroup(hit.id); if model.tool != .select { model.tool = .select } }
         let has = model.selected != nil
         let m = NSMenu()
         func add(_ title: String, _ sel: Selector, _ enabled: Bool, key: String = "") { let i = NSMenuItem(title: title, action: sel, keyEquivalent: key); i.target = self; i.isEnabled = enabled; m.addItem(i) }

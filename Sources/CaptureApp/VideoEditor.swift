@@ -170,6 +170,149 @@ final class VideoEditorModel: ObservableObject {
     var canvasSize: CGSize { VideoComposer.canvasSize(for: effectiveOutputSize, rotation: outputRotation) }
     var isOutputTransformed: Bool { outputSize != nil || outputRotation != 0 }
 
+    // MARK: Anotações sobre o vídeo (com início e fim)
+
+    /// As anotações (tempos); o desenho de cada uma vive no editor de imagem `overlayEditor` (pacote `anotacoes.capture`).
+    @Published private(set) var overlays: [VideoOverlay] = []
+    /// Modo «Anotar»: o leitor dá lugar ao editor de imagem sobre o fotograma atual; as anotações ativas no instante editam-se
+    /// como numa captura (todas as ferramentas), e cada uma tem início e fim na linha de tempo.
+    @Published var annotateMode = false { didSet { if annotateMode != oldValue { Task { await annotateModeChanged() } } } }
+    @Published private(set) var overlayEditor: EditorModel?
+    let overlayProvider = OverlayProvider()
+    /// A composição sem anotações (para tirar o fotograma de fundo do editor).
+    private var plain: (AVMutableComposition, AVVideoComposition?)?
+    private var frameToken = 0
+    var overlayPackage: URL { editFolder.appendingPathComponent("anotacoes.capture") }
+    var hasOverlays: Bool { !overlays.isEmpty }
+    func overlay(for id: UUID) -> VideoOverlay? { overlays.first { $0.id == id } }
+    /// A anotação selecionada no editor (em modo Anotar).
+    var selectedOverlay: VideoOverlay? { overlayEditor?.selection.flatMap { overlay(for: $0) } }
+
+    private func annotateModeChanged() async {
+        if annotateMode {
+            player.pause()
+            await prepareOverlayEditor()
+            await refreshOverlayFrame()
+        } else {
+            overlayEditor?.selection = nil
+            await rebuildPlayer(at: playhead)
+        }
+    }
+
+    /// Cria (uma vez) o pacote das anotações e o editor sobre ele.
+    private func prepareOverlayEditor() async {
+        guard overlayEditor == nil else { return }
+        try? FileManager.default.createDirectory(at: editFolder, withIntermediateDirectories: true)
+        let size = canvasSize
+        if !FileManager.default.fileExists(atPath: overlayPackage.path) {
+            // começa com um fotograma preto do tamanho da saída (o fundo é substituído pelo fotograma atual)
+            guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(CGRect(origin: .zero, size: size))
+            guard let img = ctx.makeImage(), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return }
+            var doc = CaptureDocument(canvasWidth: size.width, canvasHeight: size.height)
+            doc.autoExpand = false
+            guard let data = try? CapturePackage.encode(doc) else { return }
+            _ = try? CaptureContainer.createArchive(at: overlayPackage, entries: [CapturePackage.documentFile: data, CapturePackage.originalFile: png])
+        }
+        guard let m = try? EditorModel(url: overlayPackage) else { message = L("Não foi possível abrir as anotações do vídeo."); return }
+        m.isVideoOverlay = true
+        m.tool = .arrow
+        m.mutate { $0.autoExpand = false; $0.workArea = nil; $0.canvasWidth = size.width; $0.canvasHeight = size.height }
+        m.onCreated = { [weak self] id in self?.overlayCreated(id) }
+        m.onSaved = { [weak self] in self?.syncOverlays() }
+        overlayEditor = m
+        syncOverlays()
+    }
+
+    /// Uma anotação nova ganha início na posição de reprodução e 3 s de duração (ou até ao fim).
+    private func overlayCreated(_ id: UUID) {
+        guard overlay(for: id) == nil else { return }
+        overlays.append(VideoOverlay(id: id, start: playhead, end: min(max(timeline.duration, playhead + 0.1), playhead + 3)))
+        syncOverlays()
+    }
+
+    /// Depois de cada alteração no editor: as anotações apagadas perdem os tempos, as novas (por colar/duplicar) ganham-nos,
+    /// o compositor recebe o documento novo e a edição fica gravada.
+    private func syncOverlays() {
+        guard let m = overlayEditor else { return }
+        let ids = Set(m.doc.annotations.map(\.id))
+        var next = overlays.filter { ids.contains($0.id) }
+        for a in m.doc.annotations where !next.contains(where: { $0.id == a.id }) {
+            next.append(VideoOverlay(id: a.id, start: playhead, end: min(max(timeline.duration, playhead + 0.1), playhead + 3)))
+        }
+        if next != overlays { overlays = next }
+        overlayProvider.update(doc: m.doc, overlays: overlays, assets: m.assets)
+        refreshShown()
+        saveEdit()
+    }
+
+    /// Só as anotações ativas na posição de reprodução se mostram (e editam) no editor.
+    private func refreshShown() {
+        let shown = Set(overlays.filter { $0.contains(playhead) }.map(\.id))
+        if overlayEditor?.shownIDs != shown { overlayEditor?.shownIDs = shown }
+    }
+
+    /// O fotograma atual (sem anotações) passa a ser o fundo do editor.
+    func refreshOverlayFrame() async {
+        guard annotateMode, let m = overlayEditor, let (comp, vc) = plain else { return }
+        frameToken += 1; let token = frameToken
+        let gen = AVAssetImageGenerator(asset: comp)
+        gen.videoComposition = vc
+        gen.requestedTimeToleranceBefore = .zero; gen.requestedTimeToleranceAfter = .zero
+        gen.appliesPreferredTrackTransform = true
+        let t = CMTime(seconds: max(0, min(playhead, max(0, timeline.duration - frameStep / 2))), preferredTimescale: 600)
+        guard let (img, _) = try? await gen.image(at: t), token == frameToken else { return }
+        m.base = img
+        if Double(img.width) != m.doc.canvasWidth || Double(img.height) != m.doc.canvasHeight { m.mutate { $0.canvasWidth = Double(img.width); $0.canvasHeight = Double(img.height) } }
+        refreshShown()
+    }
+
+    /// Muda os tempos de uma anotação (início ≥ 0, fim ≤ duração, pelo menos um quadro).
+    func setOverlayRange(_ id: UUID, start: Double? = nil, end: Double? = nil) {
+        guard let i = overlays.firstIndex(where: { $0.id == id }) else { return }
+        var o = overlays[i]
+        if let start { o.start = max(0, min(start, timeline.duration - frameStep)) }
+        if let end { o.end = min(timeline.duration, max(end, o.start + frameStep)) }
+        if o.start > o.end - frameStep { o.start = max(0, o.end - frameStep) }
+        overlays[i] = o
+        overlayProvider.update(doc: overlayEditor?.doc, overlays: overlays, assets: overlayEditor?.assets)
+        refreshShown(); saveEdit()
+    }
+
+    /// «Seguir»: a posição atual do elemento passa a ser onde ele deve estar no **fim**; o elemento volta ao sítio de partida.
+    /// Com `clear`, deixa de seguir.
+    func setOverlayFollow(_ id: UUID, clear: Bool = false) {
+        guard let i = overlays.firstIndex(where: { $0.id == id }), let m = overlayEditor, var a = m.doc.annotations.first(where: { $0.id == id }) else { return }
+        if clear { overlays[i].endOffset = nil }
+        else {
+            // o elemento foi arrastado para a posição final: o deslocamento é a diferença para onde estava (a posição de início)
+            let o = overlays[i]
+            let k = o.length > 1e-6 ? max(0, min(1, (playhead - o.start) / o.length)) : 1
+            guard k > 0.01 else { message = L("Ponha a reprodução mais à frente (perto do fim da anotação) e arraste o elemento para onde deve estar nesse instante."); return }
+            let startShape = m.undoShape(of: id)   // a forma antes do último arrasto
+            guard let s0 = startShape, s0 != a.shape else { message = L("Primeiro arraste o elemento para onde deve estar no fim; depois carregue em «Seguir»."); return }
+            let dx = (a.shape.bounds.minX - s0.bounds.minX) / k, dy = (a.shape.bounds.minY - s0.bounds.minY) / k
+            overlays[i].endOffset = Point(x: dx, y: dy)
+            a.shape = s0; m.undo()   // volta à posição de início (o movimento passa a ser o seguimento)
+        }
+        overlayProvider.update(doc: m.doc, overlays: overlays, assets: m.assets)
+        saveEdit()
+    }
+
+    /// Seleciona uma anotação (da linha de tempo): vai para o seu início e abre o modo Anotar com ela selecionada.
+    func selectOverlay(_ id: UUID) {
+        guard let o = overlay(for: id) else { return }
+        if !(o.contains(playhead)) { seek(to: o.start) }
+        if !annotateMode { annotateMode = true } else { Task { await refreshOverlayFrame() } }
+        refreshShown()
+        overlayEditor?.selection = id
+    }
+
+    func deleteOverlay(_ id: UUID) {
+        guard let m = overlayEditor else { overlays.removeAll { $0.id == id }; saveEdit(); return }
+        m.delete(id)
+    }
+
     private struct Snapshot { var timeline: EditTimeline; var media: [Int: URL]; var nextMedia: Int }
     private var undoStack: [Snapshot] = [], redoStack: [Snapshot] = []
     private var media: [Int: URL] = [:]
@@ -208,7 +351,10 @@ final class VideoEditorModel: ObservableObject {
 
     // MARK: Abrir
 
+    private var loaded = false
     func load() async {
+        guard !loaded else { return }   // (a vista chama-o ao aparecer; os testes já o chamaram)
+        loaded = true
         let d = (try? await asset.load(.duration).seconds) ?? 0
         let duration = d.isFinite ? d : 0
         assets[0] = asset; media[0] = url; mediaLength[0] = duration
@@ -290,9 +436,10 @@ final class VideoEditorModel: ObservableObject {
         do {
             let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize, rotation: outputRotation)
             guard token == rebuildToken else { return }
+            plain = (comp, vc)
             item = AVPlayerItem(asset: comp)
             item.audioMix = mix
-            item.videoComposition = vc
+            item.videoComposition = vc.map { hasOverlays ? OverlayCompositor.wrap($0, provider: overlayProvider) : $0 }
         } catch { message = error.localizedDescription; return }
         if let e = endObserver { NotificationCenter.default.removeObserver(e) }
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
@@ -307,6 +454,7 @@ final class VideoEditorModel: ObservableObject {
 
     func togglePlay() {
         previewLabel = nil
+        if annotateMode { annotateMode = false }   // reproduzir sai do modo Anotar (o leitor mostra as anotações no seu tempo)
         if isPlaying { player.pause(); return }
         if playhead >= timeline.duration - 0.05 { player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) }
         player.play()
@@ -316,6 +464,7 @@ final class VideoEditorModel: ObservableObject {
         let t = max(0, min(t, timeline.duration))
         playhead = t
         player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        if annotateMode { refreshShown(); Task { await refreshOverlayFrame() } }
     }
 
     /// Mostra no leitor o fotograma exato de `t` (para decidir os pontos de corte), com uma legenda.
@@ -325,6 +474,7 @@ final class VideoEditorModel: ObservableObject {
         playhead = t
         previewLabel = "\(label) · \(TimelineNSView.format(t, tenths: true)) · \(L("quadro")) \(Int((t / frameStep).rounded()))"
         player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        if annotateMode { refreshShown(); Task { await refreshOverlayFrame() } }
     }
 
     func clearPreview() { previewLabel = nil }
@@ -549,15 +699,17 @@ final class VideoEditorModel: ObservableObject {
 
     // MARK: Guardar a edição (ao lado do vídeo)
 
-    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int; var enabled: [String]?; var locked: [String]?; var outputWidth: Double?; var outputHeight: Double?; var outputRotation: Double? }
+    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int; var enabled: [String]?; var locked: [String]?; var outputWidth: Double?; var outputHeight: Double?; var outputRotation: Double?; var overlays: [VideoOverlay]? }
 
     private func saveEdit() {
-        if timeline.isEdited || enabled.count != timeline.tracks.count || !locked.isEmpty || isOutputTransformed {
+        if timeline.isEdited || enabled.count != timeline.tracks.count || !locked.isEmpty || isOutputTransformed || hasOverlays {
             try? FileManager.default.createDirectory(at: editFolder, withIntermediateDirectories: true)
             let f = EditFile(timeline: timeline, media: Dictionary(uniqueKeysWithValues: media.filter { $0.key != 0 }.map { (String($0.key), $0.value.lastPathComponent) }), nextMedia: nextMedia,
-                             enabled: enabled.map(\.rawValue).sorted(), locked: locked.map(\.rawValue).sorted(), outputWidth: outputSize.map { Double($0.width) }, outputHeight: outputSize.map { Double($0.height) }, outputRotation: outputRotation == 0 ? nil : outputRotation)
+                             enabled: enabled.map(\.rawValue).sorted(), locked: locked.map(\.rawValue).sorted(), outputWidth: outputSize.map { Double($0.width) }, outputHeight: outputSize.map { Double($0.height) }, outputRotation: outputRotation == 0 ? nil : outputRotation,
+                             overlays: overlays.isEmpty ? nil : overlays)
             try? JSONEncoder().encode(f).write(to: editFile, options: .atomic)
-        } else { try? FileManager.default.removeItem(at: editFolder) }
+        } else if overlayEditor == nil { try? FileManager.default.removeItem(at: editFolder) }   // (com o editor das anotações aberto, o pacote fica)
+        else { try? FileManager.default.removeItem(at: editFile) }
     }
 
     /// Volta a ler a edição guardada (se houver e for deste vídeo).
@@ -576,6 +728,19 @@ final class VideoEditorModel: ObservableObject {
         if let l = f.locked { locked = Set(l.compactMap(EditTrack.init(rawValue:))).intersection(timeline.tracks) }
         if let w = f.outputWidth, let h = f.outputHeight, w >= 16, h >= 16 { outputSize = CGSize(width: w, height: h) }
         if let r = f.outputRotation { outputRotation = Geometry.normalizedDegrees(r) }
+        if let o = f.overlays, !o.isEmpty, overlayEditor == nil, FileManager.default.fileExists(atPath: overlayPackage.path) {
+            overlays = o
+            // as anotações desenham-se desde a abertura: o editor carrega-se já (sem entrar no modo Anotar)
+            if let m = try? EditorModel(url: overlayPackage) {
+                m.isVideoOverlay = true; m.tool = .arrow
+                m.mutate { $0.autoExpand = false; $0.workArea = nil }
+                m.onCreated = { [weak self] id in self?.overlayCreated(id) }
+                m.onSaved = { [weak self] in self?.syncOverlays() }
+                overlayEditor = m
+                overlays = o.filter { ov in m.doc.annotations.contains { $0.id == ov.id } }
+                overlayProvider.update(doc: m.doc, overlays: overlays, assets: m.assets)
+            } else { overlays = [] }
+        }
         for (id, file) in media where id != 0 {
             let a = AVURLAsset(url: file); assets[id] = a
             registerSync(id, file: file, asset: a)
@@ -606,7 +771,8 @@ final class VideoEditorModel: ObservableObject {
     /// Escreve o vídeo já editado num ficheiro novo (`…_editado.mp4`, na pasta das capturas) e devolve-o.
     func exportEdited() async throws -> URL {
         working = L("A guardar o vídeo…"); defer { working = nil }
-        let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize, rotation: outputRotation)
+        let (comp, mix, vc0) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize, rotation: outputRotation)
+        let vc = vc0.map { hasOverlays ? OverlayCompositor.wrap($0, provider: overlayProvider) : $0 }
         let base = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_editado", with: "")
         var out = CaptureStore.folder.appendingPathComponent("\(base)_editado.mp4")
         var n = 2

@@ -7,15 +7,18 @@ import CaptureCore
 
 /// Imagens coladas: entradas `assets/<nome>` do contentor da captura (arquivo ou pasta), com cache em memória.
 /// Num arquivo só ficam gravadas no disco quando o editor faz `flush()` (a cada alteração).
-final class AssetStore {
+final class AssetStore: @unchecked Sendable {
     private let container: CaptureContainer
     private var cache: [String: CGImage] = [:]
+    /// As anotações do vídeo desenham-se noutra fila (o compositor): a cache leva um trinco.
+    private let lock = NSLock()
 
     init(container: CaptureContainer) { self.container = container }
 
     private func path(_ name: String) -> String { "assets/\(name)" }
 
     func image(named name: String) -> CGImage? {
+        lock.lock(); defer { lock.unlock() }
         if let c = cache[name] { return c }
         guard let data = data(named: name), let src = CGImageSourceCreateWithData(data as CFData, nil),
               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
@@ -36,6 +39,6 @@ final class AssetStore {
     /// Grava com um nome já conhecido (ex.: colar de outro documento).
     func write(_ png: Data, as name: String) throws {
         try container.write(path(name), png)
-        cache[name] = nil
+        lock.lock(); cache[name] = nil; lock.unlock()
     }
 }

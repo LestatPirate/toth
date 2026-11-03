@@ -20,6 +20,7 @@ final class TimelineNSView: NSView {
     let headerWidth: CGFloat = 178, margin: CGFloat = 14, rulerHeight: CGFloat = 22, handleWidth: CGFloat = 9
     private enum Drag {
         case none, scrub, selecting(anchor: Double, lane: EditTrack), start, end, moving(grab: Double)
+        case overlayMove(id: UUID, grab: Double, length: Double), overlayEdge(id: UUID, isStart: Bool)
         var isStart: Bool { if case .start = self { true } else { false } }
     }
     private var drag = Drag.none
@@ -56,6 +57,10 @@ final class TimelineNSView: NSView {
         let last = lanes.last.map { rowRect($0).maxY } ?? rulerHeight + 4
         return NSRect(x: trackLeft, y: rulerHeight + 4, width: trackWidth, height: max(1, last - rulerHeight - 4))
     }
+    /// A linha das anotações (por baixo das faixas), quando há anotações ou se está a anotar.
+    var showsOverlayRow: Bool { (model?.hasOverlays ?? false) || (model?.annotateMode ?? false) }
+    static let overlayRowHeight: CGFloat = 26
+    var overlayRow: NSRect? { showsOverlayRow ? NSRect(x: trackLeft, y: tracksArea.maxY + 4, width: trackWidth, height: Self.overlayRowHeight) : nil }
     /// A zona onde o trecho marcado vive: só as linhas em que foi marcado.
     var selectionArea: NSRect {
         let sel = model?.selectionLanes ?? []
@@ -63,7 +68,7 @@ final class TimelineNSView: NSView {
         guard let first = rows.first else { return tracksArea }
         return rows.dropFirst().reduce(first) { $0.union($1) }
     }
-    static func idealHeight(lanes: Int) -> CGFloat { 22 + 4 + 38 + CGFloat(max(0, lanes - 1)) * 54 + 12 }
+    static func idealHeight(lanes: Int, overlays: Bool = false) -> CGFloat { 22 + 4 + 38 + CGFloat(max(0, lanes - 1)) * 54 + 12 + (overlays ? overlayRowHeight + 4 : 0) }
 
     func title(_ t: EditTrack) -> String {
         switch t {
@@ -106,6 +111,7 @@ final class TimelineNSView: NSView {
                 text.draw(at: NSPoint(x: pill.minX + 5, y: pill.minY + 1), withAttributes: attrs)
             }
         }
+        if let r = overlayRow { drawOverlayRow(r, model: model) }
         drawSelection(model)
         if let d = dropMarker {
             let a = selectionArea, px = x(d)
@@ -139,6 +145,42 @@ final class TimelineNSView: NSView {
         icon?.draw(in: NSRect(x: 52, y: row.midY - 8, width: 16, height: 16))
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(white: on ? 0.9 : 0.55, alpha: 1)]
         (title(lane) as NSString).draw(in: NSRect(x: 72, y: row.midY - 7, width: headerWidth - 74, height: 14), withAttributes: attrs)
+    }
+
+    /// A linha das anotações: um bloco por anotação (início → fim), com o tipo; a selecionada tem contorno branco.
+    private func drawOverlayRow(_ r: NSRect, model: VideoEditorModel) {
+        let ctx = NSGraphicsContext.current?.cgContext
+        // cabeçalho
+        if let icon = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold).applying(.init(paletteColors: [NSColor.systemPurple]))) {
+            icon.draw(in: NSRect(x: 52, y: r.midY - 8, width: 16, height: 16))
+        }
+        (L("Anotações") as NSString).draw(in: NSRect(x: 72, y: r.midY - 7, width: headerWidth - 74, height: 14), withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(white: 0.9, alpha: 1)])
+        NSColor(white: 0.17, alpha: 1).setFill(); NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
+        ctx?.saveGState(); NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).addClip()
+        let selected = model.overlayEditor?.selection
+        for o in model.overlays {
+            let b = NSRect(x: x(o.start), y: r.minY + 2, width: max(3, x(o.end) - x(o.start)), height: r.height - 4)
+            NSColor.systemPurple.withAlphaComponent(o.id == selected ? 0.95 : 0.6).setFill()
+            NSBezierPath(roundedRect: b, xRadius: 3, yRadius: 3).fill()
+            if o.id == selected { NSColor.white.setStroke(); let p = NSBezierPath(roundedRect: b.insetBy(dx: 0.75, dy: 0.75), xRadius: 3, yRadius: 3); p.lineWidth = 1.5; p.stroke() }
+            if b.width > 30 {
+                let kind = model.overlayEditor?.doc.annotations.first { $0.id == o.id }.map { L($0.shape.kindName) } ?? ""
+                let name = (o.endOffset != nil ? "→ " : "") + kind
+                (name as NSString).draw(in: NSRect(x: b.minX + 5, y: b.minY + 4, width: b.width - 8, height: 14), withAttributes: [.font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.white])
+            }
+        }
+        ctx?.restoreGState()
+        NSColor.white.withAlphaComponent(0.18).setStroke()
+        let bp = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5); bp.lineWidth = 1; bp.stroke()
+        if model.overlays.isEmpty, r.width > 200 {
+            (L("Desenhe sobre o fotograma: a anotação começa na posição de reprodução e dura 3 s") as NSString).draw(at: NSPoint(x: r.minX + 8, y: r.minY + 6), withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor(white: 0.6, alpha: 1)])
+        }
+    }
+
+    private func overlay(at p: NSPoint) -> VideoOverlay? {
+        guard let r = overlayRow, r.contains(p), let model else { return nil }
+        return model.overlays.reversed().first { x($0.start) - 3 <= p.x && p.x <= x($0.end) + 3 }
     }
 
     private func drawGap(_ g: TimeSpan, in row: NSRect, lane: EditTrack) {
@@ -267,6 +309,14 @@ final class TimelineNSView: NSView {
             if let sel = model.selection { model.preview(h.isStart ? sel.start : sel.end, label: h.isStart ? L("Início do trecho") : L("Fim do trecho")) }
             return
         }
+        if let r = overlayRow, r.contains(p) {
+            guard let o = overlay(at: p) else { drag = .none; return }
+            model.selectOverlay(o.id)
+            if abs(p.x - x(o.start)) <= 6 { drag = .overlayEdge(id: o.id, isStart: true) }
+            else if abs(p.x - x(o.end)) <= 6 { drag = .overlayEdge(id: o.id, isStart: false) }
+            else { drag = .overlayMove(id: o.id, grab: time(p.x) - o.start, length: o.length) }
+            needsDisplay = true; return
+        }
         // só a linha vermelha mexe na posição de reprodução (e a régua)
         if p.y >= 0, p.y <= bounds.height, abs(p.x - x(model.playhead)) <= 5, p.x >= trackLeft - 5 { drag = .scrub; model.clearPreview(); return }
         if let sel = model.selection, p.y >= rulerHeight, selectionArea.contains(p), x(sel.start) < p.x, p.x < x(sel.end), !model.mask.isEmpty {
@@ -301,6 +351,15 @@ final class TimelineNSView: NSView {
             if let e = model.selection?.end { model.selection = TimeSpan(start: min(t, e), end: e); model.preview(min(t, e), label: L("Início do trecho")) }
         case .end:
             if let s = model.selection?.start { model.selection = TimeSpan(start: s, end: max(t, s)); model.preview(max(t, s), label: L("Fim do trecho")) }
+        case let .overlayMove(id, grab, length):
+            guard moved else { return }
+            let s = max(0, min(t - grab, duration - length))
+            model.setOverlayRange(id, start: s, end: s + length)
+            needsDisplay = true
+        case let .overlayEdge(id, isStart):
+            if isStart { model.setOverlayRange(id, start: t) } else { model.setOverlayRange(id, end: t) }
+            model.preview(t, label: isStart ? L("Início da anotação") : L("Fim da anotação"))
+            needsDisplay = true
         case let .moving(grab):
             guard moved, let sel = model.selection else { return }
             var start = max(0, t - grab)
@@ -347,6 +406,14 @@ final class TimelineNSView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let p = convert(event.locationInWindow, from: nil)
         let m = NSMenu()
+        if let o = overlay(at: p), let model {
+            model.selectOverlay(o.id)
+            let t = time(p.x)
+            func add(_ title: String, _ sel: Selector) { let i = NSMenuItem(title: title, action: sel, keyEquivalent: ""); i.target = self; i.representedObject = [o.id.uuidString, t] as [Any]; m.addItem(i) }
+            add(L("Início da anotação aqui"), #selector(overlayStartHere(_:))); add(L("Fim da anotação aqui"), #selector(overlayEndHere(_:)))
+            m.addItem(.separator()); add(L("Apagar a anotação"), #selector(overlayDelete(_:)))
+            return m
+        }
         if let l = lane(atY: p.y), p.x >= trackLeft, let model {
             let t = time(p.x)
             let i = NSMenuItem(title: String(format: L("Inserir quebra em %@ (%@)"), title(l), Self.format(t)), action: #selector(breakHere(_:)), keyEquivalent: ""); i.target = self
@@ -369,6 +436,10 @@ final class TimelineNSView: NSView {
         Task { await model?.insertBreak(at: t, lanes: [l]) }
     }
     @objc private func menuAction(_ item: NSMenuItem) { if let a = item.representedObject as? Action { onAction?(a) } }
+    private func overlayArgs(_ item: NSMenuItem) -> (UUID, Double)? { guard let a = item.representedObject as? [Any], let s = a[0] as? String, let id = UUID(uuidString: s), let t = a[1] as? Double else { return nil }; return (id, t) }
+    @objc private func overlayStartHere(_ item: NSMenuItem) { if let (id, t) = overlayArgs(item) { model?.setOverlayRange(id, start: t) } }
+    @objc private func overlayEndHere(_ item: NSMenuItem) { if let (id, t) = overlayArgs(item) { model?.setOverlayRange(id, end: t) } }
+    @objc private func overlayDelete(_ item: NSMenuItem) { if let (id, _) = overlayArgs(item) { model?.deleteOverlay(id) } }
 
     // MARK: Zoom e deslocamento
 

@@ -404,10 +404,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { VideoHUD.renderForTests(to: args[i + 1]); print("RENDER-VIDEO-HUD: OK"); exit(0) }
         }
         if let i = args.firstIndex(of: "--render-videoeditor"), args.count > i + 1 {
-            Task { @MainActor in await VideoEditSelfTest.render(to: args[i + 1], frameMode: args.contains("--frame-mode")); print("RENDER-VIDEOEDITOR: OK"); exit(0) }
+            Task { @MainActor in await VideoEditSelfTest.render(to: args[i + 1], frameMode: args.contains("--frame-mode"), annotate: args.contains("--annotate")); print("RENDER-VIDEOEDITOR: OK"); exit(0) }
         }
         if let i = args.firstIndex(of: "--video-inspect"), args.count > i + 1 {
             Task { @MainActor in print(await VideoEditSelfTest.inspect(url: URL(fileURLWithPath: args[i + 1]))); exit(0) }
+        }
+        // `--videooverlay-selftest <pasta>`: anotações com início e fim sobre o vídeo (modo Anotar, seguir, exportar, reabrir).
+        if let i = args.firstIndex(of: "--videooverlay-selftest"), args.count > i + 1 {
+            Task { @MainActor in
+                let fails = await VideoEditSelfTest.overlays(dir: URL(fileURLWithPath: args[i + 1]))
+                print(fails.isEmpty ? "VIDEOOVERLAY-SELFTEST: OK" : "VIDEOOVERLAY-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                exit(fails.isEmpty ? 0 : 1)
+            }
         }
         // `--videoedit-selftest <pasta>`: corte de vídeo (o que sobra toca seguido), desfazer, memória dos cortes e exportação.
         if let i = args.firstIndex(of: "--videoedit-selftest"), args.count > i + 1 {

@@ -93,10 +93,58 @@ private struct OutputFrameBar: View {
     }
 }
 
+/// Barra do modo Anotar (sob o editor): início e fim da anotação selecionada, «Seguir» e «Concluído».
+private final class OverlayFields: ObservableObject { @Published var start = 0.0; @Published var end = 0.0 }
+
+private struct OverlayTimeBar: View {
+    @ObservedObject var model: VideoEditorModel
+    @ObservedObject var editor: EditorModel
+    @ObservedObject var fields: OverlayFields
+
+    private var current: VideoOverlay? { editor.selection.flatMap { model.overlay(for: $0) } }
+    private func sync() { if let o = current { fields.start = (o.start * 100).rounded() / 100; fields.end = (o.end * 100).rounded() / 100 } }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pencil.and.outline").foregroundStyle(Color.purple)
+            if let o = current {
+                Text(L("Início")).font(.system(size: 11))
+                TextField("", value: $fields.start, format: .number.precision(.fractionLength(0...2))).frame(width: 60).font(.system(size: 11)).multilineTextAlignment(.trailing)
+                    .onSubmit { model.setOverlayRange(o.id, start: fields.start); sync() }
+                Button(L("= agora")) { model.setOverlayRange(o.id, start: model.playhead); sync() }.help(L("O início passa a ser a posição de reprodução"))
+                Text(L("Fim")).font(.system(size: 11))
+                TextField("", value: $fields.end, format: .number.precision(.fractionLength(0...2))).frame(width: 60).font(.system(size: 11)).multilineTextAlignment(.trailing)
+                    .onSubmit { model.setOverlayRange(o.id, end: fields.end); sync() }
+                Button(L("= agora")) { model.setOverlayRange(o.id, end: model.playhead); sync() }.help(L("O fim passa a ser a posição de reprodução"))
+                Text(L("(%@ s)", String(format: "%.2f", o.length))).font(.system(size: 11)).foregroundStyle(.secondary)
+                Divider().frame(height: 16)
+                if o.endOffset != nil {
+                    Button(L("Deixar de seguir")) { model.setOverlayFollow(o.id, clear: true) }.help(L("A anotação volta a ficar parada"))
+                } else {
+                    Button(L("Seguir")) { model.setOverlayFollow(o.id) }
+                        .help(L("Para a anotação acompanhar algo que se move: ponha a reprodução perto do fim da anotação, arraste o elemento para onde deve estar nesse instante e carregue aqui. Ela desloca-se em linha reta do início ao fim."))
+                }
+                Button(L("Apagar")) { model.deleteOverlay(o.id) }
+            } else {
+                Text(L("Desenhe sobre o fotograma com qualquer ferramenta: a anotação começa na posição de reprodução e dura 3 s. Arraste a linha vermelha para mudar o fotograma; os blocos na linha «Anotações» ajustam o início e o fim.")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer()
+            Button(L("Concluído")) { model.annotateMode = false }.keyboardShortcut(.return, modifiers: [.command])
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10).frame(height: 30)
+        .background(.bar)
+        .onAppear(perform: sync)
+        .onChange(of: editor.selection) { _, _ in sync() }
+        .onChange(of: model.overlays) { _, _ in sync() }
+    }
+}
+
 struct VideoWorkspace: View {
     @StateObject private var model: VideoEditorModel
     @ObservedObject private var state = AppState.shared
     @StateObject private var outputFields = OutputFields()
+    @StateObject private var overlayFields = OverlayFields()
 
     init(url: URL) { _model = StateObject(wrappedValue: VideoEditorModel(url: url)) }
     init(model: VideoEditorModel) { _model = StateObject(wrappedValue: model) }
@@ -118,6 +166,24 @@ struct VideoWorkspace: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if model.annotateMode, let editor = model.overlayEditor {
+                // modo Anotar: o editor de imagem sobre o fotograma atual (ferramentas, tela, propriedades)
+                HStack(alignment: .top, spacing: 4) {
+                    ToolsBar(model: editor)
+                    BarButton(symbol: "arrow.uturn.backward", label: L("Desfazer"), disabled: !editor.canUndo) { editor.undo() }
+                    BarButton(symbol: "arrow.uturn.forward", label: L("Refazer"), disabled: !editor.canRedo) { editor.redo() }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 4).background(.bar)
+                Divider()
+                HStack(spacing: 0) {
+                    CanvasRepresentable(model: editor).id(editor.url)
+                        .frame(minWidth: 160, maxWidth: .infinity, minHeight: 120, maxHeight: .infinity).clipped()
+                    Divider()
+                    PropertiesPanel(model: editor).frame(width: 290)
+                }
+                .overlay { if let w = model.working { ProgressView(w).padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)) } }
+                OverlayTimeBar(model: model, editor: editor, fields: overlayFields)
+            } else {
             PlayerView(player: model.player)
                 .padding(model.frameMode ? VideoFrameOverlayView.inset : 0)   // na Tela, uma margem para trabalhar à volta do vídeo
                 .background(Color.black)
@@ -133,6 +199,7 @@ struct VideoWorkspace: View {
                 .overlay { if let w = model.working { ProgressView(w).padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)) } }
                 .onTapGesture { if !model.frameMode { model.togglePlay() } }
             if model.frameMode { OutputFrameBar(model: model, fields: outputFields) }
+            }
             Divider()
             HStack(spacing: 4) {
                 VideoIconButton(symbol: model.isPlaying ? "pause.fill" : "play.fill", help: model.isPlaying ? L("Pausar (espaço)") : L("Reproduzir (espaço)")) { model.togglePlay() }
@@ -156,6 +223,7 @@ struct VideoWorkspace: View {
                 VideoIconButton(symbol: "arrow.left.and.right.square", help: L("Ver tudo (0)"), disabled: abs(model.zoom - 1) < 0.001) { model.zoomFit() }
                 Divider().frame(height: 18).padding(.horizontal, 3)
                 VideoIconButton(symbol: "aspectratio", help: L("Tela do vídeo: redimensionar e rodar com o rato (ou pelos campos)"), prominent: model.frameMode || model.isOutputTransformed, disabled: model.sourceSize.width == 0) { model.frameMode.toggle() }
+                VideoIconButton(symbol: "pencil.and.outline", help: L("Anotar: setas, texto, carimbos, pixelização… sobre o vídeo, com início e fim (A)"), prominent: model.annotateMode || model.hasOverlays, disabled: model.sourceSize.width == 0) { model.frameMode = false; model.annotateMode.toggle() }
                 VideoIconButton(symbol: "arrow.uturn.backward", help: L("Desfazer"), disabled: !model.canUndo) { Task { await model.undo() } }
                 VideoIconButton(symbol: "arrow.uturn.forward", help: L("Refazer"), disabled: !model.canRedo) { Task { await model.redo() } }
                 Spacer()
@@ -170,7 +238,7 @@ struct VideoWorkspace: View {
             .padding(.horizontal, 10).frame(height: 36)
             .background(.bar)
             VideoTimeline(model: model, onAction: perform)
-                .frame(height: TimelineNSView.idealHeight(lanes: max(1, model.timeline.tracks.count)))
+                .frame(height: TimelineNSView.idealHeight(lanes: max(1, model.timeline.tracks.count), overlays: model.hasOverlays || model.annotateMode))
             Divider()
             HStack(spacing: 8) {
                 Image(systemName: "video.fill").foregroundStyle(.secondary)
