@@ -73,9 +73,15 @@ final class StampLibrary: ObservableObject {
         return NSBitmapImageRep(cgImage: out).representation(using: .png, properties: [:])
     }
 
-    /// Imagem de um símbolo do sistema, para desenhar como carimbo (cor única; tamanho em pontos grande para ficar nítido).
+    /// Símbolos «distintivo» (um desenho dentro de um círculo, triângulo ou quadrado cheio): o desenho de dentro fica branco e
+    /// o fundo com a cor; nos outros, tudo leva a cor. (Com uma só cor na paleta, o desenho de dentro ficava da mesma cor
+    /// que o fundo e desaparecia.)
+    nonisolated static func isBadge(_ name: String) -> Bool { name.hasSuffix(".circle.fill") || name.hasSuffix(".triangle.fill") || name.hasSuffix(".square.fill") }
+
+    /// Imagem de um símbolo do sistema, para desenhar como carimbo (tamanho em pontos grande para ficar nítido).
     nonisolated static func symbolImage(_ name: String, color: NSColor, pointSize: CGFloat) -> NSImage? {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular).applying(.init(paletteColors: [color])))
+        let palette = isBadge(name) ? [NSColor.white, color] : [color]
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold).applying(.init(paletteColors: palette)))
     }
 }

@@ -153,7 +153,11 @@ struct PropertiesPanel: View {
             let cols = [GridItem(.adaptive(minimum: 30), spacing: 4)]
             LazyVGrid(columns: cols, spacing: 4) {
                 ForEach(StampLibrary.symbols, id: \.self) { name in
-                    stampCell(selected: model.currentStamp == StampLibrary.symbolKey(name)) { Image(systemName: name).font(.system(size: 16)).foregroundStyle(Color(nsColor: NSColor(hex: model.currentStyle.colorHex))) }
+                    stampCell(selected: model.currentStamp == StampLibrary.symbolKey(name)) {
+                        let c = Color(nsColor: NSColor(hex: model.currentStyle.colorHex))
+                        if StampLibrary.isBadge(name) { Image(systemName: name).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white, c) }
+                        else { Image(systemName: name).font(.system(size: 16, weight: .semibold)).foregroundStyle(c) }
+                    }
                         .onTapGesture { model.chooseStamp(StampLibrary.symbolKey(name)) }
                 }
             }
