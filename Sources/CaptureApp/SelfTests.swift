@@ -573,6 +573,19 @@ enum SelfTests {
     static func effectsSelfTest() -> [String] {
         var fails: [String] = []
         func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        // Efeitos encostados à borda da imagem: ficam opacos até à ponta (a margem de trabalho não entra na transparência de fora)
+        do {
+            let base = image(400, 300, .systemBlue, .systemOrange, label: "")
+            for (name, shape) in [("blur", Shape.gaussian(origin: Point(x: 50, y: 0), width: 200, height: 120, intensity: 10)),
+                                  ("pixelização", .blur(origin: Point(x: 50, y: 0), width: 200, height: 120, radius: 12)),
+                                  ("reparo", .patch(origin: Point(x: 50, y: 0), width: 200, height: 120))] {
+                var doc = CaptureDocument(canvasWidth: 400, canvasHeight: 300)
+                doc.add(shape)
+                guard let png = Renderer.png(doc, base: base), let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil),
+                      let top = pixel(img, 150, 0), let inner = pixel(img, 150, 6) else { fails.append("\(name): sem imagem"); continue }
+                check(top.a == 255 && abs(top.r - inner.r) < 6 && abs(top.b - inner.b) < 6, "\(name) na borda de cima devia ficar opaco e contínuo (linha 0: \(top), linha 6: \(inner))")
+            }
+        }
         let base = image(500, 240, .lightGray, .lightGray, label: "")
 
         enum Effect { case none, gaussian, pixelate }

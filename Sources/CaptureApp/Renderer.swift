@@ -84,7 +84,9 @@ enum Renderer {
         // margem à volta: o blur precisa de 3 raios; o preenchimento, de uma vizinhança de onde tirar os píxeis
         var pad: CGFloat = gaussian.map { ceil($0 * 3) } ?? 0
         if patch { pad = min(240, max(16, ceil(max(rect.width, rect.height) / 2))) }
-        var padded = rect.insetBy(dx: -pad, dy: -pad)
+        // a margem fica dentro do que existe (área ∪ imagem): fora disso é transparente e, junto a uma borda, o blur e o
+        // preenchimento misturavam essa transparência e deixavam uma linha clara/escura na ponta
+        var padded = rect.insetBy(dx: -pad, dy: -pad).intersection(visible).integral
         if let src = cloneFrom { padded = padded.union(src.integral) }   // a origem da clonagem também tem de ser desenhada
         guard padded.width * padded.height <= 40_000_000 else { return }   // limite de memória (~160 MB)
 
@@ -131,7 +133,11 @@ enum Renderer {
         ctx.saveGState()
         ctx.clip(to: rect)
         if a.rotation != 0 { ctx.addPath(rotatedPath(a.shape.bounds.cg, degrees: a.rotation)); ctx.clip() }
-        if a.style.opacity >= 0.999 { ctx.setBlendMode(.copy) } else { ctx.setAlpha(CGFloat(a.style.opacity)) }
+        // «copy» substitui mesmo o que está por baixo (o original não transparece onde há transparência), mas numa vista com
+        // escala fracionária a borda fica meio transparente e aparece uma linha clara: por isso só se usa com a escala a 1 (exportação).
+        let m = ctx.ctm
+        let pixelAligned = abs(abs(m.a) - 1) < 1e-6 && abs(abs(m.d) - 1) < 1e-6
+        if a.style.opacity >= 0.999 { if pixelAligned { ctx.setBlendMode(.copy) } } else { ctx.setAlpha(CGFloat(a.style.opacity)) }
         drawImage(img, in: rect, ctx)
         ctx.restoreGState()
     }
