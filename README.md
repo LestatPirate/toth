@@ -44,6 +44,27 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, para **capturar e 
 ### Porquê «Toth»
 Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento e da sabedoria**: o escriba dos deuses, que registava, media e dava forma ao que era dito. Esta app faz, em pequeno, o mesmo gesto: **guarda o que vê e dá-lhe sentido**. Uma captura é um registo; as setas, o texto e os cortes são a forma de o explicar. O nome lembra que um ecrã só se torna conhecimento quando alguém o escreve, o anota e o partilha com clareza.
 
+### Novidades da versão 0.5.0
+**Captura e editor de imagem**
+
+| | |
+|---|---|
+| **Captura de janela** | No seletor, carregue em **Espaço** (ou no ícone de janela) e clique numa janela: fica só ela, mesmo tapada, **com ou sem sombra** (margem transparente). Também grava uma janela em vídeo. Menu *Ficheiro → Capturar janela*. |
+| **Carimbos** | Símbolos (visto, cruz, aviso, estrela…) pintados com a cor escolhida, **emojis** ou qualquer texto curto, e **imagens importadas** (PNG, JPEG, SVG…) numa biblioteca sua. Um clique põe o carimbo; arrastar escolhe o tamanho. |
+| **Reparo** | **Preencher**: a região desaparece, preenchida a partir do que a rodeia. **Clonar**: a região é coberta com outra zona da imagem (arraste a alça verde para escolher a origem). Não destrutivo, como o Blur. |
+| **Disposição** | **Alinhar** (esquerda, centro, direita, topo, meio, base) e **distribuir** vários objetos; com um só, alinha-se à área. **Agrupar** (⌘G): clicar num membro seleciona o grupo. Com vários selecionados, a caixa do grupo tem cantos para **redimensionar em proporção** e uma alça para **rodar tudo**. |
+| **Arrastar para fora** | Pega no rodapé para arrastar a imagem final (PNG) para outra app ou para o Finder; **Copiar tudo** também leva um ficheiro PNG. |
+
+**Editor de vídeo**
+
+| | |
+|---|---|
+| **Anotações com início e fim** | Botão **Anotar**: setas, texto, carimbos, pixelização, desfoque… desenhados sobre o fotograma, com **todas as ferramentas** do editor de imagem. Cada anotação tem início e fim (blocos na linha «Anotações»), e pode **seguir** uma zona que se move. Vão para a reprodução e para o MP4. |
+| **Áudio** | **Volume e fade** por linha (botão direito no nome da linha). **Importar música** (MP3, M4A, WAV…) para a linha «Música». **Gravar uma narração** sobre o vídeo, com o **microfone à escolha** (Preferências). |
+| **Velocidade** | 0,25× a 4× por clipe; o som acompanha sem mudar de tom. |
+| **Miniaturas** | Opcionais, na linha do vídeo. |
+| **Guardar** | MP4 completo (cortes, anotações, áudio misturado), **GIF animado** ou **só o áudio** (M4A). |
+
 ### Novidades da versão 0.4.0
 **Rodar e enquadrar**
 
@@ -81,8 +102,8 @@ Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento 
 | **Sem riscos** | Edição não destrutiva: o vídeo original não muda. Desfazer e refazer, e a edição volta ao reabrir. **Guardar** cria um MP4 novo. |
 
 ### O essencial
-- **Captura** de região (com o ecrã congelado), de **página inteira por rolagem** e do ecrã completo; atalho global configurável (**⌃⇧4**).
-- **Anotação não destrutiva**: setas, linhas, texto, balões, formas, etapas numeradas, marcador, pixelização e desfoque; **rodar** qualquer elemento; camadas, copiar e colar, desfazer e refazer. Tudo fica num ficheiro `.capture` que pode reeditar.
+- **Captura** de região (com o ecrã congelado), de **janela** (com ou sem sombra), de **página inteira por rolagem** e do ecrã completo; atalho global configurável (**⌃⇧4**).
+- **Anotação não destrutiva**: setas, linhas, texto, balões, formas, etapas numeradas, carimbos, marcador, pixelização, desfoque e reparo; **rodar**, **alinhar** e **agrupar**; camadas, copiar e colar, desfazer e refazer. Tudo fica num ficheiro `.capture` que pode reeditar.
 - **Tela**: alargue a área de trabalho e **mova, redimensione (em proporção ou livre) e rode a própria captura**, sem nunca alterar a imagem original.
 - **Biblioteca** de capturas e vídeos, e abertura de qualquer imagem do computador.
 - **Português e inglês**, **atualizações verificadas** (SHA-256), e **privacidade total**: a única ligação à internet é a procura de versões novas, desligável.
@@ -94,12 +115,12 @@ O Toth pode substituir, em parte, estas apps para quem só precisa do essencial:
 
 | Categoria | Apps | O que o Toth cobre |
 |---|---|---|
-| Captura e anotação | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Captura de região, anotações (setas, texto, etapas numeradas, pixelização, desfoque) e edição que pode reabrir |
+| Captura e anotação | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Captura de região e de janela, anotações (setas, texto, etapas numeradas, carimbos, pixelização, desfoque, reparo) e edição que pode reabrir |
 | Captura com rolagem | CleanShot X, Snagit, Shottr | Página inteira por rolagem |
-| Gravação de ecrã | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Gravação de uma área com áudio do sistema e microfone |
-| Edição de vídeo simples | iMovie, ScreenFlow, Camtasia | Cortes, cópia, inversão e quebra: um editor básico, não uma suíte completa |
+| Gravação de ecrã | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Gravação de uma área ou de uma janela, com áudio do sistema e microfone; GIF |
+| Edição de vídeo simples | iMovie, ScreenFlow, Camtasia | Cortes, cópia, inversão, quebra, velocidade, anotações com tempo, música e narração: um editor básico, não uma suíte completa |
 
-O Toth não tem anotações em vídeo, legendas, efeitos, captura de janela nem GIF, e não partilha online (por decisão de projeto), por isso não substitui por inteiro as apps mais completas.
+O Toth não tem legendas automáticas, efeitos nem transições, e não partilha online (por decisão de projeto), por isso não substitui por inteiro as apps mais completas.
 
 *Todas as marcas pertencem aos respetivos donos. Os nomes servem só para indicar a que o Toth pode servir de alternativa; o Toth não é afiliado nem recomendado por essas empresas.*
 
@@ -148,6 +169,27 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 ### Why “Toth”
 In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**: the scribe of the gods, who recorded, measured and gave form to what was spoken. This app does the same, in small: it **keeps what you see and gives it meaning**. A capture is a record; arrows, text and cuts are how you explain it. The name is a reminder that a screen only becomes knowledge once someone writes it down, annotates it and shares it clearly.
 
+### What's new in 0.5.0
+**Capture and image editor**
+
+| | |
+|---|---|
+| **Window capture** | In the selector, press **Space** (or the window icon) and click a window: only that window is captured, even if partly covered, **with or without its shadow** (transparent margin). Windows can be recorded as video too. Menu *File → Capture window*. |
+| **Stamps** | Symbols (check, cross, warning, star…) painted in your color, **emojis** or any short text, and **imported pictures** (PNG, JPEG, SVG…) in a library of your own. One click places the stamp; dragging chooses the size. |
+| **Repair** | **Fill**: the region disappears, filled from its surroundings. **Clone**: the region is covered with another part of the image (drag the green handle to choose the source). Non-destructive, like Blur. |
+| **Arrange** | **Align** (left, center, right, top, middle, bottom) and **distribute** several objects; a single one aligns to the area. **Group** (⌘G): clicking a member selects the group. With several selected, the group box has corners to **resize proportionally** and a handle to **rotate everything**. |
+| **Drag out** | A grip in the footer drags the final image (PNG) to another app or to the Finder; **Copy all** also carries a PNG file. |
+
+**Video editor**
+
+| | |
+|---|---|
+| **Annotations with a start and an end** | **Annotate** button: arrows, text, stamps, pixelate, blur… drawn over the frame with **every tool** of the image editor. Each annotation has a start and an end (blocks in the “Annotations” lane) and can **follow** something that moves. They go into playback and into the MP4. |
+| **Audio** | **Volume and fade** per lane (right-click the lane name). **Import music** (MP3, M4A, WAV…) into a “Music” lane. **Record a narration** over the video, with the **microphone of your choice** (Preferences). |
+| **Speed** | 0.25× to 4× per clip; the sound follows without changing pitch. |
+| **Thumbnails** | Optional, in the video lane. |
+| **Save** | Full MP4 (cuts, annotations, mixed audio), **animated GIF** or **audio only** (M4A). |
+
 ### What's new in 0.4.0
 **Rotate and frame**
 
@@ -183,8 +225,8 @@ In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**
 | **Safe** | Non-destructive editing: the original video never changes. Undo and redo, and the edit returns when you reopen. **Save** creates a new MP4. |
 
 ### The essentials
-- **Capture** a region (with a frozen screen), a **whole page by scrolling**, or the full screen; configurable global shortcut (**⌃⇧4**).
-- **Non-destructive annotation**: arrows, lines, text, callouts, shapes, numbered steps, highlighter, pixelate and blur; **rotate** any element; layers, copy and paste, undo and redo. Everything lives in a `.capture` file you can edit again.
+- **Capture** a region (with a frozen screen), a **window** (with or without shadow), a **whole page by scrolling**, or the full screen; configurable global shortcut (**⌃⇧4**).
+- **Non-destructive annotation**: arrows, lines, text, callouts, shapes, numbered steps, stamps, highlighter, pixelate, blur and repair; **rotate**, **align** and **group**; layers, copy and paste, undo and redo. Everything lives in a `.capture` file you can edit again.
 - **Canvas**: enlarge the work area and **move, resize (proportionally or freely) and rotate the capture itself**, without ever altering the original image.
 - A **library** of captures and videos, and opening any image on your computer.
 - **Portuguese and English**, **verified updates** (SHA-256), and **full privacy**: the only network call is the check for new versions, which can be turned off.
@@ -196,12 +238,12 @@ Toth can stand in, in part, for these apps if all you need is the essentials: ca
 
 | Category | Apps | What Toth covers |
 |---|---|---|
-| Capture and annotation | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Region capture, annotations (arrows, text, numbered steps, pixelate, blur) and editing you can reopen |
+| Capture and annotation | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Region and window capture, annotations (arrows, text, numbered steps, stamps, pixelate, blur, repair) and editing you can reopen |
 | Scrolling capture | CleanShot X, Snagit, Shottr | A whole page by scrolling |
-| Screen recording | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Recording an area with system audio and microphone |
-| Simple video editing | iMovie, ScreenFlow, Camtasia | Cuts, copy, reverse and break: a basic editor, not a full suite |
+| Screen recording | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Recording an area or a window, with system audio and microphone; GIF |
+| Simple video editing | iMovie, ScreenFlow, Camtasia | Cuts, copy, reverse, break, speed, timed annotations, music and narration: a basic editor, not a full suite |
 
-Toth has no video annotations, captions, effects, window capture or GIF, and does not share online (by design), so it does not fully replace the more complete apps.
+Toth has no automatic captions, effects or transitions, and does not share online (by design), so it does not fully replace the more complete apps.
 
 *All trademarks belong to their respective owners. The names are used only to say what Toth can be an alternative to; Toth is not affiliated with or endorsed by those companies.*
 
