@@ -5,6 +5,7 @@ import AVFoundation
 import AVKit
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Vídeo aberto no editor: o leitor ocupa a área de trabalho, com os controlos de reprodução. (A edição do vídeo vem depois.)
 enum VideoFiles {
@@ -22,6 +23,21 @@ struct PlayerView: NSViewRepresentable {
         return v
     }
     func updateNSView(_ v: AVPlayerView, context: Context) { if v.player !== player { v.player = player } }
+}
+
+/// Abre um menu do sistema junto ao rato (para os botões da barra do vídeo que têm várias opções).
+private func popUpMenu(_ items: [(title: String, checked: Bool, enabled: Bool, action: (() -> Void)?)]) {
+    let menu = NSMenu()
+    for item in items {
+        if item.title == "-" { menu.addItem(.separator()); continue }
+        let entry = NSMenuItem(title: item.title, action: item.action == nil ? nil : #selector(MenuAction.fire), keyEquivalent: "")
+        if let a = item.action { let ma = MenuAction(a); entry.target = ma; entry.representedObject = ma }
+        entry.state = item.checked ? .on : .off
+        entry.isEnabled = item.enabled
+        menu.addItem(entry)
+    }
+    menu.autoenablesItems = false
+    menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
 }
 
 /// Um botão só com ícone para a barra do vídeo.
@@ -151,6 +167,22 @@ struct VideoWorkspace: View {
 
     private var totalText: String { TimelineNSView.format(model.duration) }
 
+    private func saveAs(ext: String, type: UTType, _ work: @escaping (URL) async throws -> Void) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [type]
+        panel.nameFieldStringValue = model.url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_editado", with: "") + "." + ext
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { do { try await work(url) } catch { state.errorMessage = L("Não foi possível guardar: %@", error.localizedDescription) } }
+    }
+
+    private func importAudio() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.message = L("Escolha um ficheiro de áudio (MP3, M4A, WAV, AIFF…) para pôr na linha «Música», a começar na posição de reprodução")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await model.importAudio(url) }
+    }
+
     private func perform(_ a: TimelineNSView.Action) {
         switch a {
         case .cutJoin: Task { await model.cut(join: true) }
@@ -217,21 +249,42 @@ struct VideoWorkspace: View {
                 VideoIconButton(symbol: "doc.on.clipboard", help: L("Colar na posição de reprodução, empurrando o resto (⌘V)"), disabled: !model.canPaste) { perform(.paste) }
                 VideoIconButton(symbol: "rectangle.on.rectangle", help: L("Colar por cima, substituindo o que lá estiver (⌥⌘V)"), disabled: !model.canPaste) { perform(.pasteOver) }
                 VideoIconButton(symbol: "backward.fill", help: L("Inverter o trecho: passa a tocar de trás para a frente"), disabled: !model.canCut || model.working != nil) { perform(.reverse) }
+                VideoIconButton(symbol: "gauge.with.needle", help: L("Velocidade do clipe marcado (2× acelera, 0,5× é câmara lenta; o som acompanha)"), prominent: (model.selectedRate ?? 1) != 1, disabled: model.selectedRate == nil) {
+                    let cur = model.selectedRate ?? 1
+                    popUpMenu(VideoEditorModel.speeds.map { r in (r == r.rounded() ? "\(Int(r))×" : String(format: "%.2g×", r), abs(cur - r) < 1e-9, true, { Task { await model.setSpeed(r) } }) })
+                }
+                VideoIconButton(symbol: model.isNarrating ? "stop.circle.fill" : "waveform.and.mic", help: model.isNarrating ? L("Parar a narração (entra na linha «Narração»)") : L("Áudio: importar música, gravar uma narração, microfone, volumes…"), prominent: model.isNarrating) {
+                    if model.isNarrating { Task { await model.stopNarration() }; return }
+                    var items: [(String, Bool, Bool, (() -> Void)?)] = [
+                        (L("Importar áudio… (música de fundo, na posição de reprodução)"), false, true, { importAudio() }),
+                        (L("Gravar narração a partir daqui (o vídeo toca enquanto fala)"), false, true, { Task { await model.startNarration() } }),
+                        ("-", false, true, nil),
+                        (L("Volume e fade: botão direito no nome da linha de áudio"), false, false, nil),
+                        ("-", false, true, nil),
+                        (L("Microfone: %@", MicrophoneChoice.selectedName), false, false, nil),
+                        (L("Predefinido do sistema"), MicrophoneChoice.selectedID == nil, true, { MicrophoneChoice.selectedID = nil }),
+                    ]
+                    for m in MicrophoneChoice.available() { items.append((m.name, MicrophoneChoice.selectedID == m.id, true, { MicrophoneChoice.selectedID = m.id })) }
+                    popUpMenu(items)
+                }
                 Divider().frame(height: 18).padding(.horizontal, 3)
                 VideoIconButton(symbol: "minus.magnifyingglass", help: L("Afastar a linha de tempo (-)"), disabled: model.zoom <= VideoEditorModel.zoomRange.lowerBound + 0.001) { model.zoom(by: 1 / 1.5) }
                 VideoIconButton(symbol: "plus.magnifyingglass", help: L("Aproximar a linha de tempo (+)"), disabled: model.zoom >= VideoEditorModel.zoomRange.upperBound - 0.001) { model.zoom(by: 1.5) }
                 VideoIconButton(symbol: "arrow.left.and.right.square", help: L("Ver tudo (0)"), disabled: abs(model.zoom - 1) < 0.001) { model.zoomFit() }
+                VideoIconButton(symbol: "photo.on.rectangle", help: L("Miniaturas na linha do vídeo"), prominent: model.showThumbnails) { model.showThumbnails.toggle() }
                 Divider().frame(height: 18).padding(.horizontal, 3)
                 VideoIconButton(symbol: "aspectratio", help: L("Tela do vídeo: redimensionar e rodar com o rato (ou pelos campos)"), prominent: model.frameMode || model.isOutputTransformed, disabled: model.sourceSize.width == 0) { model.frameMode.toggle() }
                 VideoIconButton(symbol: "pencil.and.outline", help: L("Anotar: setas, texto, carimbos, pixelização… sobre o vídeo, com início e fim (A)"), prominent: model.annotateMode || model.hasOverlays, disabled: model.sourceSize.width == 0) { model.frameMode = false; model.annotateMode.toggle() }
                 VideoIconButton(symbol: "arrow.uturn.backward", help: L("Desfazer"), disabled: !model.canUndo) { Task { await model.undo() } }
                 VideoIconButton(symbol: "arrow.uturn.forward", help: L("Refazer"), disabled: !model.canRedo) { Task { await model.redo() } }
                 Spacer()
-                VideoIconButton(symbol: "square.and.arrow.down.on.square", help: L("Guardar o vídeo editado (ficheiro novo)"), disabled: model.working != nil) {
-                    Task {
-                        do { state.open(try await model.exportEdited()) }
-                        catch { state.errorMessage = L("Não foi possível guardar o vídeo: %@", error.localizedDescription) }
-                    }
+                VideoIconButton(symbol: "square.and.arrow.down.on.square", help: L("Guardar: MP4 editado (na biblioteca), GIF animado ou só o áudio"), disabled: model.working != nil) {
+                    popUpMenu([
+                        (L("Guardar o vídeo editado (MP4, na biblioteca)"), false, true, { Task {
+                            do { state.open(try await model.exportEdited()) } catch { state.errorMessage = L("Não foi possível guardar o vídeo: %@", error.localizedDescription) } } }),
+                        (L("Guardar como GIF animado…"), false, model.sourceSize.width > 0, { saveAs(ext: "gif", type: .gif) { url in try await model.exportGIF(to: url) } }),
+                        (L("Guardar só o áudio (M4A)…"), false, true, { saveAs(ext: "m4a", type: .mpeg4Audio) { url in try await model.exportAudio(to: url) } }),
+                    ])
                 }
                 VideoIconButton(symbol: "folder", help: L("Mostrar no Finder")) { NSWorkspace.shared.activateFileViewerSelecting([model.url]) }
             }
@@ -246,12 +299,12 @@ struct VideoWorkspace: View {
                 Text(model.info).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 if model.isOutputTransformed { Text("→ \(Int(model.canvasSize.width)) × \(Int(model.canvasSize.height))" + (model.outputRotation != 0 ? " · \(Int(model.outputRotation.rounded()))°" : "")).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor) }
                 Spacer()
-                Text(L("Arraste um bloco para o mover (entra entre blocos). ⇧+arrastar marca um trecho para recortar. Olho: entra no resultado. Cadeado: protege.")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(model.isNarrating ? L("A gravar a narração… carregue no botão vermelho para parar.") : L("Arraste um bloco para o mover (entra entre blocos). ⇧+arrastar marca um trecho para recortar. Olho: entra no resultado. Cadeado: protege. Botão direito no nome de uma linha de áudio: volume e fade.")).font(.system(size: 11)).foregroundStyle(model.isNarrating ? Color.red : Color.secondary).lineLimit(1)
             }
             .padding(.horizontal, 12).frame(height: 24)
             .background(.bar)
         }
-        .task { await model.load() }
+        .task { await model.load(); await model.loadThumbnails() }
         .onDisappear { model.tearDown() }
         .alert(L("Editar"), isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("OK") { model.message = nil }

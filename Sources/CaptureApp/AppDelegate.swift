@@ -409,6 +409,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--video-inspect"), args.count > i + 1 {
             Task { @MainActor in print(await VideoEditSelfTest.inspect(url: URL(fileURLWithPath: args[i + 1]))); exit(0) }
         }
+        // `--videoaudio-selftest <pasta>`: volume e fade por linha, velocidade, áudio importado, GIF, só áudio, miniaturas.
+        if let i = args.firstIndex(of: "--videoaudio-selftest"), args.count > i + 1 {
+            Task { @MainActor in
+                let fails = await VideoEditSelfTest.audio(dir: URL(fileURLWithPath: args[i + 1]))
+                print(fails.isEmpty ? "VIDEOAUDIO-SELFTEST: OK" : "VIDEOAUDIO-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                exit(fails.isEmpty ? 0 : 1)
+            }
+        }
         // `--videooverlay-selftest <pasta>`: anotações com início e fim sobre o vídeo (modo Anotar, seguir, exportar, reabrir).
         if let i = args.firstIndex(of: "--videooverlay-selftest"), args.count > i + 1 {
             Task { @MainActor in

@@ -75,10 +75,22 @@ final class TimelineNSView: NSView {
         case .video: L("Vídeo")
         case .system: (model?.singleAudio ?? false) ? L("Áudio") : L("Áudio do sistema")
         case .microphone: L("Microfone")
+        case .music: L("Música")
+        case .narration: L("Narração")
         }
     }
-    private func symbol(_ t: EditTrack) -> String { t == .video ? "film" : (t == .system ? "speaker.wave.2.fill" : "mic.fill") }
-    private func color(_ t: EditTrack) -> NSColor { t == .video ? NSColor(calibratedRed: 0.25, green: 0.42, blue: 0.85, alpha: 1) : (t == .system ? NSColor(calibratedRed: 0.18, green: 0.62, blue: 0.5, alpha: 1) : NSColor(calibratedRed: 0.8, green: 0.5, blue: 0.2, alpha: 1)) }
+    private func symbol(_ t: EditTrack) -> String {
+        switch t { case .video: "film"; case .system: "speaker.wave.2.fill"; case .microphone: "mic.fill"; case .music: "music.note"; case .narration: "waveform.and.mic" }
+    }
+    private func color(_ t: EditTrack) -> NSColor {
+        switch t {
+        case .video: NSColor(calibratedRed: 0.25, green: 0.42, blue: 0.85, alpha: 1)
+        case .system: NSColor(calibratedRed: 0.18, green: 0.62, blue: 0.5, alpha: 1)
+        case .microphone: NSColor(calibratedRed: 0.8, green: 0.5, blue: 0.2, alpha: 1)
+        case .music: NSColor(calibratedRed: 0.55, green: 0.35, blue: 0.75, alpha: 1)
+        case .narration: NSColor(calibratedRed: 0.75, green: 0.35, blue: 0.45, alpha: 1)
+        }
+    }
 
     // MARK: Desenho
 
@@ -144,7 +156,10 @@ final class TimelineNSView: NSView {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold).applying(.init(paletteColors: [color(lane)])))
         icon?.draw(in: NSRect(x: 52, y: row.midY - 8, width: 16, height: 16))
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(white: on ? 0.9 : 0.55, alpha: 1)]
-        (title(lane) as NSString).draw(in: NSRect(x: 72, y: row.midY - 7, width: headerWidth - 74, height: 14), withAttributes: attrs)
+        var text = title(lane)
+        if lane != .video, let v = model?.laneVolume[lane], abs(v - 1) > 0.001 { text += " · \(Int((v * 100).rounded()))%" }
+        if lane != .video, let f = model?.laneFade[lane], f > 0 { text += " · ⟋\(String(format: "%.2g", f))s" }
+        (text as NSString).draw(in: NSRect(x: 72, y: row.midY - 7, width: headerWidth - 74, height: 14), withAttributes: attrs)
     }
 
     /// A linha das anotações: um bloco por anotação (início → fim), com o tipo; a selecionada tem contorno branco.
@@ -200,9 +215,24 @@ final class TimelineNSView: NSView {
     private func drawClip(_ c: Clip, lane: EditTrack, row: NSRect, model: VideoEditorModel, dimmed: Bool) {
         let r = NSRect(x: x(c.at), y: row.minY + 1, width: max(2, x(c.end) - x(c.at)), height: row.height - 2)
         let base = color(lane)
-        let reversed = c.media != 0
+        let reversed = c.media != 0 && lane == .video || (c.media != 0 && (lane == .system || lane == .microphone))
         (reversed ? base.blended(withFraction: 0.35, of: NSColor.systemPurple) ?? base : base).withAlphaComponent(dimmed ? 0.4 : (lane == .video ? 0.9 : 0.5)).setFill()
         NSBezierPath(roundedRect: r, xRadius: 3, yRadius: 3).fill()
+        if lane == .video, model.showThumbnails, let thumbs = model.thumbnails[c.media], !thumbs.isEmpty, let mediaLen = model.mediaLengths[c.media], mediaLen > 0 {
+            // miniaturas lado a lado: cada uma é o fotograma mais próximo do instante da média que ocupa esse sítio do clipe
+            NSGraphicsContext.current?.cgContext.saveGState(); NSBezierPath(roundedRect: r, xRadius: 3, yRadius: 3).addClip()
+            let h = r.height, w = max(8, h * CGFloat(thumbs[0].width) / CGFloat(max(1, thumbs[0].height)))
+            var px = r.minX
+            while px < r.maxX {
+                let t = c.srcTime(at: time(px + w / 2))
+                let i = max(0, min(thumbs.count - 1, Int((t / mediaLen * Double(thumbs.count)).rounded(.down))))
+                let img = thumbs[i]
+                NSGraphicsContext.current?.cgContext.draw(img, in: NSRect(x: px, y: r.minY, width: w, height: h))
+                px += w
+            }
+            NSGraphicsContext.current?.cgContext.restoreGState()
+            NSColor.black.withAlphaComponent(dimmed ? 0.5 : 0).setFill(); r.fill()
+        }
         if lane != .video, let peaks = model.peaks[TrackKey(media: c.media, lane: lane)], !peaks.isEmpty {
             let mid = r.midY, half = (r.height - 6) / 2
             NSColor.white.withAlphaComponent(dimmed ? 0.35 : 0.85).setFill()
@@ -228,6 +258,14 @@ final class TimelineNSView: NSView {
         if r.width > 8 { NSBezierPath(rect: NSRect(x: r.minX, y: r.minY, width: 3, height: r.height)).fill(); NSBezierPath(rect: NSRect(x: r.maxX - 3, y: r.minY, width: 3, height: r.height)).fill() }
         if reversed, r.width > 24, let img = NSImage(systemSymbolName: "backward.fill", accessibilityDescription: nil) {
             img.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .bold).applying(.init(paletteColors: [.white])))?.draw(in: NSRect(x: r.minX + 5, y: r.minY + 4, width: 12, height: 10))
+        }
+        if abs(c.rate - 1) > 1e-9, r.width > 30 {
+            let label = (c.rate == c.rate.rounded() ? "\(Int(c.rate))×" : String(format: "%.2g×", c.rate)) as NSString
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .bold), .foregroundColor: NSColor.white]
+            let sz = label.size(withAttributes: attrs)
+            let pill = NSRect(x: r.maxX - sz.width - 12, y: r.minY + 3, width: sz.width + 8, height: sz.height + 2)
+            NSColor.systemOrange.withAlphaComponent(0.9).setFill(); NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
+            label.draw(at: NSPoint(x: pill.minX + 4, y: pill.minY + 1), withAttributes: attrs)
         }
     }
 
@@ -403,8 +441,34 @@ final class TimelineNSView: NSView {
         for t in [sel.start, sel.end] { addCursorRect(NSRect(x: x(t) - handleWidth, y: a.minY, width: 2 * handleWidth, height: a.height), cursor: .resizeLeftRight) }
     }
 
+    /// Menu de uma linha de áudio: volume, fade e tirar a linha (nas acrescentadas).
+    func laneMenu(_ l: EditTrack) -> NSMenu? {
+        guard let model, l != .video else { return nil }
+        let m = NSMenu()
+        let vol = NSMenu(), fade = NSMenu()
+        for v in [0.0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] {
+            let i = NSMenuItem(title: "\(Int(v * 100))%", action: #selector(laneVolume(_:)), keyEquivalent: ""); i.target = self
+            i.representedObject = [l.rawValue, v] as [Any]; i.state = abs((model.laneVolume[l] ?? 1) - v) < 0.001 ? .on : .off; vol.addItem(i)
+        }
+        for f in [0.0, 0.25, 0.5, 1, 2, 3] {
+            let i = NSMenuItem(title: f == 0 ? L("Sem fade") : String(format: L("%@ s"), String(format: "%.2g", f)), action: #selector(laneFade(_:)), keyEquivalent: ""); i.target = self
+            i.representedObject = [l.rawValue, f] as [Any]; i.state = abs((model.laneFade[l] ?? 0) - f) < 0.001 ? .on : .off; fade.addItem(i)
+        }
+        let vi = NSMenuItem(title: L("Volume"), action: nil, keyEquivalent: ""); vi.submenu = vol; m.addItem(vi)
+        let fi = NSMenuItem(title: L("Fade (entrada e saída de cada clipe)"), action: nil, keyEquivalent: ""); fi.submenu = fade; m.addItem(fi)
+        if l == .music || l == .narration {
+            m.addItem(.separator())
+            let r = NSMenuItem(title: L("Tirar a linha «%@»", title(l)), action: #selector(removeLane(_:)), keyEquivalent: ""); r.target = self; r.representedObject = l.rawValue; m.addItem(r)
+        }
+        return m
+    }
+    @objc private func laneVolume(_ item: NSMenuItem) { guard let a = item.representedObject as? [Any], let raw = a[0] as? String, let l = EditTrack(rawValue: raw), let v = a[1] as? Double else { return }; Task { await model?.setLaneVolume(l, v) } }
+    @objc private func laneFade(_ item: NSMenuItem) { guard let a = item.representedObject as? [Any], let raw = a[0] as? String, let l = EditTrack(rawValue: raw), let f = a[1] as? Double else { return }; Task { await model?.setLaneFade(l, f) } }
+    @objc private func removeLane(_ item: NSMenuItem) { guard let raw = item.representedObject as? String, let l = EditTrack(rawValue: raw) else { return }; Task { await model?.removeLane(l) } }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         let p = convert(event.locationInWindow, from: nil)
+        if p.x < headerWidth, let l = lane(atY: p.y), let m = laneMenu(l) { return m }
         let m = NSMenu()
         if let o = overlay(at: p), let model {
             model.selectOverlay(o.id)

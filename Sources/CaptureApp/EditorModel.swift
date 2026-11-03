@@ -701,6 +701,11 @@ final class EditorModel: ObservableObject {
         selection = imgAnn.id
         copySelection()
         check(pb.data(forType: NSPasteboard.PasteboardType("com.capture.annotation")) != nil, "payload interno em falta")
+        // 5) «Copiar tudo» leva a imagem e um ficheiro PNG (para colar no Finder ou anexar)
+        copyToPasteboard()
+        let fileURL = (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])?.first
+        check(fileURL?.pathExtension == "png" && (fileURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false), "copiar tudo devia pôr um ficheiro PNG na área de transferência (\(String(describing: fileURL)))")
+        check(pb.canReadObject(forClasses: [NSImage.self], options: nil), "copiar tudo também leva a imagem")
         undo(); undo(); undo(); undo()   // volta a antes dos testes de colar texto/duplicar
         return fails
     }
@@ -721,10 +726,23 @@ final class EditorModel: ObservableObject {
 
     func exportPNG() -> Data? { Renderer.png(doc, base: base, assets: assets) }
 
+    /// Copia a imagem final: como imagem (para apps que colam imagens) e como ficheiro PNG (para o Finder, e-mails, chats…).
     func copyToPasteboard() {
         guard let data = exportPNG(), let image = NSImage(data: data) else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([image])
+        var objects: [NSPasteboardWriting] = [image]
+        if let file = exportedFile() { objects.append(file as NSURL) }
+        NSPasteboard.general.writeObjects(objects)
+    }
+
+    /// O PNG final escrito num ficheiro temporário com o nome da captura (para arrastar ou colar como ficheiro).
+    func exportedFile() -> URL? {
+        guard let png = exportPNG() else { return nil }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Toth-exportado", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent(url.deletingPathExtension().lastPathComponent + ".png")
+        do { try png.write(to: file, options: .atomic) } catch { return nil }
+        return file
     }
 
     /// "Salvar como": PNG, JPEG, HEIC ou TIFF (o formato escolhe-se no próprio diálogo).

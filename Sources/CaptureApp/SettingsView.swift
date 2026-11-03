@@ -9,6 +9,9 @@ struct SettingsView: View {
     @ObservedObject var settings: ShortcutSettings
     @ObservedObject var localizer: Localizer = .shared
     @ObservedObject var updater: Updater = .shared
+    /// (Sem @State: refaz o seletor do microfone quando a escolha muda.)
+    @StateObject private var micState = MicState()
+    private final class MicState: ObservableObject { @Published var tick = 0 }
 
     private var language: Binding<AppLanguage> { Binding(get: { localizer.language }, set: { localizer.set($0) }) }
 
@@ -61,6 +64,16 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 8) {
+                Text(L("Microfone")).font(.headline)
+                Picker("", selection: Binding(get: { MicrophoneChoice.selectedID ?? "" }, set: { MicrophoneChoice.selectedID = $0.isEmpty ? nil : $0; micState.tick += 1 })) {
+                    Text(L("Predefinido do sistema")).tag("")
+                    ForEach(MicrophoneChoice.available(), id: \.id) { m in Text(m.name).tag(m.id) }
+                }
+                .labelsHidden().frame(width: 320).id(micState.tick)
+                Text(L("Usado ao gravar vídeo com o microfone ligado e na narração do editor de vídeo."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {
                 Text(L("Atualizações")).font(.headline)
                 Toggle(L("Procurar atualizações automaticamente"), isOn: $updater.automatic)
                 HStack(spacing: 10) {
@@ -75,7 +88,7 @@ struct SettingsView: View {
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(22)
-        .frame(width: 520, height: 520, alignment: .topLeading)
+        .frame(width: 520, height: 600, alignment: .topLeading)
     }
 }
 
@@ -85,7 +98,7 @@ enum SettingsWindow {
 
     static func show() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520), styleMask: [.titled, .closable],
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 600), styleMask: [.titled, .closable],
                              backing: .buffered, defer: false)
             w.title = L("Preferências")
             w.contentView = NSHostingView(rootView: SettingsView(settings: .shared))

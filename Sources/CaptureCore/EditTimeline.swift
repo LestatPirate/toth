@@ -13,18 +13,35 @@ public struct TimeSpan: Codable, Equatable, Sendable {
 }
 
 /// As linhas de uma gravação: o vídeo, o áudio do sistema e o microfone. (Um vídeo antigo, com um só áudio, só tem
-/// `video` e `system`, que aí é o «Áudio».)
-public enum EditTrack: String, Codable, CaseIterable, Sendable { case video, system, microphone }
+/// `video` e `system`, que aí é o «Áudio».) `music` e `narration` são linhas acrescentadas na edição (áudio importado e
+/// narração gravada).
+public enum EditTrack: String, Codable, CaseIterable, Sendable { case video, system, microphone, music, narration }
 
 /// Um trecho de uma média (o vídeo original, ou um ficheiro gerado, por exemplo invertido) posto na linha de tempo.
 public struct Clip: Codable, Equatable, Sendable {
-    /// 0 = o ficheiro original; os outros são ficheiros gerados (trechos invertidos).
+    /// 0 = o ficheiro original; os outros são ficheiros gerados (trechos invertidos, áudio importado, narração).
     public var media: Int
     public var src: TimeSpan          // que parte da média
     public var at: Double             // onde começa na linha de tempo
-    public init(media: Int, src: TimeSpan, at: Double) { self.media = media; self.src = src; self.at = at }
-    public var length: Double { src.length }
+    /// Velocidade (1 = normal; 2 = o dobro, o trecho dura metade; 0,5 = câmara lenta).
+    public var rate: Double
+    public init(media: Int, src: TimeSpan, at: Double, rate: Double = 1) { self.media = media; self.src = src; self.at = at; self.rate = max(0.05, rate) }
+    /// Quanto dura na linha de tempo.
+    public var length: Double { src.length / rate }
     public var end: Double { at + length }
+    /// Posição na média do instante `t` da linha de tempo.
+    public func srcTime(at t: Double) -> Double { src.start + (t - at) * rate }
+    /// A parte do clipe entre `a` e `b` (tempo da linha de tempo), posta em `newAt`.
+    public func part(from a: Double, to b: Double, at newAt: Double) -> Clip {
+        Clip(media: media, src: TimeSpan(start: srcTime(at: a), end: srcTime(at: b)), at: newAt, rate: rate)
+    }
+
+    enum CodingKeys: String, CodingKey { case media, src, at, rate }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        media = try c.decode(Int.self, forKey: .media); src = try c.decode(TimeSpan.self, forKey: .src); at = try c.decode(Double.self, forKey: .at)
+        rate = try c.decodeIfPresent(Double.self, forKey: .rate) ?? 1
+    }
 }
 
 /// Trecho copiado: o que havia em cada linha num intervalo (com as posições relativas ao início) e o comprimento total,
@@ -57,6 +74,40 @@ public struct EditTimeline: Codable, Equatable, Sendable {
 
     public var tracks: [EditTrack] { lanes.map(\.track) }
     public func clips(_ t: EditTrack) -> [Clip] { lanes.first { $0.track == t }?.clips ?? [] }
+
+    /// Acrescenta uma linha (áudio importado, narração) com estes clipes; se já existir, só junta os clipes.
+    public mutating func addLane(_ t: EditTrack, clips: [Clip]) {
+        if let i = laneIndex(t) { lanes[i].clips = (lanes[i].clips + clips).sorted { $0.at < $1.at } }
+        else { lanes.append(Lane(track: t, clips: clips.sorted { $0.at < $1.at })) }
+    }
+
+    /// Tira uma linha inteira.
+    public mutating func removeLane(_ t: EditTrack) { lanes.removeAll { $0.track == t } }
+
+    // MARK: Velocidade
+
+    /// Muda a velocidade dos clipes das linhas `tracks` que estão **inteiros** dentro de `range` (os que mudam de duração
+    /// empurram ou puxam o que vem depois, em todas essas linhas, para ficarem alinhadas). Devolve `false` se nenhum mudou.
+    @discardableResult
+    public mutating func setRate(_ rate: Double, in range: TimeSpan, tracks: Set<EditTrack>) -> Bool {
+        let s = min(range.start, range.end) - 1e-6, e = max(range.start, range.end) + 1e-6
+        var changed = false
+        for i in lanes.indices where tracks.contains(lanes[i].track) {
+            var shift = 0.0
+            var out: [Clip] = []
+            for c in lanes[i].clips {
+                var m = c; m.at += shift
+                if c.at >= s && c.end <= e && abs(c.rate - rate) > 1e-9 {
+                    m.rate = max(0.05, rate)
+                    shift += m.length - c.length
+                    changed = true
+                }
+                out.append(m)
+            }
+            lanes[i].clips = out
+        }
+        return changed
+    }
 
     /// Comprimento da linha de tempo: onde acaba o último clipe de qualquer linha.
     public var duration: Double { lanes.flatMap(\.clips).map(\.end).max() ?? 0 }
@@ -112,10 +163,10 @@ public struct EditTimeline: Codable, Equatable, Sendable {
             if c.end <= s + 1e-9 { out.append(c); continue }
             if c.at >= e - 1e-9 { var m = c; if ripple { m.at -= len }; out.append(m); continue }
             if c.at < s - 1e-9 {                                   // parte da esquerda
-                out.append(Clip(media: c.media, src: TimeSpan(start: c.src.start, end: c.src.start + (s - c.at)), at: c.at))
+                out.append(c.part(from: c.at, to: s, at: c.at))
             }
             if c.end > e + 1e-9 {                                  // parte da direita
-                out.append(Clip(media: c.media, src: TimeSpan(start: c.src.start + (e - c.at), end: c.src.end), at: ripple ? s : e))
+                out.append(c.part(from: e, to: c.end, at: ripple ? s : e))
             }
         }
         return out.sorted { $0.at < $1.at }
@@ -131,7 +182,7 @@ public struct EditTimeline: Codable, Equatable, Sendable {
             var out: [Clip] = []
             for c in l.clips where c.end > s + 1e-9 && c.at < e - 1e-9 {
                 let a = max(c.at, s), b = min(c.end, e)
-                out.append(Clip(media: c.media, src: TimeSpan(start: c.src.start + (a - c.at), end: c.src.start + (b - c.at)), at: a - s))
+                out.append(c.part(from: a, to: b, at: a - s))
             }
             lanes[l.track] = out
         }
@@ -151,15 +202,15 @@ public struct EditTimeline: Codable, Equatable, Sendable {
                     if c.end <= t + 1e-9 { out.append(c) }
                     else if c.at >= t - 1e-9 { var m = c; m.at += piece.length; out.append(m) }
                     else {                                           // divide em t
-                        out.append(Clip(media: c.media, src: TimeSpan(start: c.src.start, end: c.src.start + (t - c.at)), at: c.at))
-                        out.append(Clip(media: c.media, src: TimeSpan(start: c.src.start + (t - c.at), end: c.src.end), at: t + piece.length))
+                        out.append(c.part(from: c.at, to: t, at: c.at))
+                        out.append(c.part(from: t, to: c.end, at: t + piece.length))
                     }
                 }
                 clips = out
             } else {
                 clips = Self.removing(t, t + piece.length, from: clips, ripple: false)
             }
-            clips += new.map { Clip(media: $0.media, src: $0.src, at: $0.at + t) }
+            clips += new.map { Clip(media: $0.media, src: $0.src, at: $0.at + t, rate: $0.rate) }
             lanes[i].clips = clips.sorted { $0.at < $1.at }
         }
     }
@@ -175,8 +226,8 @@ public struct EditTimeline: Codable, Equatable, Sendable {
         for i in lanes.indices where tracks.contains(lanes[i].track) {
             guard let k = lanes[i].clips.firstIndex(where: { t - $0.at >= Self.minCut && $0.end - t >= Self.minCut }) else { continue }
             let c = lanes[i].clips[k]
-            lanes[i].clips[k] = Clip(media: c.media, src: TimeSpan(start: c.src.start, end: c.src.start + (t - c.at)), at: c.at)
-            lanes[i].clips.insert(Clip(media: c.media, src: TimeSpan(start: c.src.start + (t - c.at), end: c.src.end), at: t), at: k + 1)
+            lanes[i].clips[k] = c.part(from: c.at, to: t, at: c.at)
+            lanes[i].clips.insert(c.part(from: t, to: c.end, at: t), at: k + 1)
             done = true
         }
         return done
@@ -233,7 +284,7 @@ public struct EditTimeline: Codable, Equatable, Sendable {
         let s = max(0, min(range.start, range.end)), e = min(duration, max(range.start, range.end))
         for i in lanes.indices where tracks.contains(lanes[i].track) {
             var clips = Self.removing(s, e, from: lanes[i].clips, ripple: false)
-            clips += (pieces[lanes[i].track] ?? []).map { Clip(media: $0.media, src: $0.src, at: $0.at + s) }
+            clips += (pieces[lanes[i].track] ?? []).map { Clip(media: $0.media, src: $0.src, at: $0.at + s, rate: $0.rate) }
             lanes[i].clips = clips.sorted { $0.at < $1.at }
         }
     }

@@ -975,3 +975,45 @@ import Foundation
         #expect(d.groupMembers(of: a.id) == [a.id])
     }
 }
+
+@Suite struct EditTimelineRateTests {
+    @Test func rateShortensClipAndShiftsFollowers() {
+        var t = EditTimeline(sourceDuration: 10, tracks: [.video, .system])
+        t.split(at: 4, tracks: [.video, .system])
+        let ok = t.setRate(2, in: TimeSpan(start: 0, end: 4), tracks: [.video, .system])
+        #expect(ok)
+        let v = t.clips(.video)
+        #expect(v.count == 2 && v[0].rate == 2 && abs(v[0].length - 2) < 1e-9 && abs(v[1].at - 2) < 1e-9 && v[1].rate == 1)
+        #expect(abs(t.duration - 8) < 1e-9 && t.isBalanced)
+        // cortar dentro de um clipe acelerado tira o dobro da média
+        let removed = t.remove(TimeSpan(start: 0.5, end: 1), tracks: [.video, .system], ripple: true)
+        #expect(removed)
+        let w = t.clips(.video)
+        #expect(abs(w[0].src.end - 1) < 1e-9 && abs(w[1].src.start - 2) < 1e-9 && abs(w[1].rate - 2) < 1e-9)
+        #expect(abs(t.duration - 7.5) < 1e-9)
+    }
+
+    @Test func slowMotionAndRoundTrip() throws {
+        var t = EditTimeline(sourceDuration: 4, tracks: [.video])
+        let slow = t.setRate(0.5, in: TimeSpan(start: 0, end: 4), tracks: [.video])
+        #expect(slow && abs(t.duration - 8) < 1e-9)
+        let data = try JSONEncoder().encode(t)
+        let back = try JSONDecoder().decode(EditTimeline.self, from: data)
+        #expect(back.clips(.video)[0].rate == 0.5)
+        // ficheiros antigos sem `rate` abrem a 1×
+        let old = try JSONDecoder().decode(Clip.self, from: Data("{\"media\":0,\"src\":{\"start\":0,\"end\":2},\"at\":1}".utf8))
+        #expect(old.rate == 1 && old.length == 2)
+        let none = t.setRate(0.5, in: TimeSpan(start: 0, end: 1), tracks: [.video])   // nada inteiro dentro
+        #expect(!none)
+    }
+
+    @Test func addedLanes() {
+        var t = EditTimeline(sourceDuration: 5, tracks: [.video])
+        t.addLane(.music, clips: [Clip(media: 3, src: TimeSpan(start: 0, end: 7), at: 1)])
+        #expect(t.tracks == [.video, .music] && abs(t.duration - 8) < 1e-9)
+        t.addLane(.music, clips: [Clip(media: 4, src: TimeSpan(start: 0, end: 1), at: 0)])
+        #expect(t.clips(.music).count == 2 && t.clips(.music)[0].media == 4)
+        t.removeLane(.music)
+        #expect(t.tracks == [.video])
+    }
+}

@@ -128,7 +128,7 @@ enum SelfTests {
         let settings = ShortcutSettings.shared
         func snapshot() -> NSBitmapImageRep? {
             let host = NSHostingView(rootView: SettingsView(settings: settings))
-            host.frame = NSRect(x: 0, y: 0, width: 520, height: 520)
+            host.frame = NSRect(x: 0, y: 0, width: 520, height: 600)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .aqua)   // aparência fixa (teste determinístico)
             window.contentView = host
@@ -146,8 +146,8 @@ enum SelfTests {
         let out = NSImage(size: NSSize(width: 520, height: 1050))
         out.lockFocus()
         NSColor.windowBackgroundColor.setFill(); NSRect(x: 0, y: 0, width: 520, height: 1050).fill()
-        recording.draw(in: NSRect(x: 0, y: 0, width: 520, height: 520))
-        normal.draw(in: NSRect(x: 0, y: 530, width: 520, height: 520))
+        recording.draw(in: NSRect(x: 0, y: 0, width: 520, height: 600))
+        normal.draw(in: NSRect(x: 0, y: 610, width: 520, height: 600))
         out.unlockFocus()
         if let tiff = out.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             try? png.write(to: URL(fileURLWithPath: path))

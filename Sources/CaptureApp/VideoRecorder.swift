@@ -358,6 +358,7 @@ final class ScreenRecordingSource: NSObject, SCStreamOutput, SCStreamDelegate, @
         c.excludesCurrentProcessAudio = true
         c.sampleRate = 48_000; c.channelCount = 2
         if microphone { c.captureMicrophone = true }
+        if let id = MicrophoneChoice.selectedID, AVCaptureDevice(uniqueID: id) != nil { c.microphoneCaptureDeviceID = id }   // o microfone escolhido nas Preferências
         config = c
         let s = SCStream(filter: filter, configuration: c, delegate: self)
         let q = DispatchQueue(label: "pt.toth.recording.frames")

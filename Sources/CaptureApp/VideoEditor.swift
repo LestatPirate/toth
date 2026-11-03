@@ -15,8 +15,10 @@ enum VideoComposer {
     /// `enabled`: as linhas que entram no resultado; as outras ficam suprimidas (sem imagem ou sem som), na reprodução e ao guardar.
     /// `renderSize`: tamanho do vídeo na saída (em proporção ou não); `nil` = o natural. `rotation`: graus (sentido dos ponteiros
     /// do relógio); a saída passa a ser a caixa envolvente do vídeo rodado, com o resto a preto.
+    /// `volumes`: ganho por linha de áudio (1 = como está); `fades`: segundos de fade na entrada e saída de cada clipe (0 = só o
+    /// anti-estalido). A velocidade de cada clipe (`Clip.rate`) aplica-se aqui (o áudio mantém o tom).
     static func build(timeline: EditTimeline, tracks: [TrackKey: AVAssetTrack], mediaLength: [Int: Double], enabled: Set<EditTrack>? = nil,
-                      renderSize: CGSize? = nil, rotation: Double = 0) async throws
+                      renderSize: CGSize? = nil, rotation: Double = 0, volumes: [EditTrack: Double] = [:], fades: [EditTrack: Double] = [:]) async throws
         -> (AVMutableComposition, AVAudioMix?, AVVideoComposition?) {
         let comp = AVMutableComposition()
         let scale: CMTimeScale = 90_000
@@ -30,21 +32,25 @@ enum VideoComposer {
             let dst = comp.addMutableTrack(withMediaType: lane.track == .video ? .video : .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
             var transformSet = false
             var ramps: [(CMTimeRange, Float, Float)] = []
+            let gain = Float(volumes[lane.track] ?? 1)
+            let userFade = fades[lane.track] ?? 0
             for c in lane.clips {
                 guard let srcTrack = tracks[TrackKey(media: c.media, lane: lane.track)] else { continue }
-                try dst?.insertTimeRange(CMTimeRange(start: time(c.src.start), duration: time(c.length)), of: srcTrack, at: time(c.at))
+                try dst?.insertTimeRange(CMTimeRange(start: time(c.src.start), duration: time(c.src.length)), of: srcTrack, at: time(c.at))
+                if abs(c.rate - 1) > 1e-9 { dst?.scaleTimeRange(CMTimeRange(start: time(c.at), duration: time(c.src.length)), toDuration: time(c.length)) }
                 if lane.track == .video {
                     hasVideo = true
                     if !transformSet, let dst { dst.preferredTransform = try await srcTrack.load(.preferredTransform); transformSet = true }
                 } else {
-                    let f = min(fade, c.length / 2)
+                    let f = min(max(fade, userFade), c.length / 2)
                     let mediaEnd = mediaLength[c.media] ?? c.src.end
-                    if !(c.at < 0.001 && c.src.start < 0.001) { ramps.append((CMTimeRange(start: time(c.at), duration: time(f)), 0, 1)) }
-                    if !(c.end >= total - 0.001 && c.src.end >= mediaEnd - 0.001) { ramps.append((CMTimeRange(start: time(c.end - f), duration: time(f)), 1, 0)) }
+                    if userFade > 0 || !(c.at < 0.001 && c.src.start < 0.001) { ramps.append((CMTimeRange(start: time(c.at), duration: time(f)), 0, gain)) }
+                    if userFade > 0 || !(c.end >= total - 0.001 && c.src.end >= mediaEnd - 0.001) { ramps.append((CMTimeRange(start: time(c.end - f), duration: time(f)), gain, 0)) }
                 }
             }
-            if lane.track != .video, let dst, !ramps.isEmpty {
+            if lane.track != .video, let dst, !ramps.isEmpty || abs(gain - 1) > 0.001 {
                 let p = AVMutableAudioMixInputParameters(track: dst)
+                p.setVolume(gain, at: .zero)
                 for (r, a, b) in ramps { p.setVolumeRamp(fromStartVolume: a, toEndVolume: b, timeRange: r) }
                 params.append(p)
             }
@@ -169,6 +175,136 @@ final class VideoEditorModel: ObservableObject {
     /// Tamanho do ficheiro de saída (o vídeo redimensionado e rodado, a par).
     var canvasSize: CGSize { VideoComposer.canvasSize(for: effectiveOutputSize, rotation: outputRotation) }
     var isOutputTransformed: Bool { outputSize != nil || outputRotation != 0 }
+
+    // MARK: Volume, fade, velocidade, áudio importado, narração e miniaturas
+
+    /// Ganho por linha de áudio (1 = como está) e fade (s) na entrada e saída de cada clipe.
+    @Published private(set) var laneVolume: [EditTrack: Double] = [:]
+    @Published private(set) var laneFade: [EditTrack: Double] = [:]
+    func setLaneVolume(_ t: EditTrack, _ v: Double) async { laneVolume[t] = abs(v - 1) < 0.001 ? nil : max(0, min(2, v)); saveEdit(); await rebuildPlayer(at: playhead) }
+    func setLaneFade(_ t: EditTrack, _ f: Double) async { laneFade[t] = f <= 0 ? nil : min(10, f); saveEdit(); await rebuildPlayer(at: playhead) }
+
+    /// Velocidades oferecidas no menu.
+    static let speeds: [Double] = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4]
+    /// A velocidade do clipe marcado (o primeiro inteiro dentro do trecho, em qualquer linha ativa); `nil` sem clipe.
+    var selectedRate: Double? {
+        guard let sel = selection else { return nil }
+        for l in enabled.subtracting(locked) { if let c = timeline.clips(l).first(where: { $0.at >= sel.start - 1e-6 && $0.end <= sel.end + 1e-6 }) { return c.rate } }
+        return nil
+    }
+    /// Muda a velocidade dos clipes inteiros dentro do trecho marcado, em todas as linhas não protegidas (mesmo as suprimidas,
+    /// para o som acompanhar a imagem se voltarem a entrar). O trecho marcado passa a cobrir o clipe na nova duração.
+    func setSpeed(_ rate: Double) async {
+        guard let sel = selection else { return }
+        let before = snapshot()
+        var next = timeline
+        guard next.setRate(rate, in: sel, tracks: Set(timeline.tracks).subtracting(locked)) else { message = L("Marque um clipe inteiro (clique nele) para lhe mudar a velocidade."); return }
+        timeline = next
+        let lanesSel = selectionLanes
+        if let c = next.lanes.flatMap(\.clips).first(where: { abs($0.at - sel.start) < 1e-6 }) { selection = TimeSpan(start: c.at, end: c.end); selectionLanes = lanesSel }
+        previewLabel = nil
+        await commit(before, at: sel.start)
+    }
+
+    /// Importa um ficheiro de áudio (MP3, M4A, WAV, AAC, AIFF…) para a linha «Música», a começar na posição de reprodução
+    /// (uma cópia fica na pasta da edição).
+    func importAudio(_ file: URL) async {
+        let a = AVURLAsset(url: file)
+        guard let len = try? await a.load(.duration).seconds, len > 0.05, let _ = try? await a.loadTracks(withMediaType: .audio).first else { message = L("Não foi possível ler o áudio de %@.", file.lastPathComponent); return }
+        try? FileManager.default.createDirectory(at: editFolder, withIntermediateDirectories: true)
+        let id = nextMedia; nextMedia += 1
+        let dest = editFolder.appendingPathComponent("importado-\(id)-music.\(file.pathExtension.isEmpty ? "m4a" : file.pathExtension)")
+        do { try? FileManager.default.removeItem(at: dest); try FileManager.default.copyItem(at: file, to: dest) } catch { message = L("Não foi possível copiar o áudio: %@", error.localizedDescription); return }
+        let before = snapshot()
+        await registerGenerated(id, lane: .music, file: dest, length: len)
+        await addAudioClip(lane: .music, media: id, length: len, at: playhead, before: before)
+    }
+
+    private func addAudioClip(lane: EditTrack, media id: Int, length: Double, at t: Double, before: Snapshot) async {
+        let clip = Clip(media: id, src: TimeSpan(start: 0, end: length), at: t)
+        if timeline.tracks.contains(lane) { timeline.insert(EditPiece(length: length, lanes: [lane: [Clip(media: id, src: clip.src, at: 0)]]), at: t, ripple: false) }
+        else { timeline.addLane(lane, clips: [clip]) }
+        enabled.insert(lane)
+        selectionLanes = [lane]; selection = TimeSpan(start: t, end: t + length)
+        await commit(before, at: t)
+    }
+
+    /// Tira uma linha acrescentada (música, narração) e os seus ficheiros.
+    func removeLane(_ t: EditTrack) async {
+        guard t == .music || t == .narration else { return }
+        let before = snapshot()
+        timeline.removeLane(t)
+        enabled.remove(t); locked.remove(t); laneVolume[t] = nil; laneFade[t] = nil
+        if selectionLanes.contains(t) { selection = nil }
+        await commit(before, at: playhead)
+    }
+
+    // Narração: grava do microfone escolhido enquanto o vídeo toca, a partir da posição de reprodução; ao parar entra na
+    // linha «Narração».
+    @Published private(set) var isNarrating = false
+    private var narrator: NarrationRecorder?
+    private var narrationStart = 0.0
+
+    func startNarration() async {
+        guard !isNarrating, working == nil else { return }
+        guard await MicrophonePermission.request() else { message = L("Sem permissão para o microfone: ative o Toth em Definições do Sistema → Privacidade e Segurança → Microfone."); return }
+        try? FileManager.default.createDirectory(at: editFolder, withIntermediateDirectories: true)
+        annotateMode = false; frameMode = false
+        let id = nextMedia
+        let dest = editFolder.appendingPathComponent("narracao-\(id)-narration.m4a")
+        do {
+            let n = try NarrationRecorder(to: dest, device: MicrophoneChoice.device())
+            try n.start()
+            narrator = n
+        } catch { message = L("Não foi possível começar a gravar: %@", error.localizedDescription); return }
+        narrationStart = playhead
+        isNarrating = true
+        if playhead >= timeline.duration - 0.05 { seek(to: 0); narrationStart = 0 }
+        player.play()
+    }
+
+    func stopNarration() async {
+        guard isNarrating, let n = narrator else { return }
+        player.pause()
+        isNarrating = false
+        narrator = nil
+        do {
+            let (file, len) = try await n.finish()
+            guard len > 0.1 else { try? FileManager.default.removeItem(at: file); message = L("A narração ficou vazia."); return }
+            let before = snapshot()
+            let id = nextMedia; nextMedia += 1
+            await registerGenerated(id, lane: .narration, file: file, length: len)
+            await addAudioClip(lane: .narration, media: id, length: len, at: narrationStart, before: before)
+        } catch { message = L("Não foi possível guardar a narração: %@", error.localizedDescription) }
+    }
+
+    /// Miniaturas na linha do vídeo (opção; por omissão a linha é simples).
+    @Published var showThumbnails: Bool = UserDefaults.standard.bool(forKey: "timelineThumbnails") {
+        didSet { UserDefaults.standard.set(showThumbnails, forKey: "timelineThumbnails"); if showThumbnails { Task { await loadThumbnails() } } }
+    }
+    @Published private(set) var thumbnails: [Int: [CGImage]] = [:]
+    private var thumbnailsLoading: Set<Int> = []
+
+    /// Gera as miniaturas de cada média com vídeo (uma por segundo, até 150, com 76 px de altura), em segundo plano.
+    func loadThumbnails() async {
+        guard showThumbnails else { return }
+        for (id, a) in assets where thumbnails[id] == nil && !thumbnailsLoading.contains(id) && tracks[TrackKey(media: id, lane: .video)] != nil {
+            thumbnailsLoading.insert(id)
+            let len = mediaLength[id] ?? 0
+            let n = max(1, min(150, Int(len.rounded(.up))))
+            let gen = AVAssetImageGenerator(asset: a)
+            gen.appliesPreferredTrackTransform = true
+            gen.maximumSize = CGSize(width: 400, height: 76)
+            gen.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600); gen.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
+            var out: [CGImage] = []
+            for i in 0..<n {
+                let t = CMTime(seconds: (Double(i) + 0.5) * len / Double(n), preferredTimescale: 600)
+                if let (img, _) = try? await gen.image(at: t) { out.append(img) } else if let last = out.last { out.append(last) }
+            }
+            thumbnails[id] = out
+            thumbnailsLoading.remove(id)
+        }
+    }
 
     // MARK: Anotações sobre o vídeo (com início e fim)
 
@@ -434,11 +570,12 @@ final class VideoEditorModel: ObservableObject {
         let wasPlaying = isPlaying
         let item: AVPlayerItem
         do {
-            let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize, rotation: outputRotation)
+            let (comp, mix, vc) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize, rotation: outputRotation, volumes: laneVolume, fades: laneFade)
             guard token == rebuildToken else { return }
             plain = (comp, vc)
             item = AVPlayerItem(asset: comp)
             item.audioMix = mix
+            item.audioTimePitchAlgorithm = .spectral   // com a velocidade alterada o tom mantém-se
             item.videoComposition = vc.map { hasOverlays ? OverlayCompositor.wrap($0, provider: overlayProvider) : $0 }
         } catch { message = error.localizedDescription; return }
         if let e = endObserver { NotificationCenter.default.removeObserver(e) }
@@ -699,14 +836,16 @@ final class VideoEditorModel: ObservableObject {
 
     // MARK: Guardar a edição (ao lado do vídeo)
 
-    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int; var enabled: [String]?; var locked: [String]?; var outputWidth: Double?; var outputHeight: Double?; var outputRotation: Double?; var overlays: [VideoOverlay]? }
+    private struct EditFile: Codable { var timeline: EditTimeline; var media: [String: String]; var nextMedia: Int; var enabled: [String]?; var locked: [String]?; var outputWidth: Double?; var outputHeight: Double?; var outputRotation: Double?; var overlays: [VideoOverlay]?; var volumes: [String: Double]?; var fades: [String: Double]? }
 
     private func saveEdit() {
-        if timeline.isEdited || enabled.count != timeline.tracks.count || !locked.isEmpty || isOutputTransformed || hasOverlays {
+        if timeline.isEdited || enabled.count != timeline.tracks.count || !locked.isEmpty || isOutputTransformed || hasOverlays || !laneVolume.isEmpty || !laneFade.isEmpty {
             try? FileManager.default.createDirectory(at: editFolder, withIntermediateDirectories: true)
             let f = EditFile(timeline: timeline, media: Dictionary(uniqueKeysWithValues: media.filter { $0.key != 0 }.map { (String($0.key), $0.value.lastPathComponent) }), nextMedia: nextMedia,
                              enabled: enabled.map(\.rawValue).sorted(), locked: locked.map(\.rawValue).sorted(), outputWidth: outputSize.map { Double($0.width) }, outputHeight: outputSize.map { Double($0.height) }, outputRotation: outputRotation == 0 ? nil : outputRotation,
-                             overlays: overlays.isEmpty ? nil : overlays)
+                             overlays: overlays.isEmpty ? nil : overlays,
+                             volumes: laneVolume.isEmpty ? nil : Dictionary(uniqueKeysWithValues: laneVolume.map { ($0.key.rawValue, $0.value) }),
+                             fades: laneFade.isEmpty ? nil : Dictionary(uniqueKeysWithValues: laneFade.map { ($0.key.rawValue, $0.value) }))
             try? JSONEncoder().encode(f).write(to: editFile, options: .atomic)
         } else if overlayEditor == nil { try? FileManager.default.removeItem(at: editFolder) }   // (com o editor das anotações aberto, o pacote fica)
         else { try? FileManager.default.removeItem(at: editFile) }
@@ -715,7 +854,7 @@ final class VideoEditorModel: ObservableObject {
     /// Volta a ler a edição guardada (se houver e for deste vídeo).
     private func loadSaved() {
         guard let data = try? Data(contentsOf: editFile), let f = try? JSONDecoder().decode(EditFile.self, from: data),
-              abs(f.timeline.sourceDuration - timeline.sourceDuration) < 0.5, f.timeline.tracks == timeline.tracks else { return }
+              abs(f.timeline.sourceDuration - timeline.sourceDuration) < 0.5, f.timeline.tracks.starts(with: timeline.tracks) else { return }
         var ok = true
         for (k, name) in f.media {
             guard let id = Int(k) else { continue }
@@ -728,6 +867,8 @@ final class VideoEditorModel: ObservableObject {
         if let l = f.locked { locked = Set(l.compactMap(EditTrack.init(rawValue:))).intersection(timeline.tracks) }
         if let w = f.outputWidth, let h = f.outputHeight, w >= 16, h >= 16 { outputSize = CGSize(width: w, height: h) }
         if let r = f.outputRotation { outputRotation = Geometry.normalizedDegrees(r) }
+        if let v = f.volumes { laneVolume = Dictionary(uniqueKeysWithValues: v.compactMap { k, val in EditTrack(rawValue: k).map { ($0, val) } }) }
+        if let fd = f.fades { laneFade = Dictionary(uniqueKeysWithValues: fd.compactMap { k, val in EditTrack(rawValue: k).map { ($0, val) } }) }
         if let o = f.overlays, !o.isEmpty, overlayEditor == nil, FileManager.default.fileExists(atPath: overlayPackage.path) {
             overlays = o
             // as anotações desenham-se desde a abertura: o editor carrega-se já (sem entrar no modo Anotar)
@@ -771,13 +912,32 @@ final class VideoEditorModel: ObservableObject {
     /// Escreve o vídeo já editado num ficheiro novo (`…_editado.mp4`, na pasta das capturas) e devolve-o.
     func exportEdited() async throws -> URL {
         working = L("A guardar o vídeo…"); defer { working = nil }
-        let (comp, mix, vc0) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize, rotation: outputRotation)
-        let vc = vc0.map { hasOverlays ? OverlayCompositor.wrap($0, provider: overlayProvider) : $0 }
+        let (comp, mix, vc) = try await finalComposition()
         let base = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_editado", with: "")
         var out = CaptureStore.folder.appendingPathComponent("\(base)_editado.mp4")
         var n = 2
         while FileManager.default.fileExists(atPath: out.path) { out = CaptureStore.folder.appendingPathComponent("\(base)_editado_\(n).mp4"); n += 1 }
         try await VideoExporter.export(composition: comp, videoComposition: vc, audioMix: mix, to: out)
         return out
+    }
+
+    /// A composição final (cortes, tamanho, rotação, volumes, velocidade e anotações), como vai para o ficheiro.
+    func finalComposition() async throws -> (AVMutableComposition, AVAudioMix?, AVVideoComposition?) {
+        let (comp, mix, vc0) = try await VideoComposer.build(timeline: timeline, tracks: tracks, mediaLength: mediaLength, enabled: enabled, renderSize: outputSize, rotation: outputRotation, volumes: laneVolume, fades: laneFade)
+        return (comp, mix, vc0.map { hasOverlays ? OverlayCompositor.wrap($0, provider: overlayProvider) : $0 })
+    }
+
+    /// Guarda o vídeo editado como GIF animado (10 imagens por segundo, até 640 px de largura).
+    func exportGIF(to out: URL) async throws {
+        working = L("A guardar o GIF…"); defer { working = nil }
+        let (comp, _, vc) = try await finalComposition()
+        try await VideoExporter.exportGIF(composition: comp, videoComposition: vc, to: out)
+    }
+
+    /// Guarda só o áudio (misturado, com volumes e fades) em M4A.
+    func exportAudio(to out: URL) async throws {
+        working = L("A guardar o áudio…"); defer { working = nil }
+        let (comp, mix, _) = try await finalComposition()
+        try await VideoExporter.exportAudio(composition: comp, audioMix: mix, to: out)
     }
 }

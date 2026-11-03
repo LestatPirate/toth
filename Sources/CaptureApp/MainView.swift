@@ -4,6 +4,7 @@
 import SwiftUI
 import AppKit
 import CaptureCore
+import UniformTypeIdentifiers
 
 struct MainView: View {
     @ObservedObject var state: AppState
@@ -170,7 +171,7 @@ private struct FooterBar: View {
     @ObservedObject var state: AppState
     var body: some View {
         ZStack {
-            HStack { Spacer(); if let model = state.model { ZoomControls(model: model) }; Spacer() }
+            HStack { Spacer(); if let model = state.model { ZoomControls(model: model); DragOutHandle(model: model).frame(width: 26, height: 22).padding(.leading, 6) }; Spacer() }
             HStack {
                 Spacer()
                 // mostrar/ocultar a biblioteca (faixa de miniaturas)
@@ -187,6 +188,41 @@ private struct FooterBar: View {
         }
         .padding(.horizontal, 12).frame(height: 30)
         .background(.bar)
+    }
+}
+
+/// Pega para arrastar a imagem final (PNG) para outra app, para o Finder ou para o Desktop.
+struct DragOutHandle: NSViewRepresentable {
+    let model: EditorModel
+    func makeNSView(context: Context) -> DragOutView { let v = DragOutView(); v.model = model; v.toolTip = L("Arraste para levar a imagem final (PNG) para outra app ou para o Finder"); return v }
+    func updateNSView(_ v: DragOutView, context: Context) { v.model = model }
+}
+
+final class DragOutView: NSView, NSDraggingSource, NSFilePromiseProviderDelegate {
+    weak var model: EditorModel?
+    override var intrinsicContentSize: NSSize { NSSize(width: 26, height: 22) }
+    override func draw(_ dirtyRect: NSRect) {
+        let img = NSImage(systemSymbolName: "square.and.arrow.up.on.square", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular).applying(.init(paletteColors: [.secondaryLabelColor])))
+        img?.draw(in: NSRect(x: (bounds.width - 16) / 2, y: (bounds.height - 16) / 2, width: 16, height: 16))
+    }
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseDragged(with event: NSEvent) {
+        guard let model else { return }
+        let promise = NSFilePromiseProvider(fileType: UTType.png.identifier, delegate: self)
+        let item = NSDraggingItem(pasteboardWriter: promise)
+        let preview = model.exportPNG().flatMap { NSImage(data: $0) } ?? NSImage(systemSymbolName: "photo", accessibilityDescription: nil)!
+        let k = min(1, 160 / max(preview.size.width, 1), 120 / max(preview.size.height, 1))
+        item.setDraggingFrame(NSRect(x: -preview.size.width * k / 2 + bounds.midX, y: -preview.size.height * k / 2 + bounds.midY, width: preview.size.width * k, height: preview.size.height * k), contents: preview)
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+    func filePromiseProvider(_ p: NSFilePromiseProvider, fileNameForType fileType: String) -> String { (model?.url.deletingPathExtension().lastPathComponent ?? "Toth") + ".png" }
+    func filePromiseProvider(_ p: NSFilePromiseProvider, writePromiseTo url: URL, completionHandler: @escaping (Error?) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            guard let png = self?.model?.exportPNG() else { completionHandler(CocoaError(.fileWriteUnknown)); return }
+            do { try png.write(to: url); completionHandler(nil) } catch { completionHandler(error) }
+        }
     }
 }
 

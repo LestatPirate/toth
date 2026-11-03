@@ -397,8 +397,8 @@ enum VideoEditSelfTest {
 
     /// Lê a composição do editor (com os espaços a preto) e o áudio de cada linha.
     static func decode(_ model: VideoEditorModel) async -> Decoded {
-        guard let (comp, _, vc) = try? await VideoComposer.build(timeline: model.timeline, tracks: model.trackMap, mediaLength: model.mediaLengths, enabled: model.enabled, renderSize: model.outputSize) else { return Decoded() }
-        var d = await decodeAsset(comp, videoComposition: vc)
+        guard let (comp, mix, vc) = try? await model.finalComposition() else { return Decoded() }
+        var d = await decodeAsset(comp, videoComposition: vc, audioMix: mix)
         // áudio por linha (as faixas da composição seguem a ordem das linhas)
         let lanes = model.timeline.tracks.filter { $0 != .video && !model.timeline.clips($0).isEmpty && model.enabled.contains($0) }
         let tracks = (try? await comp.loadTracks(withMediaType: .audio)) ?? []
@@ -424,7 +424,8 @@ enum VideoEditSelfTest {
         return pcm
     }
 
-    static func decodeAsset(_ asset: AVAsset, videoComposition: AVVideoComposition? = nil) async -> Decoded {
+    /// `audioMix`: com ele, `mixed` é a mistura de todas as faixas de áudio (volumes e fades incluídos), como no ficheiro final.
+    static func decodeAsset(_ asset: AVAsset, videoComposition: AVVideoComposition? = nil, audioMix: AVAudioMix? = nil) async -> Decoded {
         var d = Decoded()
         if let vt = try? await asset.loadTracks(withMediaType: .video), !vt.isEmpty, let reader = try? AVAssetReader(asset: asset) {
             let out = AVAssetReaderVideoCompositionOutput(videoTracks: vt, videoSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
@@ -443,7 +444,18 @@ enum VideoEditSelfTest {
         }
         let at = (try? await asset.loadTracks(withMediaType: .audio)) ?? []
         d.audioTracks = at.count
-        if let a = at.first { d.mixed = await pcm(of: a, in: asset) }
+        if audioMix != nil || at.count > 1, !at.isEmpty, let reader = try? AVAssetReader(asset: asset) {
+            let out = AVAssetReaderAudioMixOutput(audioTracks: at, audioSettings: [AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
+                                                                                   AVLinearPCMIsNonInterleaved: false, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2])
+            out.audioMix = audioMix; out.audioTimePitchAlgorithm = .spectral
+            reader.add(out); reader.startReading()
+            while let sb = out.copyNextSampleBuffer() {
+                guard let block = CMSampleBufferGetDataBuffer(sb) else { continue }
+                var len = 0; var ptr: UnsafeMutablePointer<Int8>?
+                CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &len, dataPointerOut: &ptr)
+                if let ptr { d.mixed += Array(UnsafeBufferPointer(start: UnsafeRawPointer(ptr).assumingMemoryBound(to: Float.self), count: len / 4)) }
+            }
+        } else if let a = at.first { d.mixed = await pcm(of: a, in: asset) }
         return d
     }
 
@@ -462,6 +474,110 @@ enum VideoEditSelfTest {
     }
     static func blue(_ d: Decoded, near t: Double) -> Int { d.blues.min { abs($0.t - t) < abs($1.t - t) }?.b ?? -1 }
     static func red(_ d: Decoded, near t: Double) -> Int { d.reds.min { abs($0.t - t) < abs($1.t - t) }?.r ?? -1 }
+
+    /// Ficheiro M4A só com um tom (para testar a importação de áudio).
+    static func makeTone(at url: URL, seconds: Double, freq: Double) async throws {
+        try? FileManager.default.removeItem(at: url)
+        let w = try AVAssetWriter(outputURL: url, fileType: .m4a)
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 128_000])
+        w.add(input)
+        guard w.startWriting() else { throw VideoExporter.Failure.io("tom") }
+        w.startSession(atSourceTime: .zero)
+        var frame: Int64 = 0
+        while Double(frame) / 48_000 < seconds {
+            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 2_000_000) }
+            let samples = VideoSelfTest.tone(freq, fromSec: Double(frame) / 48_000, frames: 1024, amp: 0.4)
+            if let sb = AudioConversion.sampleBuffer(from: samples, startFrame: frame) { input.append(sb) }
+            frame += 1024
+        }
+        input.markAsFinished()
+        await w.finishWriting()
+        if w.status != .completed { throw VideoExporter.Failure.io(w.error?.localizedDescription ?? "?") }
+    }
+
+    /// Volume e fade por linha, velocidade, áudio importado, memória ao reabrir, GIF, só áudio e miniaturas.
+    static func audio(dir: URL) async -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir.appendingPathComponent("biblioteca")
+        let url = dir.appendingPathComponent("origem.mp4")
+        do { try await makeSource(at: url) } catch { return ["não criou o vídeo de origem: \(error)"] }
+        let model = VideoEditorModel(url: url)
+        await model.load()
+        await model.toggleEnabled(.microphone)   // só o sistema na mistura
+        // 1) volume a metade
+        let d0 = await decode(model)
+        await model.setLaneVolume(.system, 0.5)
+        let d1 = await decode(model)
+        let r0 = rms(d0.mixed, 1.2, 1.8), r1 = rms(d1.mixed, 1.2, 1.8)
+        check(r0 > 0.05 && abs(r1 / r0 - 0.5) < 0.08, "volume a 50% devia dar metade (\(r0) → \(r1))")
+        await model.setLaneVolume(.system, 1)
+        // 2) fade de 1 s na entrada: o começo fica muito mais baixo
+        let a0 = rms(d0.mixed, 0.0, 0.05)
+        await model.setLaneFade(.system, 1.0)
+        let d2 = await decode(model)
+        let a2 = rms(d2.mixed, 0.0, 0.05)
+        check(a0 > 0.02 && a2 < a0 * 0.15, "fade de 1 s devia quase silenciar o começo (\(a0) → \(a2))")
+        check(abs(rms(d2.mixed, 2.4, 2.6) - rms(d0.mixed, 2.4, 2.6)) < 0.02, "a meio do clipe o fade não mexe")
+        await model.setLaneFade(.system, 0)
+        // 3) velocidade 2×: o vídeo dura metade e aos 1,0 s vê-se o segundo 2
+        model.selectionLanes = [.video]; model.selection = TimeSpan(start: 0, end: 6)
+        check(model.selectedRate == 1, "velocidade do clipe marcado")
+        await model.setSpeed(2)
+        check(abs(model.duration - 3) < 1e-6 && model.timeline.clips(.video)[0].rate == 2 && model.timeline.clips(.system)[0].rate == 2, "2× dura metade (\(model.duration))")
+        check(model.selection == TimeSpan(start: 0, end: 3), "o trecho marcado passa a cobrir o clipe na nova duração (\(String(describing: model.selection)))")
+        let d3 = await decode(model)
+        check(abs(blue(d3, near: 1.0) - blue(2)) <= 2, "aos 1,0 s a 2× vê-se o segundo 2 (B=\(blue(d3, near: 1.0)))")
+        check(abs((d3.blues.last?.t ?? 0) - 3) < 0.2, "o vídeo descodificado acaba aos 3 s (\(d3.blues.last?.t ?? -1))")
+        // o tom mantém-se (algoritmo espectral): o tom do segundo 1 (500 Hz) continua a 500 Hz, agora entre 0,5 e 1,0 s
+        check(g(d3.mixed, 0.55, 0.95, sysFreq(1)) > 4 * g(d3.mixed, 0.55, 0.95, sysFreq(1) * 2), "o tom não sobe com a velocidade")
+        await model.undo()
+        check(abs(model.duration - 6) < 1e-6, "desfazer a velocidade")
+        // 4) importar áudio (tom de 700 Hz, 2 s) aos 1,5 s: linha «Música»
+        let tone = dir.appendingPathComponent("tom.m4a")
+        do { try await makeTone(at: tone, seconds: 2, freq: 700) } catch { return fails + ["não criou o tom: \(error)"] }
+        model.seek(to: 1.5)
+        await model.importAudio(tone)
+        check(model.timeline.tracks.contains(.music) && model.timeline.clips(.music).count == 1 && abs(model.timeline.clips(.music)[0].at - 1.5) < 1e-6, "a música entra na linha «Música» aos 1,5 s (\(model.timeline.tracks))")
+        check(model.enabled.contains(.music) && model.selectionLanes == [.music], "a linha nova está ativa e marcada")
+        let d4 = await decode(model)
+        check(g(d4.mixed, 2.0, 3.0, 700) > 8 * g(d4.mixed, 4.5, 5.5, 700), "o tom importado ouve-se entre 1,5 e 3,5 s e não depois (\(g(d4.mixed, 2.0, 3.0, 700)) vs \(g(d4.mixed, 4.5, 5.5, 700)))")
+        check(model.peaks[TrackKey(media: 1, lane: .music)]?.isEmpty == false, "a onda da música desenha-se")
+        // 5) reabrir: a linha, o ficheiro, o volume e o fade voltam
+        await model.setLaneVolume(.music, 0.75); await model.setLaneFade(.music, 0.5)
+        model.tearDown()
+        let again = VideoEditorModel(url: url)
+        await again.load()
+        check(again.timeline.tracks.contains(.music) && again.timeline.clips(.music).count == 1, "ao reabrir a música continua lá (\(again.timeline.tracks))")
+        check(again.laneVolume[.music] == 0.75 && again.laneFade[.music] == 0.5, "volume e fade voltam (\(again.laneVolume), \(again.laneFade))")
+        check(again.trackMap[TrackKey(media: 1, lane: .music)] != nil, "a faixa da música foi registada ao reabrir")
+        // 6) GIF e só áudio
+        let gif = dir.appendingPathComponent("saida.gif")
+        do { try await again.exportGIF(to: gif) } catch { fails.append("GIF: \(error)") }
+        if let src = CGImageSourceCreateWithURL(gif as CFURL, nil) {
+            let n = CGImageSourceGetCount(src)
+            check(n >= 55 && n <= 62, "o GIF devia ter ~60 imagens (6 s a 10/s): \(n)")
+            if let f = CGImageSourceCreateImageAtIndex(src, 0, nil) { check(f.width == 320 && f.height == 180, "tamanho das imagens do GIF (\(f.width)×\(f.height))") }
+        } else { fails.append("o GIF não abre") }
+        let m4a = dir.appendingPathComponent("saida.m4a")
+        do { try await again.exportAudio(to: m4a) } catch { fails.append("M4A: \(error)") }
+        if let len = try? await AVURLAsset(url: m4a).load(.duration).seconds { check(abs(len - 6) < 0.3, "o M4A dura 6 s (\(len))") } else { fails.append("o M4A não abre") }
+        let dm = await decodeAsset(AVURLAsset(url: m4a))
+        check(dm.audioTracks == 1 && g(dm.mixed, 2.0, 3.0, 700) > 8 * g(dm.mixed, 4.5, 5.5, 700), "o M4A leva a música misturada")
+        // 7) tirar a linha; miniaturas
+        await again.removeLane(.music)
+        check(!again.timeline.tracks.contains(.music), "tirar a linha «Música»")
+        again.showThumbnails = true
+        await again.loadThumbnails()
+        check((again.thumbnails[0]?.count ?? 0) == 6 && (again.thumbnails[0]?.first?.height ?? 999) <= 76, "6 miniaturas até 76 px de altura (\(again.thumbnails[0]?.count ?? -1))")
+        again.showThumbnails = false
+        // 8) narração sem microfone: recusa clara
+        do { _ = try NarrationRecorder(to: dir.appendingPathComponent("n.m4a"), device: nil); fails.append("sem microfone devia recusar") } catch {}
+        again.tearDown()
+        return fails
+    }
 
     /// Anotações com início e fim: criadas no modo Anotar, tempos, seguir uma zona, reprodução com o compositor, exportação
     /// com as anotações no ficheiro e memória ao reabrir.
