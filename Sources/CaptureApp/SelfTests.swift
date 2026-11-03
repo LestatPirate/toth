@@ -375,6 +375,9 @@ enum SelfTests {
         }
         add(.rect(origin: Point(x: 880, y: 150), width: 340, height: 150), { $0.colorHex = "#34C759"; $0.fillHex = "#E7F9EC"; $0.text = TextFormat(align: .left, vAlign: .middle, list: .numbered); $0.text.size = 24 },
             caption: "Escolha o cliente\nPreencha os dados\nGuarde")
+        add(.patch(origin: Point(x: 330, y: 384), width: 300, height: 40))                                                    // Reparo: o telefone desaparece
+        add(.stamp(origin: Point(x: 540, y: 516), width: 60, height: 60, symbol: StampLibrary.symbolKey("checkmark.circle.fill"))) { $0.colorHex = "#34C759" }
+        add(.stamp(origin: Point(x: 1180, y: 60), width: 64, height: 64, symbol: "🔒"))
         return url
     }
 

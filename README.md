@@ -11,7 +11,7 @@
 
 <br>
 
-[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.4.0-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
+[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.5.0-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
 [![Licença](https://img.shields.io/badge/LICEN%C3%87A-MIT-111111?style=for-the-badge)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-15%2B-111111?style=for-the-badge&logo=apple&logoColor=white)](#instalação)
 [![Apoiar](https://img.shields.io/badge/APOIAR-PayPal-0070BA?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/lestat013)
@@ -28,10 +28,10 @@
 
 <table>
 <tr>
-<td width="25%" valign="top"><h4>📸 Capturar</h4>Região com o ecrã congelado, página inteira por rolagem e ecrã completo.</td>
-<td width="25%" valign="top"><h4>✏️ Anotar</h4>Setas, texto, balões, etapas, pixelização e desfoque. Sempre reeditável.</td>
-<td width="25%" valign="top"><h4>🎥 Gravar</h4>MP4 com áudio do sistema e microfone, a qualquer momento.</td>
-<td width="25%" valign="top"><h4>✂️ Editar vídeo</h4>Três linhas, blocos que se movem, cortes exatos ao quadro.</td>
+<td width="25%" valign="top"><h4>📸 Capturar</h4>Região com o ecrã congelado, janela (com ou sem sombra), página inteira por rolagem e ecrã completo.</td>
+<td width="25%" valign="top"><h4>✏️ Anotar</h4>Setas, texto, balões, etapas, carimbos, pixelização, desfoque e reparo. Alinhar, agrupar, rodar. Sempre reeditável.</td>
+<td width="25%" valign="top"><h4>🎥 Gravar</h4>Área ou janela em MP4, com áudio do sistema e microfone à escolha.</td>
+<td width="25%" valign="top"><h4>✂️ Editar vídeo</h4>Cortes ao quadro, anotações com início e fim, música, narração, velocidade; MP4, GIF ou só áudio.</td>
 </tr>
 </table>
 
@@ -56,6 +56,8 @@ Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento 
 | **Arrastar para fora** | Pega no rodapé para arrastar a imagem final (PNG) para outra app ou para o Finder; **Copiar tudo** também leva um ficheiro PNG. |
 
 **Editor de vídeo**
+
+<p align="center"><img src="docs/images/toth-video-editor.png" alt="Editor de vídeo do Toth" width="880"></p>
 
 | | |
 |---|---|
@@ -85,8 +87,6 @@ Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento 
 - **Áudio do sistema** e **microfone** ligam-se e desligam-se a qualquer momento, e cada um fica na sua faixa.
 
 **Editor de vídeo com linha de tempo de três linhas** (vídeo, áudio do sistema, microfone)
-
-<p align="center"><img src="docs/images/toth-video-editor.png" alt="Editor de vídeo do Toth" width="880"></p>
 
 | | |
 |---|---|
@@ -127,7 +127,7 @@ O Toth não tem legendas automáticas, efeitos nem transições, e não partilha
 ### Instalação
 **Requisitos:** macOS 15 ou superior (Apple Silicon e Intel; testado em Apple Silicon).
 
-1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.4.0.zip` e descomprima.
+1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.5.0.zip` e descomprima.
 2. Arraste `Toth.app` para **Aplicações**.
 3. **Primeira abertura (uma só vez).** A app ainda não está notarizada pela Apple, por isso o macOS mostra *“Toth” não aberto*. **Não mova para o Lixo:** clique em **OK**, abra **Definições do Sistema → Privacidade e Segurança**, desça até **Segurança**, clique em **Abrir mesmo assim** junto a “Toth” e confirme. (No macOS 14 ou anterior: botão direito → **Abrir**. No Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Permissão guiada.** Ao abrir, o Toth verifica a **Gravação de Ecrã** e, se faltar, mostra um guia de 3 passos: **Conceder permissão** → ativar o Toth na lista → **Reiniciar o Toth**.
@@ -181,6 +181,8 @@ In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**
 | **Drag out** | A grip in the footer drags the final image (PNG) to another app or to the Finder; **Copy all** also carries a PNG file. |
 
 **Video editor**
+
+<p align="center"><img src="docs/images/toth-video-editor.png" alt="Toth video editor" width="880"></p>
 
 | | |
 |---|---|
@@ -250,7 +252,7 @@ Toth has no automatic captions, effects or transitions, and does not share onlin
 ### Installation
 **Requirements:** macOS 15 or later (Apple Silicon and Intel; tested on Apple Silicon).
 
-1. Under [**Releases**](../../releases/latest), download `Toth-0.4.0.zip` and unzip it.
+1. Under [**Releases**](../../releases/latest), download `Toth-0.5.0.zip` and unzip it.
 2. Drag `Toth.app` to **Applications**.
 3. **First launch (once).** The app is not yet notarized by Apple, so macOS shows *“Toth” Not Opened*. **Don't move it to the Trash:** click **Done**, open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to “Toth” and confirm. (On macOS 14 or earlier: right-click → **Open**. In Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Guided permission.** On launch, Toth checks **Screen Recording** and, if missing, shows a 3-step guide: **Grant permission** → turn Toth on in the list → **Restart Toth**.
