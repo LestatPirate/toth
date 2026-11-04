@@ -53,6 +53,12 @@ final class CanvasView: NSView {
     private var guides: (xs: [Double], ys: [Double]) = ([], [])
     /// Laço de seleção (arrastar no vazio com Mover).
     private var marquee: (anchor: Point, rect: Rect)?
+    /// Ferramenta Selecionar: retângulo/elipse a ser arrastado (e como se junta ao que já está selecionado).
+    private var areaDragRect: Rect?
+    private var areaCombine: AreaMask.Combine = .replace
+    /// Carregou dentro da seleção de área: se arrastar, levanta-a como objeto e move-a; se só clicar, fica como está (ou,
+    /// com a varinha, volta a escolher).
+    private var areaLiftPending: Point?
     /// Objeto existente sob o rato quando se começou a desenhar: se for só um clique (sem arrastar), seleciona-se esse objeto.
     private var clickCandidate: UUID?
     /// Gesto sobre a seleção múltipla: redimensionar o grupo por um canto (em proporção, à volta do canto oposto) ou rodá-lo.
@@ -193,6 +199,19 @@ final class CanvasView: NSView {
             ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor); ctx.fill(m.rect.cg)
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor); ctx.setLineWidth(1 / scale); ctx.stroke(m.rect.cg)
         }
+        // seleção de área: a parte coberta a azul claro, com a borda a tracejado branco/preto
+        if let sel = model.areaSelection, !sel.isEmpty, model.tool == .area {
+            if let mimg = areaMaskImage(sel) {
+                ctx.saveGState()
+                Renderer.clipFlipped(ctx, to: sel.rect.cg, mask: mimg)
+                ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.22).cgColor); ctx.fill(sel.rect.cg)
+                ctx.restoreGState()
+            }
+            drawAnts(sel.rect.cg, ctx)
+        }
+        if let r = areaDragRect {
+            if model.areaMode == .ellipse { drawAnts(ellipse: r.cg, ctx) } else { drawAnts(r.cg, ctx) }
+        }
         if !guides.xs.isEmpty || !guides.ys.isEmpty {
             ctx.setStrokeColor(NSColor.systemPink.cgColor); ctx.setLineWidth(1 / scale)
             let v = CGRect(x: -origin.x / scale, y: -origin.y / scale, width: bounds.width / scale, height: bounds.height / scale)
@@ -255,6 +274,35 @@ final class CanvasView: NSView {
         if free { return d }
         let snapped = (d / 15).rounded() * 15
         return abs(d - snapped) <= 3 ? Geometry.normalizedDegrees(snapped) : d
+    }
+
+    // MARK: Selecionar área
+
+    private var areaMaskCache: (mask: AreaMask, image: CGImage)?
+    /// Imagem da máscara (cinzento: branco = dentro) para recortar o desenho da seleção.
+    private func areaMaskImage(_ m: AreaMask) -> CGImage? {
+        if let c = areaMaskCache, c.mask == m { return c.image }
+        var bytes = [UInt8](repeating: 0, count: m.width * m.height)
+        for j in 0..<m.height { for i in 0..<m.width { bytes[j * m.width + i] = m.alpha[j * m.width + i] } }   // (a 1.ª fila em memória é a de cima)
+        guard let ctx = CGContext(data: &bytes, width: m.width, height: m.height, bitsPerComponent: 8, bytesPerRow: m.width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue),
+              let img = ctx.makeImage() else { return nil }
+        areaMaskCache = (m, img)
+        return img
+    }
+    private func drawAnts(_ r: CGRect, _ ctx: CGContext) {
+        ctx.setLineWidth(1 / scale)
+        ctx.setStrokeColor(NSColor.black.cgColor); ctx.setLineDash(phase: 0, lengths: [4 / scale, 4 / scale]); ctx.stroke(r)
+        ctx.setStrokeColor(NSColor.white.cgColor); ctx.setLineDash(phase: 4 / scale, lengths: [4 / scale, 4 / scale]); ctx.stroke(r)
+        ctx.setLineDash(phase: 0, lengths: [])
+    }
+    private func drawAnts(ellipse r: CGRect, _ ctx: CGContext) {
+        ctx.setLineWidth(1 / scale)
+        ctx.setStrokeColor(NSColor.black.cgColor); ctx.setLineDash(phase: 0, lengths: [4 / scale, 4 / scale]); ctx.strokeEllipse(in: r)
+        ctx.setStrokeColor(NSColor.white.cgColor); ctx.setLineDash(phase: 4 / scale, lengths: [4 / scale, 4 / scale]); ctx.strokeEllipse(in: r)
+        ctx.setLineDash(phase: 0, lengths: [])
+    }
+    private func combine(for event: NSEvent) -> AreaMask.Combine {
+        event.modifierFlags.contains(.shift) ? .add : (event.modifierFlags.contains(.option) ? .subtract : .replace)
     }
 
     // MARK: Grupo (seleção múltipla)
@@ -473,6 +521,13 @@ final class CanvasView: NSView {
             } else {
                 model.addStep(at: p)
             }
+        case .area:
+            let op = combine(for: event)
+            // de dentro da seleção (sem modificadores): arrastar levanta-a como objeto e move-a já; um clique não a levanta
+            if op == .replace, let sel = model.areaSelection, sel.contains(p) { areaLiftPending = p; return }
+            if model.areaMode == .wand { model.wandSelect(at: p, combine: op); return }
+            areaCombine = op
+            areaDragRect = Rect(x: p.x, y: p.y, width: 0, height: 0)
         case .stamp:
             // um clique põe o carimbo com o tamanho padrão; arrastar escolhe o tamanho (como as outras formas)
             if !event.modifierFlags.contains(.option) { clickCandidate = model.topmost(at: p, tolerance: tol)?.id }
@@ -517,6 +572,20 @@ final class CanvasView: NSView {
         let p = imagePoint(event)
         if let start = dragStart, hypot((p.x - start.x) * Double(scale), (p.y - start.y) * Double(scale)) >= 3 { gestureMoved = true }
         if let g = groupDrag { dragGroup(g, to: p, free: event.modifierFlags.contains(.option)); lastPoint = p; return }
+        if let start = areaLiftPending {
+            guard gestureMoved else { return }
+            areaLiftPending = nil
+            if let id = model.liftSelection(erase: true) {
+                model.checkpoint(); moving = true
+                moveStart = (start, [id: model.doc.annotations.first { $0.id == id }!.shape])
+            } else { return }
+            // (continua: o arrasto deste evento já move o objeto levantado)
+        }
+        if areaDragRect != nil, let start = dragStart {
+            var r = Rect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
+            if event.modifierFlags.contains(.shift) && areaCombine == .replace { let s = max(r.width, r.height); r = Rect(x: p.x >= start.x ? start.x : start.x - s, y: p.y >= start.y ? start.y : start.y - s, width: s, height: s) }
+            areaDragRect = r; needsDisplay = true; return
+        }
         if let drag = imageDrag {
             let free = event.modifierFlags.contains(.option)
             switch drag {
@@ -585,7 +654,17 @@ final class CanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; groupDrag = nil; needsDisplay = true }
+        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; groupDrag = nil; areaDragRect = nil; areaLiftPending = nil; needsDisplay = true }
+        if let p0 = areaLiftPending {   // clique sem arrastar dentro da seleção
+            areaLiftPending = nil
+            if model.areaMode == .wand { model.wandSelect(at: p0, combine: .replace) }
+            return
+        }
+        if let r = areaDragRect {
+            if r.width >= 2 && r.height >= 2 { model.selectArea(model.areaMode == .ellipse ? AreaMask.ellipse(r) : AreaMask.rect(r), combine: areaCombine) }
+            else if areaCombine == .replace { model.clearAreaSelection() }   // clique no vazio: limpa
+            return
+        }
         if marquee != nil { return }   // laço: a seleção já foi feita ao arrastar (um clique só limpa)
         if groupDrag != nil { if gestureMoved { model.commit() } else { model.dropLastCheckpoint() }; endGesture(); return }
         if imageDrag != nil {
@@ -993,6 +1072,7 @@ final class CanvasView: NSView {
 
     override func resetCursorRects() {
         guard editingID == nil else { return }
+        if model.tool == .area { addCursorRect(bounds, cursor: .crosshair) }
         if model.tool == .select, model.isMultiSelection, let gb = model.selectionBounds {
             for h in groupHandlePoints(gb) { addCursorRect(viewSquare(h, 16), cursor: .crosshair) }
             addCursorRect(viewSquare(groupRotationHandlePoint(gb), 16), cursor: .pointingHand)
@@ -1109,8 +1189,9 @@ final class CanvasView: NSView {
         switch event.keyCode {
         case 51, 117: model.deleteSelection()   // Delete / Forward delete
         case 53: model.escape()                 // Esc: ferramenta → Mover; Tela → cancelar; Mover → limpar a seleção
-        case 36:                                // Return: confirma a área (Tela) ou edita o texto do elemento selecionado
+        case 36:                                // Return: confirma a área (Tela), levanta a seleção de área, ou edita o texto
             if model.tool == .canvas { model.tool = .select }
+            else if model.tool == .area, model.areaSelection != nil { model.liftSelection(erase: true) }
             else if let id = model.selection, model.selected?.editableString != nil { beginEditing(id, isNew: false) }
         case 123: if model.selection != nil { model.nudgeSelection(dx: -step, dy: 0) } else { super.keyDown(with: event) }
         case 124: if model.selection != nil { model.nudgeSelection(dx: step, dy: 0) } else { super.keyDown(with: event) }

@@ -9,16 +9,22 @@ import Foundation
 public enum Inpaint {
     /// Preenche `hole` (em píxeis do buffer, origem no canto superior esquerdo) a partir do que está à volta.
     /// `pixels`: RGBA intercalado, `width × height × 4`. A borda do buffer fora de `hole` é o que se conhece.
-    public static func fill(_ pixels: inout [UInt8], width: Int, height: Int, hole: (x: Int, y: Int, w: Int, h: Int)) {
+    /// `mask`: cobertura (`hole.w × hole.h`, 0…255) dentro do buraco; só os píxeis cobertos (> 127) são desconhecidos. `nil` = todos.
+    public static func fill(_ pixels: inout [UInt8], width: Int, height: Int, hole: (x: Int, y: Int, w: Int, h: Int), mask: [UInt8]? = nil) {
         let x0 = max(0, hole.x), y0 = max(0, hole.y), x1 = min(width, hole.x + hole.w), y1 = min(height, hole.y + hole.h)
         guard x1 > x0, y1 > y0, width > 0, height > 0 else { return }
+        func covered(_ x: Int, _ y: Int) -> Bool {
+            guard let mask else { return true }
+            let i = (y - hole.y) * hole.w + (x - hole.x)
+            return i >= 0 && i < mask.count && mask[i] > 127
+        }
         // trabalha em Float, por canal
         var img = [Float](repeating: 0, count: width * height * 4)
         for i in 0..<(width * height * 4) { img[i] = Float(pixels[i]) }
         var known = [Bool](repeating: true, count: width * height)
-        for y in y0..<y1 { for x in x0..<x1 { known[y * width + x] = false } }
+        for y in y0..<y1 { for x in x0..<x1 where covered(x, y) { known[y * width + x] = false } }
         solve(&img, known: known, width: width, height: height)
-        for y in y0..<y1 { for x in x0..<x1 { for c in 0..<4 { let i = (y * width + x) * 4 + c; pixels[i] = UInt8(max(0, min(255, img[i].rounded()))) } } }
+        for y in y0..<y1 { for x in x0..<x1 where covered(x, y) { for c in 0..<4 { let i = (y * width + x) * 4 + c; pixels[i] = UInt8(max(0, min(255, img[i].rounded()))) } } }
     }
 
     /// Resolve por níveis: reduz a metade até caber em ~32 px, resolve lá (muitas iterações baratas), amplia a solução como

@@ -29,7 +29,7 @@
 <table>
 <tr>
 <td width="25%" valign="top"><h4>📸 Capturar</h4>Região com o ecrã congelado, janela (com ou sem sombra), página inteira por rolagem e ecrã completo.</td>
-<td width="25%" valign="top"><h4>✏️ Anotar</h4>Setas, texto, balões, etapas, carimbos, pixelização, desfoque e reparo. Alinhar, agrupar, rodar. Sempre reeditável.</td>
+<td width="25%" valign="top"><h4>✏️ Anotar</h4>Setas, texto, balões, etapas, carimbos, pixelização, desfoque e reparo. Selecionar área (varinha), alinhar, agrupar, rodar. Sempre reeditável.</td>
 <td width="25%" valign="top"><h4>🎥 Gravar</h4>Área ou janela em MP4, com áudio do sistema e microfone à escolha.</td>
 <td width="25%" valign="top"><h4>✂️ Editar vídeo</h4>Cortes ao quadro, anotações com início e fim, música, narração, velocidade; MP4, GIF ou só áudio.</td>
 </tr>
@@ -50,6 +50,7 @@ Na mitologia egípcia, **Thoth (Toth)** é o deus da **escrita, do conhecimento 
 | | |
 |---|---|
 | **Captura de janela** | No seletor, carregue em **Espaço** (ou no ícone de janela) e clique numa janela: fica só ela, mesmo tapada, **com ou sem sombra** (margem transparente). Também grava uma janela em vídeo. Menu *Ficheiro → Capturar janela*. |
+| **Selecionar área** | Retângulo, elipse ou **varinha** (por cor). A área levanta-se como objeto (arraste de dentro), copia-se, apaga-se ou preenche-se a partir do que a rodeia. |
 | **Carimbos** | Símbolos (visto, cruz, aviso, estrela…) pintados com a cor escolhida, **emojis** ou qualquer texto curto, e **imagens importadas** (PNG, JPEG, SVG…) numa biblioteca sua. Um clique põe o carimbo; arrastar escolhe o tamanho. |
 | **Reparo** | **Preencher**: a região desaparece, preenchida a partir do que a rodeia. **Clonar**: a região é coberta com outra zona da imagem (arraste a alça verde para escolher a origem). Não destrutivo, como o Blur. |
 | **Disposição** | **Alinhar** (esquerda, centro, direita, topo, meio, base) e **distribuir** vários objetos; com um só, alinha-se à área. **Agrupar** (⌘G): clicar num membro seleciona o grupo. Com vários selecionados, a caixa do grupo tem cantos para **redimensionar em proporção** e uma alça para **rodar tudo**. |
@@ -175,6 +176,7 @@ In Egyptian mythology, **Thoth** is the god of **writing, knowledge and wisdom**
 | | |
 |---|---|
 | **Window capture** | In the selector, press **Space** (or the window icon) and click a window: only that window is captured, even if partly covered, **with or without its shadow** (transparent margin). Windows can be recorded as video too. Menu *File → Capture window*. |
+| **Select area** | Rectangle, ellipse or **magic wand** (by color). The area lifts as an object (drag from inside), copies, erases or fills from its surroundings. |
 | **Stamps** | Symbols (check, cross, warning, star…) painted in your color, **emojis** or any short text, and **imported pictures** (PNG, JPEG, SVG…) in a library of your own. One click places the stamp; dragging chooses the size. |
 | **Repair** | **Fill**: the region disappears, filled from its surroundings. **Clone**: the region is covered with another part of the image (drag the green handle to choose the source). Non-destructive, like Blur. |
 | **Arrange** | **Align** (left, center, right, top, middle, bottom) and **distribute** several objects; a single one aligns to the area. **Group** (⌘G): clicking a member selects the group. With several selected, the group box has corners to **resize proportionally** and a handle to **rotate everything**. |

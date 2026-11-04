@@ -144,7 +144,10 @@ public enum Shape: Codable, Equatable, Sendable {
     /// Carimbo: um símbolo do sistema (`"sf:nome"`, pintado com a cor do estilo) ou um emoji/texto curto, ajustado à caixa.
     case stamp(origin: Point, width: Double, height: Double, symbol: String)
     /// Reparo por preenchimento: a região é preenchida a partir do que a rodeia (o que está por baixo desaparece).
-    case patch(origin: Point, width: Double, height: Double)
+    /// `mask`: ficheiro em `assets/` com a cobertura (PNG; só a parte coberta é preenchida); `nil` = o retângulo todo.
+    case patch(origin: Point, width: Double, height: Double, mask: String? = nil)
+    /// Apagar: a região (ou a parte coberta pela `mask`) passa a ser a cor de fundo do documento (ou transparente).
+    case erase(origin: Point, width: Double, height: Double, mask: String? = nil)
     /// Reparo por clonagem: a região é coberta com o que está por baixo noutro sítio (`source` = canto superior esquerdo da origem).
     case clone(origin: Point, width: Double, height: Double, source: Point)
 }

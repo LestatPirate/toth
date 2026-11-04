@@ -91,6 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return canvas.selfTestTextFit()
             }
         }
+        if let i = args.firstIndex(of: "--area-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1]); later("AREA-SELFTEST") { SelfTests.areaSelfTest(dir: dir) }
+        }
         if let i = args.firstIndex(of: "--arrange-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("ARRANGE-SELFTEST") { SelfTests.arrangeSelfTest(dir: dir) }
         }

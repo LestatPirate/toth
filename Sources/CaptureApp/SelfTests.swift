@@ -396,6 +396,129 @@ enum SelfTests {
         return [a(0, 0), a(img.width - 1, 0), a(0, img.height - 1), a(img.width - 1, img.height - 1), a(img.width / 2, 0), a(0, img.height / 2), a(img.width / 2, img.height - 1)]
     }
 
+    /// Selecionar área: retângulo, elipse e varinha; levantar como objeto (com o sítio apagado), duplicar, apagar, preencher,
+    /// copiar píxeis, juntar com ⇧ e fundo transparente.
+    static func areaSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir
+        let state = AppState.shared
+        if let e = state.createBlankImage(width: 600, height: 400, backgroundHex: "#FFFFFF", transparent: false) { return ["não criou a imagem: \(e)"] }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        guard let m = state.model, let canvas = CanvasView.current else { return ["sem editor"] }
+        // base: quadrado azul (100…200) e zona vermelha (300…500 × 100…300) sobre branco
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 600, pixelsHigh: 400, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 600, height: 400).fill()
+        NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1).setFill(); NSRect(x: 100, y: 200, width: 100, height: 100).fill()   // (y de baixo) → imagem y 100…200
+        NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1).setFill(); NSRect(x: 300, y: 100, width: 200, height: 200).fill()  // imagem y 100…300
+        NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1).setFill(); NSRect(x: 140, y: 140, width: 20, height: 20).fill()    // ponto verde: imagem (150, 250) — fora das máscaras, para apanhar máscaras viradas
+        NSGraphicsContext.restoreGraphicsState()
+        m.base = rep.cgImage!
+        m.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        func rgb(_ x: Int, _ y: Int) -> (Int, Int, Int, Int)? {
+            guard let png = m.exportPNG(), let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil), let p = pixel(img, x, y) else { return nil }
+            return (p.r, p.g, p.b, p.a)
+        }
+        func isBlue(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.2 > 200 && $0.0 < 60 && $0.1 < 60 } ?? false }
+        func isWhite(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.0 > 235 && $0.1 > 235 && $0.2 > 235 } ?? false }
+        check(isBlue(rgb(150, 150)), "base azul em (150,150)")
+
+        // 1) retângulo: arrastar seleciona; Return levanta como objeto (sítio apagado); mover o objeto
+        m.tool = .area; m.areaMode = .rect
+        canvas.debugMouse(at: Point(x: 120, y: 120), dragTo: Point(x: 180, y: 180))
+        check(m.areaSelection?.rect == Rect(x: 120, y: 120, width: 60, height: 60), "seleção retangular (\(String(describing: m.areaSelection?.rect)))")
+        let n0 = m.doc.annotations.count
+        m.liftSelection(erase: true)
+        check(m.doc.annotations.count == n0 + 2 && m.tool == .select && m.selected?.shape.imageAsset != nil, "levantar cria o apagado e a imagem, e passa a Mover")
+        check(m.areaSelection == nil, "a seleção de área limpa-se ao levantar")
+        check(isBlue(rgb(150, 150)), "no sítio continua azul (a imagem está por cima do apagado)")
+        m.nudgeSelection(dx: 300, dy: 0)
+        check(isWhite(rgb(150, 150)), "depois de mover, o sítio de origem ficou apagado (\(String(describing: rgb(150, 150))))")
+        check(isBlue(rgb(450, 150)), "a imagem levantada mostra o azul no destino (\(String(describing: rgb(450, 150))))")
+        m.undo(); m.undo()
+        check(m.doc.annotations.count == n0 && isBlue(rgb(150, 150)), "desfazer repõe tudo")
+
+        // 2) arrastar de dentro da seleção levanta e move de uma vez
+        m.tool = .area
+        canvas.debugMouse(at: Point(x: 110, y: 110), dragTo: Point(x: 190, y: 190))
+        canvas.debugMouse(at: Point(x: 150, y: 150), dragTo: Point(x: 350, y: 150))
+        check(m.tool == .select && m.selected?.shape.imageAsset != nil && abs((m.selected?.shape.bounds.minX ?? 0) - 310) < 0.5, "arrastar de dentro levanta e move (\(String(describing: m.selected?.shape.bounds)))")
+        check(isWhite(rgb(150, 150)) && isBlue(rgb(350, 150)), "o azul mudou de sítio")
+        m.undo(); m.undo()
+
+        // um clique (sem arrastar) dentro da seleção não a levanta
+        m.tool = .area; m.areaMode = .rect
+        canvas.debugMouse(at: Point(x: 110, y: 110), dragTo: Point(x: 190, y: 190))
+        canvas.debugMouse(at: Point(x: 150, y: 150))
+        check(m.tool == .area && m.areaSelection != nil && m.doc.annotations.count == n0, "um clique dentro da seleção não levanta nada")
+        m.clearAreaSelection()
+
+        // 3) elipse: a máscara tem os cantos de fora
+        m.tool = .area; m.areaMode = .ellipse
+        canvas.debugMouse(at: Point(x: 100, y: 100), dragTo: Point(x: 200, y: 200))
+        guard let el = m.areaSelection else { return fails + ["sem seleção elíptica"] }
+        check(el.value(atX: 101, y: 101) == 0 && el.value(atX: 150, y: 150) == 255, "elipse: canto fora, centro dentro (\(el.value(atX: 101, y: 101)), \(el.value(atX: 150, y: 150)))")
+        m.liftSelection(erase: false)
+        check(m.doc.annotations.count == n0 + 1, "duplicar como objeto não apaga o original")
+        if let name = m.selected?.shape.imageAsset, let img = m.assets.image(named: name), let c = pixel(img, 1, 1), let mid = pixel(img, 50, 50) {
+            check(c.a == 0 && mid.a == 255 && mid.b > 200, "a imagem levantada tem a forma da elipse (canto a=\(c.a), centro a=\(mid.a))")
+        } else { fails.append("sem imagem levantada da elipse") }
+        m.undo()
+
+        // 4) varinha: o quadrado azul exato; ⇧ junta a zona vermelha
+        m.tool = .area; m.areaMode = .wand; m.wandTolerance = 32; m.wandContiguous = true
+        canvas.debugMouse(at: Point(x: 150, y: 150))
+        check(m.areaSelection?.rect == Rect(x: 100, y: 100, width: 100, height: 100) && m.areaSelection?.count == 10000, "varinha apanha o quadrado azul (\(String(describing: m.areaSelection?.rect)))")
+        canvas.debugMouse(at: Point(x: 400, y: 200), shift: true)
+        check(m.areaSelection?.rect == Rect(x: 100, y: 100, width: 400, height: 200), "⇧ junta a zona vermelha (\(String(describing: m.areaSelection?.rect)))")
+        func isGreen(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.1 > 200 && $0.0 < 60 && $0.2 < 60 } ?? false }
+        // apagar a união (máscara com forma): o ponto verde, dentro da caixa mas fora da máscara, fica
+        m.eraseSelection()
+        check(isWhite(rgb(150, 150)) && isWhite(rgb(400, 200)) && isGreen(rgb(150, 250)), "apagar a união respeita a forma da máscara (verde: \(String(describing: rgb(150, 250))))")
+        m.undo()
+        canvas.debugMouse(at: Point(x: 150, y: 150)); canvas.debugMouse(at: Point(x: 400, y: 200), shift: true)
+        m.fillSelection()
+        check(isWhite(rgb(150, 150)) && isGreen(rgb(150, 250)), "preencher a união respeita a forma da máscara (azul: \(String(describing: rgb(150, 150))), verde: \(String(describing: rgb(150, 250))))")
+        m.undo()
+        canvas.debugMouse(at: Point(x: 150, y: 150)); canvas.debugMouse(at: Point(x: 400, y: 200), shift: true)
+        m.liftSelection(erase: false)
+        if let name = m.selected?.shape.imageAsset, let img = m.assets.image(named: name), let g = pixel(img, 50, 150), let b = pixel(img, 50, 50) {
+            check(g.a == 0 && b.a == 255 && b.b > 200, "a imagem levantada da união tem a forma (fora: a=\(g.a); azul: a=\(b.a))")
+        } else { fails.append("sem imagem levantada da união") }
+        m.undo(); m.tool = .area   // (levantar passa a Mover; desfazer não muda de ferramenta)
+        canvas.debugMouse(at: Point(x: 150, y: 150)); canvas.debugMouse(at: Point(x: 400, y: 200), shift: true)
+        canvas.debugMouse(at: Point(x: 400, y: 200), option: true)
+        check(m.areaSelection?.rect == Rect(x: 100, y: 100, width: 100, height: 100), "⌥ tira-a outra vez")
+        // apagar: o azul passa a branco
+        m.eraseSelection()
+        check(isWhite(rgb(150, 150)) && isWhite(rgb(199, 199)) && !isWhite(rgb(400, 200)), "apagar deixa o quadrado branco e o resto intacto")
+        m.undo()
+        // preencher (Reparo): o azul desaparece, preenchido pelo branco à volta
+        canvas.debugMouse(at: Point(x: 150, y: 150))
+        m.fillSelection()
+        check(isWhite(rgb(150, 150)), "preencher apaga o quadrado a partir do branco à volta (\(String(describing: rgb(150, 150))))")
+        m.undo()
+        // copiar píxeis: PNG 100×100 na área de transferência
+        canvas.debugMouse(at: Point(x: 150, y: 150))
+        m.copySelectionPixels()
+        if let d = NSPasteboard.general.data(forType: .png), let r = NSBitmapImageRep(data: d) { check(r.pixelsWide == 100 && r.pixelsHigh == 100, "copiar píxeis: PNG 100×100 (\(r.pixelsWide)×\(r.pixelsHigh))") } else { fails.append("copiar píxeis não pôs PNG") }
+        // 5) fundo transparente: apagar fica transparente
+        m.setTransparentBackground(true)
+        canvas.debugMouse(at: Point(x: 150, y: 150))
+        m.eraseSelection()
+        check(rgb(150, 150)?.3 == 0, "com fundo transparente, apagado fica transparente (a=\(String(describing: rgb(150, 150)?.3)))")
+        m.undo(); m.setTransparentBackground(false)
+        // Esc limpa; ⌘A seleciona tudo
+        canvas.debugMouse(at: Point(x: 150, y: 150)); m.escape()
+        check(m.areaSelection == nil && m.tool == .area, "Esc limpa a seleção sem mudar de ferramenta")
+        m.selectAll()
+        check(m.areaSelection?.rect == Rect(x: 0, y: 0, width: 600, height: 400), "⌘A seleciona a área toda")
+        m.clearAreaSelection(); m.tool = .select
+        return fails
+    }
+
     /// Alinhar, distribuir, agrupar e transformar o grupo (redimensionar em proporção e rodar) com o rato.
     static func arrangeSelfTest(dir: URL) -> [String] {
         var fails: [String] = []

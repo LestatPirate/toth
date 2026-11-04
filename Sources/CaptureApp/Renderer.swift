@@ -47,6 +47,7 @@ enum Renderer {
         let previous = NSGraphicsContext.current
         NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
         defer { NSGraphicsContext.current = previous }
+        docBackground = (doc.backgroundHex, doc.transparentBackground)
 
         for (i, a) in annotations.enumerated() {
             switch a.shape {
@@ -72,10 +73,11 @@ enum Renderer {
         var pixel: Double?
         var patch = false
         var cloneFrom: CGRect?
+        var maskImage: CGImage?
         switch a.shape {
         case let .gaussian(_, _, _, i): gaussian = i
         case let .blur(_, _, _, r): pixel = max(2, r)
-        case .patch: patch = true
+        case let .patch(_, _, _, mk): patch = true; maskImage = mk.flatMap { assets?.image(named: $0) }
         case .clone: cloneFrom = a.shape.cloneSourceRect!.cg
         default: return
         }
@@ -135,7 +137,16 @@ enum Renderer {
             // uma faixa fina numa das bordas (o CIPixellate deixava-a no topo).
             img = pixelate(belowImage, region: local, cell: CGFloat(size) * s)
         } else if patch {
-            img = inpaint(belowImage, hole: local)
+            // com máscara: só os píxeis cobertos são preenchidos (a máscara amostra-se ao tamanho da região)
+            var maskBytes: [UInt8]?
+            if let maskImage, local.width >= 1, local.height >= 1 {
+                var bytes = [UInt8](repeating: 0, count: Int(local.width) * Int(local.height))
+                if let mctx = CGContext(data: &bytes, width: Int(local.width), height: Int(local.height), bitsPerComponent: 8, bytesPerRow: Int(local.width), space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) {
+                    mctx.draw(maskImage, in: CGRect(x: 0, y: 0, width: local.width, height: local.height))   // (1.ª fila em memória = de cima)
+                    maskBytes = bytes
+                }
+            }
+            img = inpaint(belowImage, hole: local, mask: maskBytes)
         } else if let src = cloneFrom {
             // a região passa a ser o que está por baixo na origem (origem fora do visível: fica o que houver)
             let srcDoc = toDoc(snapOut(toDevice(src)))
@@ -151,6 +162,7 @@ enum Renderer {
         // deixava de fora uma fila)
         let grow = 0.34 / s
         ctx.clip(to: region.insetBy(dx: -grow, dy: -grow))
+        if let maskImage { clipFlipped(ctx, to: a.shape.bounds.cg, mask: maskImage) }   // reparo com forma: só a parte coberta
         if a.rotation != 0 { ctx.setShouldAntialias(true); ctx.addPath(rotatedPath(a.shape.bounds.cg, degrees: a.rotation)); ctx.clip() }
         // «copy» substitui mesmo o que está por baixo (o original não transparece onde há transparência)
         if a.style.opacity >= 0.999 { if pixelAligned || a.rotation == 0 { ctx.setBlendMode(.copy) } } else { ctx.setAlpha(CGFloat(a.style.opacity)) }
@@ -197,6 +209,14 @@ enum Renderer {
     static func rotatedPath(_ box: CGRect, degrees: Double) -> CGPath {
         var t = CGAffineTransform(translationX: box.midX, y: box.midY).rotated(by: CGFloat(degrees * .pi / 180)).translatedBy(x: -box.midX, y: -box.midY)
         return CGPath(rect: box, transform: &t)
+    }
+
+    /// Recorta pela máscara (cinzento: branco = dentro) num contexto com o eixo y para baixo, onde uma imagem apareceria
+    /// de cabeça para baixo: vira-se o eixo só para pôr o recorte (o recorte fica, a transformação volta ao que era).
+    static func clipFlipped(_ ctx: CGContext, to box: CGRect, mask: CGImage) {
+        ctx.translateBy(x: 0, y: box.minY + box.maxY); ctx.scaleBy(x: 1, y: -1)
+        ctx.clip(to: box, mask: mask)
+        ctx.scaleBy(x: 1, y: -1); ctx.translateBy(x: 0, y: -(box.minY + box.maxY))
     }
 
     /// CGContext com CTM invertido desenharia a imagem de cabeça para baixo; compensa.
@@ -280,7 +300,7 @@ enum Renderer {
     }
 
     /// Preenche `hole` (coordenadas da imagem, origem no topo) a partir do que a rodeia (ver `Inpaint`) e devolve só essa região.
-    static func inpaint(_ image: CGImage, hole: CGRect) -> CGImage? {
+    static func inpaint(_ image: CGImage, hole: CGRect, mask: [UInt8]? = nil) -> CGImage? {
         let w = image.width, h = image.height
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         var px = [UInt8](repeating: 0, count: w * h * 4)
@@ -289,7 +309,7 @@ enum Renderer {
         sctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
         let hx = Int(hole.minX.rounded()), hy = Int(hole.minY.rounded()), hw = Int(hole.width.rounded()), hh = Int(hole.height.rounded())
         // o buffer do CGContext tem a origem em baixo: a linha y da imagem é a linha h-1-y do buffer
-        Inpaint.fill(&px, width: w, height: h, hole: (hx, h - hy - hh, hw, hh))
+        Inpaint.fill(&px, width: w, height: h, hole: (hx, h - hy - hh, hw, hh), mask: mask.flatMap { $0.count == hw * hh ? $0 : nil })
         guard let dctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let out = dctx.makeImage() else { return nil }
         return out.cropping(to: CGRect(x: hx, y: hy, width: hw, height: hh))
@@ -418,6 +438,9 @@ enum Renderer {
         RichText.draw(a.caption, in: area, format: a.style.text, size: size, color: RichText.textColor(a.style))
     }
 
+    /// Fundo do documento que está a ser desenhado (para «Apagado»).
+    nonisolated(unsafe) private static var docBackground: (hex: String, transparent: Bool) = ("#FFFFFF", false)
+
     private static func draw(_ a: Annotation, base: CGImage, assets: AssetStore?, _ ctx: CGContext, skipText: Bool = false) {
         let c = color(a.style.colorHex)
         ctx.saveGState()
@@ -486,6 +509,15 @@ enum Renderer {
 
         case .gaussian, .blur, .patch, .clone:
             break   // tratados em drawEffect: precisam do que está por baixo
+
+        case let .erase(_, _, _, mask):
+            // a região (ou a parte coberta pela máscara) passa a ser a cor de fundo; com fundo transparente, fica transparente
+            let box = a.shape.bounds.cg
+            if let mask, let mimg = assets?.image(named: mask) { clipFlipped(ctx, to: box, mask: mimg) }
+            if docBackground.transparent { ctx.setBlendMode(.clear) } else { ctx.setFillColor(color(docBackground.hex).cgColor) }
+            ctx.setShadow(offset: .zero, blur: 0, color: nil)
+            ctx.setAlpha(1)
+            ctx.fill(box)
 
         case let .stamp(_, _, _, symbol):
             drawStamp(symbol, in: a.shape.bounds.cg, color: c, ctx)

@@ -73,6 +73,7 @@ extension Tool {
         case .image: nil
         case .stamp: .stamp
         case .patch, .clone: .repair
+        case .erase: nil
         }
     }
 }

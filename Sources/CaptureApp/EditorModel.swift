@@ -5,13 +5,13 @@ import AppKit
 import CaptureCore
 
 enum Tool: String, CaseIterable, Identifiable {
-    case select, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, canvas
+    case select, area, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, canvas
     var id: String { rawValue }
     var title: String {
         switch self {
         case .select: L("Mover"); case .arrow: L("Seta"); case .line: L("Linha"); case .callout: L("Balão"); case .rect: L("Retângulo")
         case .ellipse: L("Elipse"); case .text: L("Texto"); case .step: L("Etapa"); case .highlight: L("Marcador"); case .blur: L("Pixelização"); case .gaussian: L("Blur"); case .canvas: L("Tela")
-        case .stamp: L("Carimbo"); case .repair: L("Reparo")
+        case .stamp: L("Carimbo"); case .repair: L("Reparo"); case .area: L("Selecionar")
         }
     }
     /// Estilo inicial de cada ferramenta (cada uma lembra o seu último estilo).
@@ -27,7 +27,7 @@ enum Tool: String, CaseIterable, Identifiable {
         switch self {
         case .select: "cursorarrow"; case .arrow: "arrow.up.right"; case .line: "line.diagonal"; case .callout: "bubble.left"; case .rect: "rectangle"
         case .ellipse: "circle"; case .text: "textformat"; case .step: "1.circle"; case .highlight: "highlighter"; case .blur: "square.grid.3x3"; case .gaussian: "drop"; case .canvas: "aspectratio"
-        case .stamp: "checkmark.seal"; case .repair: "bandage"
+        case .stamp: "checkmark.seal"; case .repair: "bandage"; case .area: "selection.pin.in.out"
         }
     }
 }
@@ -67,7 +67,10 @@ final class EditorModel: ObservableObject {
         let ordered = doc.ordered.map(\.id).filter { ids.contains($0) }
         selection = ordered.last; extraSelection = Set(ordered.dropLast())
     }
-    func selectAll() { selectIDs(Set(doc.annotations.filter { $0.visible && isShown($0) }.map(\.id))) }
+    func selectAll() {
+        if tool == .area { selectWholeArea(); return }
+        selectIDs(Set(doc.annotations.filter { $0.visible && isShown($0) }.map(\.id)))
+    }
     /// Seleciona `id` e, se estiver num grupo, o grupo inteiro (com `id` como principal).
     func selectWithGroup(_ id: UUID) {
         let members = doc.groupMembers(of: id)
@@ -214,6 +217,123 @@ final class EditorModel: ObservableObject {
         finishedDrawing()
     }
 
+    // MARK: Selecionar área (retângulo, elipse, varinha)
+
+    enum AreaMode: String { case rect, ellipse, wand }
+    /// A área selecionada (não fica no ficheiro; é um estado da edição).
+    @Published var areaSelection: AreaMask?
+    var areaMode: AreaMode {
+        get { AreaMode(rawValue: UserDefaults.standard.string(forKey: "areaMode") ?? "") ?? .rect }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "areaMode"); objectWillChange.send() }
+    }
+    /// Tolerância da varinha (0…255 na maior diferença entre canais) e se apanha só píxeis contíguos.
+    var wandTolerance: Double {
+        get { (UserDefaults.standard.object(forKey: "wandTolerance") as? Double) ?? 32 }
+        set { UserDefaults.standard.set(max(0, min(255, newValue)), forKey: "wandTolerance"); objectWillChange.send() }
+    }
+    var wandContiguous: Bool {
+        get { (UserDefaults.standard.object(forKey: "wandContiguous") as? Bool) ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "wandContiguous"); objectWillChange.send() }
+    }
+
+    /// Os píxeis do documento como está (área exportada), RGBA, com a origem da área.
+    func renderedPixels() -> (pixels: [UInt8], width: Int, height: Int, origin: Point)? {
+        guard let png = exportPNG(), let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        let w = img.width, h = img.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))   // (a 1.ª fila em memória é a de cima)
+        let a = doc.area
+        return (px, w, h, Point(x: a.minX.rounded(.down), y: a.minY.rounded(.down)))
+    }
+
+    /// Junta, tira ou substitui a seleção por `m` (em coordenadas do documento).
+    func selectArea(_ m: AreaMask, combine: AreaMask.Combine = .replace) {
+        let next = (areaSelection.map { $0.combined(with: m, combine) } ?? (combine == .subtract ? nil : m))
+        areaSelection = (next?.isEmpty ?? true) ? nil : next
+    }
+
+    /// Varinha: os píxeis parecidos com o do ponto `p` (do documento).
+    func wandSelect(at p: Point, combine: AreaMask.Combine = .replace) {
+        guard let r = renderedPixels() else { return }
+        let local = Point(x: p.x - r.origin.x, y: p.y - r.origin.y)
+        guard var m = AreaMask.wand(pixels: r.pixels, width: r.width, height: r.height, at: local, tolerance: Int(wandTolerance), contiguous: wandContiguous) else { NSSound.beep(); return }
+        m.x += Int(r.origin.x); m.y += Int(r.origin.y)
+        selectArea(m, combine: combine)
+    }
+
+    func selectWholeArea() { areaSelection = AreaMask.rect(doc.area) }
+    func clearAreaSelection() { areaSelection = nil }
+
+    /// Grava a máscara em `assets/` (PNG em tons de cinzento: branco = dentro); `nil` se for um retângulo cheio.
+    private func maskAsset(_ m: AreaMask) -> String? {
+        guard !m.isFullRect, m.width > 0, m.height > 0 else { return nil }
+        var bytes = m.alpha
+        guard let ctx = CGContext(data: &bytes, width: m.width, height: m.height, bitsPerComponent: 8, bytesPerRow: m.width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue),
+              let img = ctx.makeImage(), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return nil }
+        // (a 1.ª fila em memória é a de cima: a máscara já está na orientação certa)
+        let name = "mask-\(UUID().uuidString).png"
+        try? assets.write(png, as: name)
+        return name
+    }
+
+    /// PNG dos píxeis da seleção (com a máscara como transparência).
+    func selectionPNG() -> Data? {
+        guard let m = areaSelection, !m.isEmpty, let r = renderedPixels() else { return nil }
+        var out = [UInt8](repeating: 0, count: m.width * m.height * 4)
+        for j in 0..<m.height { for i in 0..<m.width {
+            let x = m.x + i - Int(r.origin.x), y = m.y + j - Int(r.origin.y)
+            guard x >= 0, y >= 0, x < r.width, y < r.height else { continue }
+            let a = Int(m.alpha[j * m.width + i]); let s = (y * r.width + x) * 4, d = (j * m.width + i) * 4
+            out[d] = UInt8(Int(r.pixels[s]) * a / 255); out[d + 1] = UInt8(Int(r.pixels[s + 1]) * a / 255); out[d + 2] = UInt8(Int(r.pixels[s + 2]) * a / 255); out[d + 3] = UInt8(Int(r.pixels[s + 3]) * a / 255)
+        } }
+        guard let ctx = CGContext(data: &out, width: m.width, height: m.height, bitsPerComponent: 8, bytesPerRow: m.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let img = ctx.makeImage() else { return nil }
+        return NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])
+    }
+
+    /// Levanta a seleção como um objeto imagem (os píxeis, com a forma da seleção); com `erase`, o sítio de onde saiu fica
+    /// apagado (cor de fundo). Devolve o id do objeto novo e passa para Mover com ele selecionado.
+    @discardableResult
+    func liftSelection(erase: Bool) -> UUID? {
+        guard let m = areaSelection, !m.isEmpty, let png = selectionPNG(), let name = try? assets.add(png: png) else { NSSound.beep(); return nil }
+        let maskName = erase ? maskAsset(m) : nil
+        var id = UUID()
+        perform { d in
+            if erase { d.add(.erase(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), mask: maskName)) }
+            id = d.add(.image(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), asset: name), style: Style(lineVisible: false)).id
+        }
+        areaSelection = nil
+        selection = id
+        tool = .select
+        return id
+    }
+
+    /// Apaga a seleção (passa a cor de fundo, ou transparente).
+    func eraseSelection() {
+        guard let m = areaSelection, !m.isEmpty else { return }
+        let maskName = maskAsset(m)
+        perform { $0.add(.erase(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), mask: maskName)) }
+        areaSelection = nil
+    }
+
+    /// Preenche a seleção a partir do que a rodeia (Reparo).
+    func fillSelection() {
+        guard let m = areaSelection, !m.isEmpty else { return }
+        let maskName = maskAsset(m)
+        perform { $0.add(.patch(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), mask: maskName)) }
+        areaSelection = nil
+    }
+
+    /// Copia os píxeis da seleção (PNG com transparência) para a área de transferência.
+    func copySelectionPixels() {
+        guard let png = selectionPNG(), let image = NSImage(data: png) else { NSSound.beep(); return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setData(png, forType: .png)
+        NSPasteboard.general.writeObjects([image])
+    }
+
     // MARK: Reparo
 
     /// Modo do Reparo para os próximos: preencher a partir da vizinhança (`false`) ou clonar de outro sítio (`true`).
@@ -302,6 +422,7 @@ final class EditorModel: ObservableObject {
     /// Esc: com uma ferramenta de desenho, volta a Mover; na Tela, cancela as alterações feitas nela; em Mover, limpa a seleção.
     func escape() {
         if tool == .canvas { cancelCanvas(); return }
+        if areaSelection != nil { areaSelection = nil; return }
         if tool != .select { tool = .select; return }
         selection = nil
     }
@@ -537,6 +658,7 @@ final class EditorModel: ObservableObject {
     }
 
     func deleteSelection() {
+        if tool == .area, areaSelection != nil { eraseSelection(); return }
         let ids = selectedIDs
         guard !ids.isEmpty else { return }
         perform { d in for id in ids { d.remove(id: id) } }
@@ -583,6 +705,7 @@ final class EditorModel: ObservableObject {
     private static let clipType = NSPasteboard.PasteboardType("com.capture.annotation")
 
     func copySelection() {
+        if tool == .area, areaSelection != nil { copySelectionPixels(); return }
         let all = selectedAll
         guard let a = all.first else { return }
         var assetData: [String: Data] = [:]
@@ -599,7 +722,10 @@ final class EditorModel: ObservableObject {
 
     func cutSelection() { copySelection(); deleteSelection() }
 
-    func duplicateSelection() { duplicate(selectedAll, dx: 24, dy: 24) }
+    func duplicateSelection() {
+        if tool == .area, areaSelection != nil { liftSelection(erase: false); return }
+        duplicate(selectedAll, dx: 24, dy: 24)
+    }
 
     var canPaste: Bool {
         let pb = NSPasteboard.general

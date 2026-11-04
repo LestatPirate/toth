@@ -1017,3 +1017,39 @@ import Foundation
         #expect(t.tracks == [.video])
     }
 }
+
+@Suite struct AreaMaskTests {
+    @Test func rectAndEllipse() {
+        let r = AreaMask.rect(Rect(x: 10.2, y: 10.7, width: 20, height: 10))
+        #expect(r.x == 10 && r.y == 10 && r.width == 21 && r.height == 11 && r.isFullRect && r.contains(Point(x: 15, y: 15)))
+        let e = AreaMask.ellipse(Rect(x: 0, y: 0, width: 100, height: 50))
+        #expect(e.value(atX: 0, y: 0) == 0 && e.value(atX: 50, y: 25) == 255 && !e.isFullRect)
+        #expect(e.value(atX: 50, y: 0) > 100)   // meio da borda de cima: metade dentro
+    }
+
+    @Test func wandContiguousAndGlobal() {
+        let w = 10, h = 10
+        var px = [UInt8](repeating: 255, count: w * h * 4)   // branco
+        func paint(_ x: Int, _ y: Int) { let o = (y * w + x) * 4; px[o] = 0; px[o + 1] = 0; px[o + 2] = 255 }
+        for y in 2...4 { for x in 2...4 { paint(x, y) } }     // quadrado azul
+        paint(8, 8)                                            // píxel azul solto
+        let c = AreaMask.wand(pixels: px, width: w, height: h, at: Point(x: 3, y: 3), tolerance: 10, contiguous: true)!
+        #expect(c.x == 2 && c.y == 2 && c.width == 3 && c.height == 3 && c.count == 9)
+        let g = AreaMask.wand(pixels: px, width: w, height: h, at: Point(x: 3, y: 3), tolerance: 10, contiguous: false)!
+        #expect(g.count == 10 && g.width == 7)
+        let bg = AreaMask.wand(pixels: px, width: w, height: h, at: Point(x: 0, y: 0), tolerance: 10, contiguous: true)!
+        #expect(bg.count == 100 - 10)
+        #expect(AreaMask.wand(pixels: px, width: w, height: h, at: Point(x: 20, y: 3), tolerance: 10, contiguous: true) == nil)
+    }
+
+    @Test func combineAddSubtractTrim() {
+        let a = AreaMask.rect(Rect(x: 0, y: 0, width: 10, height: 10)), b = AreaMask.rect(Rect(x: 5, y: 5, width: 10, height: 10))
+        let u = a.combined(with: b, .add)
+        #expect(u.rect == Rect(x: 0, y: 0, width: 15, height: 15) && u.count == 175 && u.value(atX: 12, y: 2) == 0)
+        let d = u.combined(with: b, .subtract)
+        #expect(d.count == 75 && d.value(atX: 7, y: 7) == 0 && d.value(atX: 2, y: 2) == 255)
+        let gone = a.combined(with: a, .subtract)
+        #expect(gone.isEmpty)
+        #expect(a.combined(with: b, .replace) == b)
+    }
+}

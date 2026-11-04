@@ -255,6 +255,39 @@ struct PropertiesPanel: View {
         }
     }
 
+    private var areaMode: Binding<EditorModel.AreaMode> { Binding(get: { model.areaMode }, set: { model.areaMode = $0 }) }
+    private var wandTolerance: Binding<Double> { Binding(get: { model.wandTolerance }, set: { model.wandTolerance = $0 }) }
+    private var wandContiguous: Binding<Bool> { Binding(get: { model.wandContiguous }, set: { model.wandContiguous = $0 }) }
+
+    /// Selecionar área: forma, varinha e o que fazer com a seleção.
+    private var selectAreaSection: some View {
+        section(L("Selecionar área")) {
+            Picker("", selection: areaMode) {
+                Image(systemName: "rectangle.dashed").tag(EditorModel.AreaMode.rect)
+                Image(systemName: "circle.dashed").tag(EditorModel.AreaMode.ellipse)
+                Image(systemName: "wand.and.stars").tag(EditorModel.AreaMode.wand)
+            }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
+            if model.areaMode == .wand {
+                slider(L("Tolerância"), value: wandTolerance, range: 0...128, format: "%.0f")
+                row(L("Só píxeis contíguos")) { Toggle("", isOn: wandContiguous).labelsHidden() }
+            }
+            Text(model.areaMode == .wand
+                 ? L("Clique numa cor para selecionar os píxeis parecidos. ⇧ junta, ⌥ tira.")
+                 : L("Arraste para selecionar (⇧ junta, ⌥ tira). Depois: arraste de dentro para a mover como objeto, ou use os botões. Esc limpa."))
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let sel = model.areaSelection, !sel.isEmpty {
+                Text(L("%d × %d px", sel.width, sel.height)).font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Button(L("Levantar como objeto (↩)")) { model.liftSelection(erase: true) }.help(L("Os píxeis passam a ser um objeto que se move, copia, roda e redimensiona; o sítio de onde saíram fica apagado"))
+                    Button(L("Duplicar como objeto (⌘D)")) { model.liftSelection(erase: false) }.help(L("Uma cópia dos píxeis como objeto, deixando o original no sítio"))
+                    Button(L("Copiar píxeis (⌘C)")) { model.copySelectionPixels() }
+                    Button(L("Apagar (Delete)")) { model.eraseSelection() }.help(L("Passa a cor de fundo (ou transparente)"))
+                    Button(L("Preencher (Reparo)")) { model.fillSelection() }.help(L("Preenche a partir do que a rodeia"))
+                }.controlSize(.small)
+            }
+        }
+    }
+
     private var repairSection: some View {
         section(L("Reparo")) {
             Picker("", selection: repairClones) {
@@ -331,8 +364,8 @@ struct PropertiesPanel: View {
     }
     private var isStep: Bool { if case .step = model.selected?.shape { return true }; return model.selected == nil && model.tool == .step }
     private var hasLine: Bool {
-        if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image, .stamp, .patch, .clone: return false; default: return true } }
-        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair].contains(model.tool)
+        if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image, .stamp, .patch, .clone, .erase: return false; default: return true } }
+        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair, .area].contains(model.tool)
     }
 
     var body: some View {
@@ -361,6 +394,7 @@ struct PropertiesPanel: View {
                             .disabled(supportsBox && !model.currentStyle.lineVisible)
                     }
                 }
+                if model.tool == .area && model.selected == nil { selectAreaSection }
                 if isStep { stepSection }
                 if isImageObject { imageObjectSection }
                 if isStamp { stampSection }
@@ -383,7 +417,7 @@ struct PropertiesPanel: View {
                     }
                 }
                 if supportsText { textSection }
-                if !(model.tool == .canvas && model.selected == nil) { section(L("Geral")) {
+                if !((model.tool == .canvas || model.tool == .area) && model.selected == nil) { section(L("Geral")) {
                     slider(L("Opacidade"), value: opacity, range: 0.1...1, format: "%.0f%%", scale: 100)
                     row(L("Sombra")) { Toggle("", isOn: shadow).labelsHidden() }
                     if let sel = model.selected {
