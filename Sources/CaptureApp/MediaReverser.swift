@@ -32,7 +32,7 @@ enum MediaReverser {
 
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let bits = max(1_500_000, min(40_000_000, Int(Double(w * h) * 3.0)))
+        let bits = max(2_000_000, min(60_000_000, Int(Double(w * h) * 6.0)))
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h,
             AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: bits, AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel, AVVideoAllowFrameReorderingKey: false] as [String: Any],

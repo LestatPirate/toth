@@ -104,8 +104,12 @@ final class CanvasView: NSView {
 
     // A área de trabalho é ajustada à vista, centrada (ou com zoom/deslocamento).
     private var area: CGRect { model.doc.area.cg }
+    /// Píxeis do ecrã por ponto (2 em Retina).
+    private var deviceScale: CGFloat { window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 1) }
+    /// «Ajustar»: cabe na vista, mas nunca amplia para lá de um píxel da imagem por píxel do ecrã (em Retina a captura, que é em
+    /// píxeis nativos, aparece ao tamanho que tinha no ecrã, nítida, em vez de ampliada a 2× e desfocada).
     private var fit: CGFloat {
-        let f = min((bounds.width - 40) / max(area.width, 1), (bounds.height - 40) / max(area.height, 1), 1)
+        let f = min((bounds.width - 40) / max(area.width, 1), (bounds.height - 40) / max(area.height, 1), 1 / deviceScale)
         return max(f, 0.01)
     }
     private var scale: CGFloat { model.zoom.map { CGFloat($0) } ?? fit }
@@ -129,6 +133,7 @@ final class CanvasView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         model.fitScale = Double(fit)
+        model.deviceScale = Double(deviceScale)
         model.visibleCenter = Point(x: Double((bounds.midX - origin.x) / scale), y: Double((bounds.midY - origin.y) / scale))
         NSColor.underPageBackgroundColor.setFill()
         bounds.fill()

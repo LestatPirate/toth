@@ -61,7 +61,7 @@ final class RecordingEngine: @unchecked Sendable {
         self.url = url; self.width = width; self.height = height
         try? FileManager.default.removeItem(at: url)
         writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let bits = max(1_500_000, min(40_000_000, Int(Double(width * height) * 3.0)))   // ~3 bits por píxel e segundo
+        let bits = max(2_000_000, min(60_000_000, Int(Double(width * height) * 6.0)))   // ~6 bits por píxel e segundo (texto nítido)
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
             AVVideoCompressionPropertiesKey: [
@@ -351,6 +351,7 @@ final class ScreenRecordingSource: NSObject, SCStreamOutput, SCStreamDelegate, @
         if windowID == nil { c.sourceRect = rect } else { c.ignoreShadowsSingleWindow = true }
         c.width = engine.width; c.height = engine.height
         c.pixelFormat = kCVPixelFormatType_32BGRA
+        c.captureResolution = .best   // píxeis nativos
         c.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         c.queueDepth = 6
         c.showsCursor = true

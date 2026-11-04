@@ -239,6 +239,11 @@ final class EditorModel: ObservableObject {
     @Published var pan: CGSize = .zero
     /// Escala de "ajustar", atualizada pelo canvas (não publicada).
     var fitScale: Double = 1
+    /// Píxeis do ecrã por ponto (2 em Retina), atualizado pelo canvas. As capturas são em píxeis nativos: «1:1» mostra um píxel da
+    /// imagem num píxel do ecrã (zoom = 1/deviceScale), e a percentagem mostrada é relativa aos píxeis do ecrã.
+    var deviceScale: Double = 1
+    /// Zoom relativo aos píxeis do ecrã (100% = um píxel da imagem num píxel do ecrã).
+    var displayZoomPercent: Int { Int(((zoom ?? fitScale) * deviceScale * 100).rounded()) }
     /// Centro da zona visível, em coordenadas do documento (atualizado pelo canvas; usado ao colar).
     var visibleCenter = Point(x: 0, y: 0)
     let assets: AssetStore
@@ -349,7 +354,8 @@ final class EditorModel: ObservableObject {
     func zoomIn() { zoom = min(8, (zoom ?? fitScale) * 1.25) }
     func zoomOut() { zoom = max(0.05, (zoom ?? fitScale) / 1.25) }
     func zoomFit() { zoom = nil; pan = .zero }
-    func zoomActual() { zoom = 1 }
+    /// Tamanho real: um píxel da imagem por píxel do ecrã (em Retina, metade dos pontos).
+    func zoomActual() { zoom = 1 / max(1, deviceScale) }
 
     // MARK: Seleção e propriedades
 

@@ -37,6 +37,7 @@ enum ScreenCapturer {
         config.height = Int((screen.frame.height * screen.backingScaleFactor).rounded())
         config.showsCursor = false
         config.capturesAudio = false
+        config.captureResolution = .best   // píxeis nativos, sem reduzir
 
         let own = content.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier }
         let filter = SCContentFilter(display: display, excludingWindows: own)

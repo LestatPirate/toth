@@ -237,9 +237,9 @@ private struct ZoomControls: View {
     var body: some View {
         HStack(spacing: 8) {
             Button { model.zoomOut() } label: { Image(systemName: "minus.magnifyingglass") }.help(L("Reduzir"))
-            Text("\(Int((model.zoom ?? model.fitScale) * 100))%").monospacedDigit().frame(minWidth: 48)
+            Text("\(model.displayZoomPercent)%").monospacedDigit().frame(minWidth: 48)
             Button { model.zoomIn() } label: { Image(systemName: "plus.magnifyingglass") }.help(L("Ampliar"))
-            Button("1:1") { model.zoomActual() }.help(L("Tamanho real (100%)"))
+            Button("1:1") { model.zoomActual() }.help(L("Tamanho real: um píxel da imagem por píxel do ecrã (100%)"))
             Button(L("Ajustar")) { model.zoomFit() }
             Text("·").foregroundStyle(.secondary)
             Text(size).monospacedDigit().foregroundStyle(.secondary)

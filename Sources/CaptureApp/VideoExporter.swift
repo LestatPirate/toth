@@ -38,7 +38,7 @@ enum VideoExporter {
             let w = max(2, Int(size.width) / 2 * 2), h = max(2, Int(size.height) / 2 * 2)
             let out = AVAssetReaderVideoCompositionOutput(videoTracks: videoTracks, videoSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
             out.videoComposition = videoComposition
-            let bits = max(1_500_000, min(40_000_000, Int(Double(w * h) * 3.0)))
+            let bits = max(2_000_000, min(60_000_000, Int(Double(w * h) * 6.0)))   // ~6 bits por píxel e segundo (texto nítido)
             let inp = AVAssetWriterInput(mediaType: .video, outputSettings: [
                 AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h,
                 AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: bits, AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel, AVVideoAllowFrameReorderingKey: false] as [String: Any]])

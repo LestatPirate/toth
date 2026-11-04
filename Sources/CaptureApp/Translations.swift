@@ -447,5 +447,6 @@ enum Translations {
         "Imagem colada": "Pasted image",
         "Marcado: os cantos mantêm a proporção (⇧ liberta). As imagens coladas entram ao tamanho real.": "On: the corners keep the proportions (⇧ frees them). Pasted images come in at their real size.",
         "Tamanho real (%@)": "Real size (%@)",
+        "Tamanho real: um píxel da imagem por píxel do ecrã (100%)": "Actual size: one image pixel per screen pixel (100%)",
     ]
 }
