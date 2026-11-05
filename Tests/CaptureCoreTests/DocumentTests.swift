@@ -169,16 +169,21 @@ private func tmp() -> URL {
     let arrow = doc.add(.arrow(from: Point(x: -20, y: -10), to: Point(x: 5, y: 5)), style: Style(lineWidth: 2))
     doc.expandAreaToFit(ids: [arrow.id])
     #expect(doc.area.minX == -21 && doc.area.minY == -11)
-    // a área não encolhe sozinha
+    // a área segue o conteúdo: apagar o objeto da direita encolhe-a outra vez
     doc.remove(id: out.id)
-    doc.expandAreaToFit(ids: [arrow.id])
-    #expect(doc.area.maxX == 132)
-    // encolhida de propósito, mexer noutro objeto NÃO reabre a área por causa dos que ficaram de fora
-    doc.workArea = WorkArea(origin: Point(x: 0, y: 0), width: 60, height: 40)
-    doc.expandAreaToFit(ids: [inside.id])
-    #expect(doc.area == Rect(x: 0, y: 0, width: 60, height: 40))
-    // sem autoExpand também não cresce
+    #expect(doc.expandAreaToFit(ids: [arrow.id]) == true)
+    #expect(doc.area.maxX == 100 && doc.area.minX == -21)
+    // um objeto escondido não conta
+    doc.setVisible(id: arrow.id, false)
+    doc.autoFitArea()
+    #expect(doc.area == doc.imageRect)
+    doc.setVisible(id: arrow.id, true)
+    doc.autoFitArea()
+    #expect(doc.area.minX == -21)
+    // sem autoExpand não mexe (nem cresce nem encolhe)
     doc.autoExpand = false
+    doc.workArea = WorkArea(origin: Point(x: 0, y: 0), width: 60, height: 40)
+    #expect(doc.autoFitArea() == false && doc.area == Rect(x: 0, y: 0, width: 60, height: 40))
     let far = doc.add(.rect(origin: Point(x: 500, y: 500), width: 5, height: 5))
     #expect(doc.expandAreaToFit(ids: [far.id]) == false)
     // ajustar ao conteúdo e restaurar

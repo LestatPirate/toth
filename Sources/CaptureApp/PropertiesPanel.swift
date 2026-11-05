@@ -130,9 +130,10 @@ struct PropertiesPanel: View {
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             row(L("Fundo transparente")) { Toggle("", isOn: transparent).labelsHidden() }
             row(L("Cor de fundo")) { ColorPicker("", selection: backgroundColor).labelsHidden().disabled(model.doc.transparentBackground) }
-            row(L("Expandir automaticamente")) { Toggle("", isOn: autoExpand).labelsHidden() }
+            row(L("Ajustar sempre ao conteúdo")) { Toggle("", isOn: autoExpand).labelsHidden() }
+                .help(L("A área cresce quando um elemento sai e encolhe quando volta ou é apagado. Mudar a área à mão desliga isto."))
             HStack {
-                Button(L("Ajustar ao conteúdo")) { model.fitAreaToContent() }
+                Button(L("Ajustar ao conteúdo")) { model.fitAreaToContent() }.disabled(model.doc.autoExpand)
                 Button(L("Restaurar original")) { model.resetArea() }.disabled(model.doc.workArea == nil)
             }.controlSize(.small)
         }

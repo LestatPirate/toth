@@ -432,9 +432,14 @@ final class EditorModel: ObservableObject {
     /// Altera sem criar ponto de undo (usar entre checkpoint() e commit()).
     func mutate(_ f: (inout CaptureDocument) -> Void) { f(&doc) }
 
-    func commit() { save() }
+    /// Fim de um gesto: a área segue o conteúdo (se ligado) e grava-se.
+    func commit() { doc.autoFitArea(); save() }
 
-    func perform(_ f: (inout CaptureDocument) -> Void) { checkpoint(); f(&doc); save() }
+    /// Uma edição completa (ponto de undo, alteração, área a seguir o conteúdo se ligado, gravar).
+    func perform(_ f: (inout CaptureDocument) -> Void) { checkpoint(); f(&doc); doc.autoFitArea(); save() }
+
+    /// Uma edição da área feita à mão: desliga o ajuste automático (senão era desfeito logo a seguir).
+    private func performArea(_ f: (inout CaptureDocument) -> Void) { checkpoint(); doc.autoExpand = false; f(&doc); save() }
 
     /// Depois de desenhar um objeto: a ferramenta volta a Mover, a não ser que esteja presa. Avisa quem quiser saber do objeto novo.
     func finishedDrawing() {
@@ -601,16 +606,16 @@ final class EditorModel: ObservableObject {
     /// Altera a área durante um gesto (sem ponto de undo; usar com checkpoint()/commit()).
     func setAreaLive(_ r: Rect) {
         let rr = Rect(x: r.x.rounded(), y: r.y.rounded(), width: max(8, r.width.rounded()), height: max(8, r.height.rounded()))
-        mutate { $0.workArea = rr == $0.imageRect ? nil : WorkArea(rr) }
+        mutate { $0.autoExpand = false; $0.workArea = rr == $0.imageRect ? nil : WorkArea(rr) }   // à mão: desliga o ajuste automático
     }
 
     /// Tamanho exato (mantém o canto superior esquerdo).
     func setAreaSize(width: Double, height: Double) {
         let a = doc.area
-        perform { $0.workArea = nil; $0.workArea = WorkArea(Rect(x: a.x, y: a.y, width: max(8, width.rounded()), height: max(8, height.rounded()))) }
+        performArea { $0.workArea = nil; $0.workArea = WorkArea(Rect(x: a.x, y: a.y, width: max(8, width.rounded()), height: max(8, height.rounded()))) }
     }
 
-    func resetArea() { perform { $0.workArea = nil } }
+    func resetArea() { performArea { $0.workArea = nil } }
 
     // MARK: Enquadramento da imagem (Tela → Imagem)
 

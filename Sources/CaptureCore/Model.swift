@@ -231,7 +231,8 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     /// Cor de fundo onde a área vai além da imagem.
     public var backgroundHex: String = "#FFFFFF"
     public var transparentBackground: Bool = false
-    /// Expande a área sozinha quando um objeto sai dela.
+    /// A área ajusta-se sempre ao conteúdo (imagem + objetos visíveis): cresce quando algo sai e encolhe quando volta ou
+    /// desaparece. Mudar a área à mão desliga-a.
     public var autoExpand: Bool = true
     /// Número da próxima etapa, se foi reiniciado/definido pelo utilizador; `nil` = continuar a sequência.
     public var nextStepNumber: Int?
@@ -289,27 +290,25 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         imageFrame = (rr == naturalImageRect && rot == 0) ? nil : ImageFrame(rr, rotation: rot)
     }
 
-    /// Expande a área (se ligada e se for uma área própria) para conter a imagem enquadrada. Devolve `true` se mudou.
+    /// Com `autoExpand`, ajusta a área ao conteúdo (imagem enquadrada + objetos visíveis). Devolve `true` se mudou.
     @discardableResult
-    public mutating func expandAreaToFitImage() -> Bool {
-        guard autoExpand, workArea != nil else { return false }
-        let current = area
-        return setArea(roundedOut: current.union(imageRect), if: current)
-    }
+    public mutating func expandAreaToFitImage() -> Bool { autoFitArea() }
 
     /// Área que será exportada.
     public var area: Rect { workArea?.rect ?? imageRect }
 
-    /// Expande a área para conter os objetos indicados (nunca a encolhe). Só atua com `autoExpand` ligado.
-    /// Considera apenas esses objetos: se a área foi encolhida de propósito, mexer noutro objeto não a reabre.
-    /// Devolve `true` se a área mudou.
+    /// Com `autoExpand`, ajusta a área ao conteúdo: cresce para conter o que saiu e encolhe quando algo voltou ou foi
+    /// apagado. (`ids` já não restringe: a área segue sempre todo o conteúdo visível.) Devolve `true` se mudou.
     @discardableResult
-    public mutating func expandAreaToFit(ids: [UUID]) -> Bool {
+    public mutating func expandAreaToFit(ids: [UUID]) -> Bool { autoFitArea() }
+
+    /// Se `autoExpand` estiver ligado, faz `fitAreaToContent`. Devolve `true` se a área mudou.
+    @discardableResult
+    public mutating func autoFitArea() -> Bool {
         guard autoExpand else { return false }
-        let current = area
-        var union = current
-        for a in annotations where a.visible && ids.contains(a.id) { union = union.union(a.worldBounds) }
-        return setArea(roundedOut: union, if: current)
+        let before = area
+        fitAreaToContent()
+        return area != before
     }
 
     /// Área = imagem original + todos os objetos visíveis ("ajustar ao conteúdo").

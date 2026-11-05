@@ -440,6 +440,26 @@ enum SelfTests {
         m.undo(); m.undo()
         check(m.doc.annotations.count == n0 && isBlue(rgb(150, 150)), "desfazer repõe tudo")
 
+        // 1b) a área segue sempre o conteúdo: cresce quando o objeto levantado sai, encolhe quando volta ou é apagado
+        m.tool = .area; m.areaMode = .rect
+        canvas.debugMouse(at: Point(x: 120, y: 120), dragTo: Point(x: 180, y: 180))
+        m.liftSelection(erase: true)
+        m.nudgeSelection(dx: 500, dy: 0)
+        check(m.doc.area.maxX >= 680, "mover para fora faz a área crescer (\(m.doc.area))")
+        m.nudgeSelection(dx: -500, dy: 0)
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "voltar para dentro encolhe-a outra vez (\(m.doc.area))")
+        m.nudgeSelection(dx: 500, dy: 0)
+        if let id = m.selection { m.setVisible(id, false) }
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "esconder o objeto encolhe-a (\(m.doc.area))")
+        if let id = m.selection { m.setVisible(id, true) }
+        check(m.doc.area.maxX >= 680, "mostrar outra vez volta a crescer (\(m.doc.area))")
+        m.deleteSelection()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "apagar o objeto encolhe-a (\(m.doc.area))")
+        while m.doc.annotations.count > n0 { m.undo() }
+        m.undo()   // (a seleção/levantar)
+        while m.doc.annotations.count > n0 { m.undo() }
+        check(m.doc.annotations.count == n0 && isBlue(rgb(150, 150)), "desfazer repõe a imagem")
+
         // 2) arrastar de dentro da seleção levanta e move de uma vez
         m.tool = .area
         canvas.debugMouse(at: Point(x: 110, y: 110), dragTo: Point(x: 190, y: 190))
@@ -876,10 +896,12 @@ enum SelfTests {
         m.escape(); check(m.tool == .select && m.selection == idA, "primeiro Esc volta a Mover e mantém a seleção")
         m.escape(); check(m.selection == nil, "segundo Esc limpa a seleção")
         // 9) Tela: Esc cancela o que foi feito nela
+        let areaBefore = m.doc.area, autoBefore = m.doc.autoExpand
         m.tool = .canvas
         m.setAreaSize(width: 900, height: 600); m.setAreaSize(width: 950, height: 650)
+        check(!m.doc.autoExpand, "mudar a área à mão devia desligar o ajuste automático")
         m.escape()
-        check(m.tool == .select && m.doc.workArea == nil, "Esc na Tela devia desfazer as alterações (área \(m.doc.area))")
+        check(m.tool == .select && m.doc.area == areaBefore && m.doc.autoExpand == autoBefore, "Esc na Tela devia desfazer as alterações (área \(m.doc.area))")
         // 10) setas deslocam o elemento selecionado
         m.selection = idA
         let x0 = m.selected!.shape.bounds.x
@@ -1011,7 +1033,8 @@ enum SelfTests {
         canvas.debugMouse(at: canvas.imageHandlePoints()[4], dragTo: Point(x: 400, y: 250))
         let p = m.imagePlacement
         check(abs(p.width - 400) < 1 && abs(p.height - 250) < 1 && abs(p.x) < 1 && abs(p.y) < 1, "em proporção devia ficar 400×250 na origem (\(p))")
-        check(abs(m.doc.area.width - 400) < 1, "a área devia seguir o tamanho da imagem (\(m.doc.area))")
+        // a área ajusta-se ao conteúdo: a imagem (400×250) mais o retângulo rodado (370…430 × 150…350, com a linha)
+        check(abs(m.doc.area.width - 431) < 1.5 && abs(m.doc.area.height - 351) < 1.5 && abs(m.doc.area.x) < 1, "a área devia seguir a imagem e o retângulo (\(m.doc.area))")
         m.undo()
         // 8) com ⇧: livre (400×300)
         canvas.debugMouse(at: canvas.imageHandlePoints()[4], dragTo: Point(x: 400, y: 300), shift: true)
