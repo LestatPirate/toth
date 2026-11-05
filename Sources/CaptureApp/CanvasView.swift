@@ -59,6 +59,8 @@ final class CanvasView: NSView {
     /// Carregou dentro da seleção de área: se arrastar, levanta-a como objeto e move-a; se só clicar, fica como está (ou,
     /// com a varinha, volta a escolher).
     private var areaLiftPending: Point?
+    /// Varinha a arrastar: por onde o rato passa vai juntando (ou, com ⌥/modo Tirar, tirando) as zonas de cor parecida.
+    private var wandDragSubtract: Bool?
     /// Objeto existente sob o rato quando se começou a desenhar: se for só um clique (sem arrastar), seleciona-se esse objeto.
     private var clickCandidate: UUID?
     /// Gesto sobre a seleção múltipla: redimensionar o grupo por um canto (em proporção, à volta do canto oposto) ou rodá-lo.
@@ -302,7 +304,7 @@ final class CanvasView: NSView {
         ctx.setLineDash(phase: 0, lengths: [])
     }
     private func combine(for event: NSEvent) -> AreaMask.Combine {
-        event.modifierFlags.contains(.shift) ? .add : (event.modifierFlags.contains(.option) ? .subtract : .replace)
+        event.modifierFlags.contains(.shift) ? .add : (event.modifierFlags.contains(.option) ? .subtract : model.areaCombineMode)
     }
 
     // MARK: Grupo (seleção múltipla)
@@ -525,7 +527,13 @@ final class CanvasView: NSView {
             let op = combine(for: event)
             // de dentro da seleção (sem modificadores): arrastar levanta-a como objeto e move-a já; um clique não a levanta
             if op == .replace, let sel = model.areaSelection, sel.contains(p) { areaLiftPending = p; return }
-            if model.areaMode == .wand { model.wandSelect(at: p, combine: op); return }
+            if model.areaMode == .wand {
+                // clique escolhe a zona; arrastar continua a apanhar as zonas por onde passa (como pintar com a varinha)
+                model.wandBegin()
+                if !model.wandSelect(at: p, combine: op) { NSSound.beep() }
+                wandDragSubtract = (op == .subtract)
+                return
+            }
             areaCombine = op
             areaDragRect = Rect(x: p.x, y: p.y, width: 0, height: 0)
         case .stamp:
@@ -580,6 +588,10 @@ final class CanvasView: NSView {
                 moveStart = (start, [id: model.doc.annotations.first { $0.id == id }!.shape])
             } else { return }
             // (continua: o arrasto deste evento já move o objeto levantado)
+        }
+        if let subtract = wandDragSubtract {
+            if let last = lastPoint, Int(last.x.rounded(.down)) == Int(p.x.rounded(.down)), Int(last.y.rounded(.down)) == Int(p.y.rounded(.down)) { return }
+            model.wandExtend(at: p, subtract: subtract); lastPoint = p; return
         }
         if areaDragRect != nil, let start = dragStart {
             var r = Rect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
@@ -654,7 +666,8 @@ final class CanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; groupDrag = nil; areaDragRect = nil; areaLiftPending = nil; needsDisplay = true }
+        defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; groupDrag = nil; areaDragRect = nil; areaLiftPending = nil; wandDragSubtract = nil; needsDisplay = true }
+        if wandDragSubtract != nil { model.wandEnd(); return }
         if let p0 = areaLiftPending {   // clique sem arrastar dentro da seleção
             areaLiftPending = nil
             if model.areaMode == .wand { model.wandSelect(at: p0, combine: .replace) }

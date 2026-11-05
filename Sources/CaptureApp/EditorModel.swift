@@ -226,6 +226,15 @@ final class EditorModel: ObservableObject {
         get { AreaMode(rawValue: UserDefaults.standard.string(forKey: "areaMode") ?? "") ?? .rect }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "areaMode"); objectWillChange.send() }
     }
+    /// Como a próxima seleção se combina com a que já existe (como no Pixelmator: nova, juntar, tirar). ⇧/⌥ sobrepõem-se.
+    var areaCombineMode: AreaMask.Combine {
+        get {
+            switch UserDefaults.standard.string(forKey: "areaCombineMode") { case "add": return .add; case "subtract": return .subtract; default: return .replace }
+        }
+        set {
+            UserDefaults.standard.set(newValue == .add ? "add" : newValue == .subtract ? "subtract" : "replace", forKey: "areaCombineMode"); objectWillChange.send()
+        }
+    }
     /// Tolerância da varinha (0…255 na maior diferença entre canais) e se apanha só píxeis contíguos.
     var wandTolerance: Double {
         get { (UserDefaults.standard.object(forKey: "wandTolerance") as? Double) ?? 32 }
@@ -254,13 +263,27 @@ final class EditorModel: ObservableObject {
         areaSelection = (next?.isEmpty ?? true) ? nil : next
     }
 
-    /// Varinha: os píxeis parecidos com o do ponto `p` (do documento).
-    func wandSelect(at p: Point, combine: AreaMask.Combine = .replace) {
-        guard let r = renderedPixels() else { return }
+    /// Píxeis renderizados guardados durante um gesto da varinha (arrastar vai apanhando mais zonas sem voltar a desenhar).
+    private var wandCache: (pixels: [UInt8], width: Int, height: Int, origin: Point)?
+    func wandBegin() { wandCache = renderedPixels() }
+    func wandEnd() { wandCache = nil }
+
+    /// Varinha: os píxeis parecidos com o do ponto `p` (do documento). Devolve `false` se não houver píxel nesse ponto.
+    @discardableResult
+    func wandSelect(at p: Point, combine: AreaMask.Combine = .replace) -> Bool {
+        guard let r = wandCache ?? renderedPixels() else { return false }
         let local = Point(x: p.x - r.origin.x, y: p.y - r.origin.y)
-        guard var m = AreaMask.wand(pixels: r.pixels, width: r.width, height: r.height, at: local, tolerance: Int(wandTolerance), contiguous: wandContiguous) else { NSSound.beep(); return }
+        guard var m = AreaMask.wand(pixels: r.pixels, width: r.width, height: r.height, at: local, tolerance: Int(wandTolerance), contiguous: wandContiguous) else { return false }
         m.x += Int(r.origin.x); m.y += Int(r.origin.y)
         selectArea(m, combine: combine)
+        return true
+    }
+
+    /// Varinha a arrastar: junta (ou tira) a zona parecida com o píxel por onde o rato passa, se ainda não estiver (ou já estiver) na seleção.
+    func wandExtend(at p: Point, subtract: Bool) {
+        let inside = areaSelection?.contains(p) ?? false
+        if subtract ? !inside : inside { return }
+        wandSelect(at: p, combine: subtract ? .subtract : .add)
     }
 
     func selectWholeArea() { areaSelection = AreaMask.rect(doc.area) }

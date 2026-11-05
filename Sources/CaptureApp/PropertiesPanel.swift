@@ -256,6 +256,7 @@ struct PropertiesPanel: View {
     }
 
     private var areaMode: Binding<EditorModel.AreaMode> { Binding(get: { model.areaMode }, set: { model.areaMode = $0 }) }
+    private var areaCombineMode: Binding<AreaMask.Combine> { Binding(get: { model.areaCombineMode }, set: { model.areaCombineMode = $0 }) }
     private var wandTolerance: Binding<Double> { Binding(get: { model.wandTolerance }, set: { model.wandTolerance = $0 }) }
     private var wandContiguous: Binding<Bool> { Binding(get: { model.wandContiguous }, set: { model.wandContiguous = $0 }) }
 
@@ -267,12 +268,19 @@ struct PropertiesPanel: View {
                 Image(systemName: "circle.dashed").tag(EditorModel.AreaMode.ellipse)
                 Image(systemName: "wand.and.stars").tag(EditorModel.AreaMode.wand)
             }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
+            // como a próxima seleção se combina com a que existe (como no Pixelmator)
+            Picker("", selection: areaCombineMode) {
+                Text(L("Nova")).tag(AreaMask.Combine.replace)
+                Text(L("Juntar")).tag(AreaMask.Combine.add)
+                Text(L("Tirar")).tag(AreaMask.Combine.subtract)
+            }.pickerStyle(.segmented).labelsHidden().frame(width: 190)
+                .help(L("Nova: substitui a seleção. Juntar: acrescenta-lhe. Tirar: retira-lhe. (⇧ junta e ⌥ tira em qualquer modo.)"))
             if model.areaMode == .wand {
                 slider(L("Tolerância"), value: wandTolerance, range: 0...128, format: "%.0f")
                 row(L("Só píxeis contíguos")) { Toggle("", isOn: wandContiguous).labelsHidden() }
             }
             Text(model.areaMode == .wand
-                 ? L("Clique numa cor para selecionar os píxeis parecidos. ⇧ junta, ⌥ tira.")
+                 ? L("Clique numa cor para selecionar os píxeis parecidos; arraste para ir apanhando mais zonas. ⇧ junta, ⌥ tira.")
                  : L("Arraste para selecionar (⇧ junta, ⌥ tira). Depois: arraste de dentro para a mover como objeto, ou use os botões. Esc limpa."))
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let sel = model.areaSelection, !sel.isEmpty {

@@ -491,6 +491,22 @@ enum SelfTests {
         canvas.debugMouse(at: Point(x: 150, y: 150)); canvas.debugMouse(at: Point(x: 400, y: 200), shift: true)
         canvas.debugMouse(at: Point(x: 400, y: 200), option: true)
         check(m.areaSelection?.rect == Rect(x: 100, y: 100, width: 100, height: 100), "⌥ tira-a outra vez")
+        // varinha a arrastar: do azul (150,150) ao vermelho (400,150) passa pelo branco; as três zonas ficam selecionadas
+        m.clearAreaSelection(); m.areaCombineMode = .add
+        canvas.debugMouse(at: Point(x: 150, y: 150), dragTo: Point(x: 400, y: 150))
+        check(m.areaSelection.map { $0.contains(Point(x: 150, y: 150)) && $0.contains(Point(x: 400, y: 150)) && $0.contains(Point(x: 250, y: 150)) } ?? false, "arrastar com a varinha vai apanhando as zonas por onde passa")
+        // modo «Nova» substitui mesmo com seleção existente; modo «Tirar» retira
+        m.areaCombineMode = .replace
+        canvas.debugMouse(at: Point(x: 400, y: 200))
+        check(m.areaSelection?.rect == Rect(x: 300, y: 100, width: 200, height: 200), "modo Nova substitui (\(String(describing: m.areaSelection?.rect)))")
+        m.areaCombineMode = .add
+        canvas.debugMouse(at: Point(x: 150, y: 150))
+        check(m.areaSelection?.rect == Rect(x: 100, y: 100, width: 400, height: 200), "modo Juntar acrescenta")
+        m.areaCombineMode = .subtract
+        canvas.debugMouse(at: Point(x: 400, y: 200))
+        check(m.areaSelection?.rect == Rect(x: 100, y: 100, width: 100, height: 100), "modo Tirar retira (\(String(describing: m.areaSelection?.rect)))")
+        m.areaCombineMode = .replace
+        canvas.debugMouse(at: Point(x: 150, y: 150))
         // apagar: o azul passa a branco
         m.eraseSelection()
         check(isWhite(rgb(150, 150)) && isWhite(rgb(199, 199)) && !isWhite(rgb(400, 200)), "apagar deixa o quadrado branco e o resto intacto")
