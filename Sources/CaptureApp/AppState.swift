@@ -72,6 +72,55 @@ final class AppState: ObservableObject {
         folderCaptureCount = library.filter { CaptureContainer.isFolderCapture($0.url) }.count
     }
 
+    // MARK: Faixa de baixo (só as mais recentes)
+
+    /// Quantas capturas a faixa de baixo mostra (as mais recentes); o resto está em «Abrir Biblioteca».
+    static let stripLimit = 10
+    /// As capturas da faixa: as `stripLimit` mais recentes e, se for mais antiga, também a que está aberta.
+    var stripItems: [LibraryItem] {
+        var items = Array(library.prefix(Self.stripLimit))
+        if let open = library.first(where: { isCurrent($0.url) }), !items.contains(open) { items.append(open) }
+        return items
+    }
+
+    /// Miniatura da faixa em que se clicou por último: Backspace/Delete envia-a para o Lixo. Limpa-se ao clicar noutro
+    /// sítio ou ao premir outra tecla, para o Backspace nunca apagar uma captura por engano.
+    @Published var stripSelection: URL?
+    private var stripMonitor: Any?
+
+    /// Clicou-se numa miniatura da faixa: abre-a e fica marcada para o Backspace.
+    func selectInStrip(_ url: URL) {
+        open(url)
+        stripSelection = isCurrent(url) ? url : nil
+        installStripMonitor()
+    }
+
+    /// Backspace/Delete com uma miniatura marcada: vai para o Lixo. Devolve `true` se apagou.
+    @discardableResult
+    func deleteStripSelection() -> Bool {
+        guard let url = stripSelection else { return false }
+        stripSelection = nil
+        trash(url)
+        return true
+    }
+
+    private func installStripMonitor() {
+        guard stripMonitor == nil else { return }
+        stripMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { event in
+            MainActor.assumeIsolated {
+                let state = AppState.shared
+                guard state.stripSelection != nil else { return event }
+                // qualquer clique desmarca (clicar numa miniatura volta a marcar, ao soltar)
+                guard event.type == .keyDown else { state.stripSelection = nil; return event }
+                let isDelete = (event.keyCode == 51 || event.keyCode == 117) && event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+                let typing = event.window?.firstResponder is NSText
+                guard isDelete, !typing, event.window?.attachedSheet == nil else { state.stripSelection = nil; return event }
+                state.deleteStripSelection()
+                return nil   // consumido: não apaga também um elemento da imagem
+            }
+        }
+    }
+
     /// Envia para o Lixo (recuperável).
     func trash(_ url: URL) {
         try? FileManager.default.trashItem(at: url, resultingItemURL: nil)

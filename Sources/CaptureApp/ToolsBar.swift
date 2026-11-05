@@ -7,7 +7,8 @@ import AppKit
 /// Deslocamento das ferramentas na barra de cima. Funciona como um scroll contínuo, ao pixel:
 /// - **manter premida** uma seta desliza as ferramentas a velocidade constante (para quando se solta ou se chega à ponta);
 /// - um **clique rápido** dá um pequeno passo animado;
-/// - a **roda do rato** e o **trackpad** deslizam a barra (a roda vertical também desliza na horizontal).
+/// - a **roda do rato** e o **trackpad** deslizam a barra (a roda vertical também desliza na horizontal);
+/// - **pousar o rato** junto a uma ponta desliza sozinho para esse lado (mais depressa quanto mais perto da ponta).
 @MainActor
 final class ToolsScroll: ObservableObject {
     /// A barra em uso (para os testes).
@@ -115,6 +116,62 @@ final class ToolsScroll: ObservableObject {
 
     private func stopHolding() { timer?.invalidate(); timer = nil; holding = false }
 
+    // MARK: Deslize automático (rato pousado junto a uma ponta)
+
+    /// Largura da zona, a contar de cada ponta da barra, onde pousar o rato faz deslizar.
+    static let hoverZone: CGFloat = 54
+    static let hoverSpeed: CGFloat = 300
+    private static let hoverDelay: TimeInterval = 0.22
+    private var hoverTimer: Timer?
+    private var hoverItem: DispatchWorkItem?
+    private(set) var hoverDirection = 0
+    private var hoverFactor: CGFloat = 0
+
+    /// Para onde (e com que força, 0…1) desliza com o rato em `x` numa barra de largura `width`: quanto mais perto da
+    /// ponta, mais depressa. `0` fora das zonas, ou se já não há mais para esse lado.
+    func hoverPull(x: CGFloat, width: CGFloat) -> (direction: Int, factor: CGFloat) {
+        guard overflows, width > 2 * Self.hoverZone, x >= 0, x <= width else { return (0, 0) }
+        if x < Self.hoverZone, canScrollLeft { return (-1, 0.35 + 0.65 * (1 - x / Self.hoverZone)) }
+        if x > width - Self.hoverZone, canScrollRight { return (1, 0.35 + 0.65 * (1 - (width - x) / Self.hoverZone)) }
+        return (0, 0)
+    }
+
+    /// O rato está em `x` sobre a barra (`nil` = saiu). Começa a deslizar depois de uma pequena pausa, para não fugir a
+    /// quem só vai clicar numa ferramenta perto da ponta.
+    func hover(x: CGFloat?, width: CGFloat) {
+        let pull = x.map { hoverPull(x: $0, width: width) } ?? (0, 0)
+        hoverFactor = pull.factor
+        guard pull.direction != hoverDirection else { return }
+        hoverDirection = pull.direction
+        hoverItem?.cancel(); hoverItem = nil
+        hoverTimer?.invalidate(); hoverTimer = nil
+        guard pull.direction != 0 else { return }
+        let item = DispatchWorkItem { [weak self] in self?.startHoverSlide() }
+        hoverItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hoverDelay, execute: item)
+    }
+
+    /// Passo do deslize automático (público para os testes).
+    func advanceHover(dt: TimeInterval) {
+        guard hoverDirection != 0, !holding else { return }
+        offset = clamp(offset + CGFloat(hoverDirection) * Self.hoverSpeed * hoverFactor * CGFloat(dt))
+    }
+
+    private func startHoverSlide() {
+        hoverItem = nil
+        lastTick = Date()
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = Date(); let dt = now.timeIntervalSince(self.lastTick); self.lastTick = now
+                self.advanceHover(dt: min(dt, 0.05))
+                if (self.hoverDirection < 0 && !self.canScrollLeft) || (self.hoverDirection > 0 && !self.canScrollRight) { self.hover(x: nil, width: 0) }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        hoverTimer = t
+    }
+
     // MARK: Roda do rato / trackpad
 
     /// `dx`/`dy`: deslocamentos do evento. Qualquer eixo desliza a barra (a roda vertical de um rato também).
@@ -197,8 +254,15 @@ struct ToolsBar: View {
             .background(GeometryReader { g in
                 Color.clear.onAppear { scroll.frame = g.frame(in: .global) }.onChange(of: g.frame(in: .global)) { _, f in scroll.frame = f }
             })
+            // pousar o rato junto a uma ponta desliza as ferramentas para esse lado
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let p): scroll.hover(x: p.x, width: geo.size.width)
+                case .ended: scroll.hover(x: nil, width: geo.size.width)
+                }
+            }
             .onAppear { ToolsScroll.current = scroll; scroll.installWheelMonitor() }
-            .onDisappear { scroll.removeWheelMonitor() }
+            .onDisappear { scroll.removeWheelMonitor(); scroll.hover(x: nil, width: 0) }
             // a ferramenta escolhida (por atalho, ou noutro sítio) fica sempre à vista
             .onChange(of: model.tool) { _, t in scroll.reveal(index: tools.firstIndex(of: t) ?? 0) }
         }

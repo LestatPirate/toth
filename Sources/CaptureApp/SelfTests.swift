@@ -1718,6 +1718,27 @@ enum SelfTests {
         h.pressBegan(direction: 1); h.pressEnded()   // clique rápido
         check(close(h.offset, before + ToolsScroll.clickStep), "clique rápido: um passo de \(ToolsScroll.clickStep) px (moveu \(h.offset - before))")
 
+        // deslize automático: pousar o rato junto a uma ponta puxa para esse lado, mais depressa perto da ponta
+        let a = ToolsScroll(); a.viewport = 200
+        let w: CGFloat = 244
+        check(a.hoverPull(x: 120, width: w).direction == 0, "a meio da barra não desliza")
+        check(a.hoverPull(x: 5, width: w).direction == 0, "no início não há nada para a esquerda")
+        let near = a.hoverPull(x: w - 4, width: w), far = a.hoverPull(x: w - 50, width: w)
+        check(near.direction == 1 && far.direction == 1 && near.factor > far.factor && near.factor <= 1, "junto à ponta direita desliza, mais depressa mais perto (\(far.factor) → \(near.factor))")
+        a.hover(x: w - 4, width: w)
+        for _ in 0..<30 { a.advanceHover(dt: dt) }
+        check(a.offset > 100 && a.offset < 160, "meio segundo pousado na ponta desliza ~\(Int(ToolsScroll.hoverSpeed / 2)) px (deslizou \(a.offset))")
+        let slid = a.offset
+        a.hover(x: 120, width: w)
+        for _ in 0..<30 { a.advanceHover(dt: dt) }
+        check(a.offset == slid, "sair da zona pára o deslize")
+        check(a.hoverPull(x: 5, width: w).direction == -1, "agora já há para a esquerda")
+        a.hover(x: w - 4, width: w); a.hover(x: nil, width: w)
+        for _ in 0..<30 { a.advanceHover(dt: dt) }
+        check(a.offset == slid && a.hoverDirection == 0, "o rato sair da barra pára o deslize")
+        a.setOffset(a.maxOffset)
+        check(a.hoverPull(x: w - 4, width: w).direction == 0, "na ponta direita não desliza mais")
+
         // pega do painel escondido: larga o bastante para não se confundir com a borda da janela
         check(PanelLayout.hiddenHandleWidth >= 18, "a pega do painel escondido devia ter ≥ 18 px (tem \(PanelLayout.hiddenHandleWidth))")
         check(PanelLayout.hiddenHandleWidth >= 2 * PanelLayout.dividerWidth, "a pega escondida devia ser bem mais larga que a divisória normal")
@@ -1764,6 +1785,35 @@ enum SelfTests {
         // a faixa oculta mantém o botão para a voltar a mostrar (o rodapé continua lá)
         state.toggleLibraryStrip()
         check(state.showLibraryStrip, "voltar a mostrar")
+
+        // a faixa mostra só as 10 mais recentes (e a que está aberta, se for mais antiga)
+        for i in 0..<11 { _ = state.createBlankImage(width: 120 + i, height: 80, backgroundHex: "#CC6633", transparent: false); RunLoop.current.run(until: Date().addingTimeInterval(1.05)) }
+        state.refreshLibrary()
+        check(state.library.count >= 12, "a biblioteca tem tudo (\(state.library.count))")
+        check(state.stripItems.count == AppState.stripLimit && state.stripItems.map(\.url) == Array(state.library.prefix(10)).map(\.url), "a faixa mostra as 10 mais recentes (\(state.stripItems.count))")
+        if let oldest = state.library.last {
+            state.open(oldest.url)
+            check(state.stripItems.count == 11 && state.stripItems.last?.url == oldest.url, "a captura aberta aparece mesmo sendo antiga (\(state.stripItems.count))")
+        }
+        // clicar numa miniatura marca-a; Backspace envia-a para o Lixo e abre outra
+        let victim = state.stripItems[2].url, total = state.library.count
+        state.selectInStrip(victim)
+        check(state.stripSelection == victim && state.isCurrent(victim), "clicar na miniatura abre e marca")
+        check(state.deleteStripSelection(), "Backspace com a miniatura marcada apaga")
+        check(state.library.count == total - 1 && !FileManager.default.fileExists(atPath: victim.path) && state.stripSelection == nil, "a captura foi para o Lixo (\(state.library.count) de \(total))")
+        check(!state.deleteStripSelection() && state.library.count == total - 1, "sem miniatura marcada, Backspace não apaga mais nenhuma")
+        // a tecla a sério: Backspace na janela apaga a marcada; outra tecla ou um clique desmarca
+        if let win = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first {
+            func key(_ code: UInt16) -> NSEvent? {
+                NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)
+            }
+            let second = state.stripItems[1].url
+            state.selectInStrip(second)
+            if let e = key(0) { NSApp.sendEvent(e) }   // «a»: desmarca
+            check(state.stripSelection == nil, "outra tecla desmarca a miniatura")
+            if let e = key(51) { NSApp.sendEvent(e) }
+            check(FileManager.default.fileExists(atPath: second.path), "depois de desmarcada, Backspace não apaga a captura")
+        }
         return fails
     }
 }

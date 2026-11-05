@@ -257,9 +257,10 @@ private struct LibraryStrip: View {
         HStack(spacing: 0) {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 8) {
-                    ForEach(state.library) { item in
+                    // só as mais recentes (o resto está em «Abrir Biblioteca»); clicar abre e marca: Backspace envia para o Lixo
+                    ForEach(state.stripItems) { item in
                         ThumbnailView(item: item, revision: state.revision, selected: state.isCurrent(item.url))
-                            .onTapGesture { state.open(item.url) }
+                            .onTapGesture { state.selectInStrip(item.url) }
                             .contextMenu {
                                 Button(L("Mostrar no Finder")) { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
                                 Button(L("Mover para o Lixo"), role: .destructive) { state.trash(item.url) }
