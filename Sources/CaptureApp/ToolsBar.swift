@@ -29,8 +29,13 @@ final class ToolsScroll: ObservableObject {
     func setToolCount(_ n: Int) { contentWidth = CGFloat(n) * ToolsScroll.slot - ToolsScroll.spacing }
     /// Largura visível (definida pela barra a cada desenho).
     var viewport: CGFloat = 0
-    /// Retângulo da barra nas coordenadas da janela (a partir do topo), para a roda do rato.
-    var frame: CGRect = .zero
+    /// A vista nativa que cobre a barra inteira: diz onde está o rato (deslize automático) e delimita a zona da roda.
+    weak var trackView: NSView?
+    /// O ponto (coordenadas da janela) está sobre a barra das ferramentas?
+    func contains(windowPoint p: CGPoint, in window: NSWindow?) -> Bool {
+        guard let v = trackView, let w = v.window, w === window else { return false }
+        return v.bounds.contains(v.convert(p, from: nil))
+    }
 
     private var timer: Timer?
     private var holdItem: DispatchWorkItem?
@@ -185,9 +190,7 @@ final class ToolsScroll: ObservableObject {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             MainActor.assumeIsolated {
-                guard let self, self.overflows, let content = event.window?.contentView else { return event }
-                let p = CGPoint(x: event.locationInWindow.x, y: content.bounds.height - event.locationInWindow.y)
-                guard self.frame.contains(p) else { return event }
+                guard let self, self.overflows, self.contains(windowPoint: event.locationInWindow, in: event.window) else { return event }
                 self.wheel(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
                 return nil   // consumido: não rola nada por baixo
             }
@@ -251,16 +254,9 @@ struct ToolsBar: View {
                 if overflow { arrow("chevron.right", direction: 1, enabled: scroll.canScrollRight, help: L("Mais ferramentas")) }
             }
             .frame(width: geo.size.width, height: 54, alignment: .topLeading)
-            .background(GeometryReader { g in
-                Color.clear.onAppear { scroll.frame = g.frame(in: .global) }.onChange(of: g.frame(in: .global)) { _, f in scroll.frame = f }
-            })
-            // pousar o rato junto a uma ponta desliza as ferramentas para esse lado
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let p): scroll.hover(x: p.x, width: geo.size.width)
-                case .ended: scroll.hover(x: nil, width: geo.size.width)
-                }
-            }
+            // área de seguimento nativa sobre a barra TODA (os botões não a tapam, e os cliques passam por ela): pousar o
+            // rato junto a uma ponta desliza as ferramentas para esse lado, e a roda/trackpad vale em toda a altura
+            .overlay(ToolsTracker(scroll: scroll).allowsHitTesting(false))
             .onAppear { ToolsScroll.current = scroll; scroll.installWheelMonitor() }
             .onDisappear { scroll.removeWheelMonitor(); scroll.hover(x: nil, width: 0) }
             // a ferramenta escolhida (por atalho, ou noutro sítio) fica sempre à vista
@@ -279,5 +275,30 @@ struct ToolsBar: View {
                 .onChanged { _ in if enabled { scroll.pressBegan(direction: direction) } }
                 .onEnded { _ in scroll.pressEnded() })
             .help(help)
+    }
+}
+
+/// Vista transparente por cima da barra das ferramentas: segue o rato com uma `NSTrackingArea` (que não depende de quem
+/// recebe os cliques) e serve de referência para saber se a roda do rato está sobre a barra.
+private struct ToolsTracker: NSViewRepresentable {
+    let scroll: ToolsScroll
+    func makeNSView(context: Context) -> TrackView { let v = TrackView(); v.scroll = scroll; scroll.trackView = v; return v }
+    func updateNSView(_ v: TrackView, context: Context) { v.scroll = scroll; scroll.trackView = v }
+
+    final class TrackView: NSView {
+        weak var scroll: ToolsScroll?
+        private var area: NSTrackingArea?
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }   // os cliques vão para os botões por baixo
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let a = area { removeTrackingArea(a) }
+            let a = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+            addTrackingArea(a); area = a
+        }
+        private func report(_ e: NSEvent) { scroll?.hover(x: convert(e.locationInWindow, from: nil).x, width: bounds.width) }
+        override func mouseEntered(with event: NSEvent) { report(event) }
+        override func mouseMoved(with event: NSEvent) { report(event) }
+        override func mouseExited(with event: NSEvent) { scroll?.hover(x: nil, width: bounds.width) }
     }
 }

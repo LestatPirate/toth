@@ -1739,6 +1739,42 @@ enum SelfTests {
         a.setOffset(a.maxOffset)
         check(a.hoverPull(x: w - 4, width: w).direction == 0, "na ponta direita não desliza mais")
 
+        // na janela a sério: a área de seguimento cobre a barra TODA (do topo ao fundo), não só a faixa junto à barra de rolagem
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("toth-tools-selftest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        CaptureStore.overrideFolder = tmp
+        if AppState.shared.createBlankImage(width: 400, height: 300, backgroundHex: "#FFFFFF", transparent: false) == nil {
+            MainWindow.show()
+            if let win = NSApp.windows.first(where: { $0.contentView is NSHostingView<MainView> }) {
+                win.setContentSize(NSSize(width: 760, height: 600))
+                RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+                if let live = ToolsScroll.current, let v = live.trackView {
+                    check(v.bounds.height >= 50 && v.bounds.width > 120, "a área de seguimento devia cobrir a barra (\(v.bounds))")
+                    check(live.overflows, "numa janela estreita as ferramentas não cabem")
+                    func move(_ x: CGFloat, _ y: CGFloat) -> NSEvent? {
+                        NSEvent.mouseEvent(with: .mouseMoved, location: v.convert(NSPoint(x: x, y: y), to: nil), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)
+                    }
+                    for y in [CGFloat(3), 20, 38, v.bounds.height - 3] {
+                        if let e = move(v.bounds.width - 6, y) {
+                            v.mouseMoved(with: e)
+                            check(live.hoverDirection == 1, "rato à direita, a \(Int(y)) px do topo da barra: devia deslizar (direção \(live.hoverDirection))")
+                            check(live.contains(windowPoint: e.locationInWindow, in: win), "a roda devia valer a \(Int(y)) px do topo da barra")
+                        }
+                        if let e = move(v.bounds.width / 2, y) { v.mouseMoved(with: e); check(live.hoverDirection == 0, "a meio da barra não desliza") }
+                    }
+                    if let e = move(v.bounds.width - 6, v.bounds.height + 30) { check(!live.contains(windowPoint: e.locationInWindow, in: win), "abaixo da barra a roda já não é das ferramentas") }
+                    // o deslize arranca mesmo (depois da pausa) com o rato pousado no topo da barra
+                    let start = live.offset
+                    if let e = move(v.bounds.width - 6, 5) { v.mouseMoved(with: e) }
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.9))
+                    check(live.offset > start + 40, "pousado junto à ponta, no topo da barra, devia ter deslizado (\(start) → \(live.offset))")
+                    v.mouseExited(with: NSEvent())
+                } else { fails.append("sem área de seguimento na barra das ferramentas") }
+            } else { fails.append("sem janela principal") }
+        } else { fails.append("não criou a imagem de teste") }
+
         // pega do painel escondido: larga o bastante para não se confundir com a borda da janela
         check(PanelLayout.hiddenHandleWidth >= 18, "a pega do painel escondido devia ter ≥ 18 px (tem \(PanelLayout.hiddenHandleWidth))")
         check(PanelLayout.hiddenHandleWidth >= 2 * PanelLayout.dividerWidth, "a pega escondida devia ser bem mais larga que a divisória normal")
