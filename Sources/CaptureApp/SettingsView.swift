@@ -74,6 +74,17 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 8) {
+                Text(L("Pasta das capturas")).font(.headline)
+                HStack(spacing: 10) {
+                    Text(CaptureStore.shortPath(CaptureStore.folder)).font(.system(.callout, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: 300, alignment: .leading).id(micState.tick)
+                    Button(L("Alterar…")) { chooseFolder() }
+                    Button(L("Repor padrão")) { confirmMove(to: CaptureStore.defaultFolder) }.disabled(CaptureStore.customFolder == nil)
+                }
+                Text(L("Capturas, vídeos, edições e carimbos importados ficam aqui (subpasta «Carimbos»). Ao alterar, tudo é movido para a nova pasta."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {
                 Text(L("Atualizações")).font(.headline)
                 Toggle(L("Procurar atualizações automaticamente"), isOn: $updater.automatic)
                 HStack(spacing: 10) {
@@ -88,7 +99,34 @@ struct SettingsView: View {
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(22)
-        .frame(width: 520, height: 600, alignment: .topLeading)
+        .frame(width: 520, height: 700, alignment: .topLeading)
+    }
+
+    /// Escolhe a nova pasta e, depois de confirmar, move tudo para lá.
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = CaptureStore.folder.deletingLastPathComponent()
+        panel.prompt = L("Escolher")
+        panel.message = L("Escolha a pasta onde o Toth guarda as capturas, vídeos e carimbos")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        confirmMove(to: url)
+    }
+
+    private func confirmMove(to url: URL) {
+        let dest = url.standardizedFileURL
+        guard dest != CaptureStore.folder.standardizedFileURL else { return }
+        let n = CaptureStore.ownedItems(in: CaptureStore.folder).count
+        let alert = NSAlert()
+        alert.messageText = L("Mover as capturas para %@?", CaptureStore.shortPath(dest))
+        alert.informativeText = n == 0 ? L("A pasta atual não tem capturas. A partir de agora as novas ficam na pasta escolhida.")
+            : L("%d itens (capturas, vídeos, edições e carimbos) vão ser movidos de %@ para a nova pasta. Nada é apagado antes de estar no destino.", n, CaptureStore.shortPath(CaptureStore.folder))
+        alert.addButton(withTitle: L("Mover"))
+        alert.addButton(withTitle: L("Cancelar"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        AppState.shared.changeCaptureFolder(to: dest)
+        micState.tick += 1   // refaz o caminho mostrado
     }
 }
 
@@ -98,7 +136,7 @@ enum SettingsWindow {
 
     static func show() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 600), styleMask: [.titled, .closable],
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 700), styleMask: [.titled, .closable],
                              backing: .buffered, defer: false)
             w.title = L("Preferências")
             w.contentView = NSHostingView(rootView: SettingsView(settings: .shared))

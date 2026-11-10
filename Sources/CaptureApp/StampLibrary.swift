@@ -5,7 +5,7 @@ import AppKit
 import CaptureCore
 
 /// Carimbos: símbolos do sistema (pintados com a cor do estilo), emojis e imagens importadas pelo utilizador
-/// (guardadas em `~/Library/Application Support/Toth/Stamps`, como PNG). Um carimbo de imagem entra no documento como `image`
+/// (guardadas na subpasta «Carimbos» da pasta das capturas, como PNG). Um carimbo de imagem entra no documento como `image`
 /// (a imagem fica dentro da captura, como ao colar).
 @MainActor
 final class StampLibrary: ObservableObject {
@@ -28,9 +28,9 @@ final class StampLibrary: ObservableObject {
     @Published private(set) var images: [URL] = []
 
     nonisolated(unsafe) static var overrideFolder: URL?
+    /// Subpasta «Carimbos» da pasta das capturas (muda e migra com ela; ver `CaptureStore`).
     static var folder: URL {
-        let url = overrideFolder ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Toth/Stamps", isDirectory: true)
+        let url = overrideFolder ?? CaptureStore.stampsFolder
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

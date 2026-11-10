@@ -75,7 +75,7 @@ final class AppState: ObservableObject {
     // MARK: Faixa de baixo (só as mais recentes)
 
     /// Quantas capturas a faixa de baixo mostra (as mais recentes); o resto está em «Abrir Biblioteca».
-    static let stripLimit = 10
+    static let stripLimit = 20
     /// As capturas da faixa: as `stripLimit` mais recentes e, se for mais antiga, também a que está aberta.
     var stripItems: [LibraryItem] {
         var items = Array(library.prefix(Self.stripLimit))
@@ -119,6 +119,25 @@ final class AppState: ObservableObject {
                 return nil   // consumido: não apaga também um elemento da imagem
             }
         }
+    }
+
+    // MARK: Pasta das capturas
+
+    /// Muda a pasta das capturas, movendo para lá tudo o que é do Toth; a captura aberta reabre no sítio novo.
+    /// Devolve a mensagem a mostrar ao utilizador.
+    @discardableResult
+    func changeCaptureFolder(to newFolder: URL) -> String {
+        let openName = model?.url.lastPathComponent ?? videoURL?.lastPathComponent
+        model = nil; videoURL = nil   // fecha o que está aberto (o ficheiro vai mudar de sítio)
+        let r = CaptureStore.changeFolder(to: newFolder)
+        StampLibrary.shared.reload()
+        refreshLibrary()
+        if let name = openName, let again = library.first(where: { $0.url.lastPathComponent == name }) { open(again.url) }
+        else if let first = library.first { open(first.url) }
+        var msg = r.moved == 1 ? L("1 item movido para %@.", CaptureStore.shortPath(CaptureStore.folder)) : L("%d itens movidos para %@.", r.moved, CaptureStore.shortPath(CaptureStore.folder))
+        if !r.failed.isEmpty { msg += " " + L("Ficaram na pasta antiga (já existia um com o mesmo nome no destino): %@.", r.failed.joined(separator: ", ")) }
+        errorMessage = msg
+        return msg
     }
 
     /// Envia para o Lixo (recuperável).

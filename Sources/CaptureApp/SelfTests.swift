@@ -1822,14 +1822,14 @@ enum SelfTests {
         state.toggleLibraryStrip()
         check(state.showLibraryStrip, "voltar a mostrar")
 
-        // a faixa mostra só as 10 mais recentes (e a que está aberta, se for mais antiga)
-        for i in 0..<11 { _ = state.createBlankImage(width: 120 + i, height: 80, backgroundHex: "#CC6633", transparent: false); RunLoop.current.run(until: Date().addingTimeInterval(1.05)) }
+        // a faixa mostra só as 20 mais recentes (e a que está aberta, se for mais antiga)
+        for i in 0..<21 { _ = state.createBlankImage(width: 120 + i, height: 80, backgroundHex: "#CC6633", transparent: false) }
         state.refreshLibrary()
-        check(state.library.count >= 12, "a biblioteca tem tudo (\(state.library.count))")
-        check(state.stripItems.count == AppState.stripLimit && state.stripItems.map(\.url) == Array(state.library.prefix(10)).map(\.url), "a faixa mostra as 10 mais recentes (\(state.stripItems.count))")
+        check(state.library.count >= 22, "a biblioteca tem tudo (\(state.library.count))")
+        check(AppState.stripLimit == 20 && state.stripItems.count == 20 && state.stripItems.map(\.url) == Array(state.library.prefix(20)).map(\.url), "a faixa mostra as 20 mais recentes (\(state.stripItems.count))")
         if let oldest = state.library.last {
             state.open(oldest.url)
-            check(state.stripItems.count == 11 && state.stripItems.last?.url == oldest.url, "a captura aberta aparece mesmo sendo antiga (\(state.stripItems.count))")
+            check(state.stripItems.count == 21 && state.stripItems.last?.url == oldest.url, "a captura aberta aparece mesmo sendo antiga (\(state.stripItems.count))")
         }
         // clicar numa miniatura marca-a; Backspace envia-a para o Lixo e abre outra
         let victim = state.stripItems[2].url, total = state.library.count
@@ -1876,6 +1876,67 @@ extension SelfTests {
         try? await Task.sleep(nanoseconds: 600_000_000)
         check(gotScroll, "«Rolagem» devia chamar o tratador")
         check(MainWindow.onScreenNormalWindowCount() == 0, "depois de «Rolagem» ficaram \(MainWindow.onScreenNormalWindowCount()) janelas do Toth no ecrã (cobririam a app a capturar)")
+        return fails
+    }
+}
+
+extension SelfTests {
+    // MARK: Pasta das capturas (mudar e migrar)
+
+    /// Simula a pasta antiga (`Capture`) com uma captura, um vídeo com edição e carimbos soltos no sítio antigo, migra para
+    /// a pasta nova e depois muda de pasta pelas Preferências (`changeCaptureFolder`), com um conflito de nome pelo meio.
+    @MainActor static func folderSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        let fm = FileManager.default
+        try? fm.removeItem(at: dir)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let old = dir.appendingPathComponent("Capture"), new = dir.appendingPathComponent("TothCapture"), oldStamps = dir.appendingPathComponent("AppSupport/Toth/Stamps")
+        for d in [old, oldStamps, old.appendingPathComponent("Toth_2026-01-01_10.00.00.mp4.edicao"), old.appendingPathComponent("Toth_2025-12-31_09.00.00.capture")] { try? fm.createDirectory(at: d, withIntermediateDirectories: true) }
+        func touch(_ u: URL, _ s: String = "x") { try? s.data(using: .utf8)!.write(to: u) }
+        touch(old.appendingPathComponent("Toth_2026-01-01_10.00.00.mp4"))
+        touch(old.appendingPathComponent("Toth_2026-01-01_10.00.00.mp4.edicao/edicao.json"), "{}")
+        touch(old.appendingPathComponent("Toth_2026-01-02_10.00.00.capture"), "zip")
+        touch(old.appendingPathComponent("Toth_2025-12-31_09.00.00.capture/document.json"), "{}")   // captura antiga em pasta
+        touch(old.appendingPathComponent("notas.txt"), "do utilizador")                            // não é do Toth: fica
+        touch(old.appendingPathComponent(".DS_Store"))
+        touch(oldStamps.appendingPathComponent("logo.png"), "png")
+        touch(oldStamps.appendingPathComponent("seta.png"), "png")
+
+        // 1) migração da pasta antiga para a nova (como ao abrir a app pela primeira vez depois da mudança de nome)
+        let r1 = CaptureStore.moveContents(from: old, to: new)
+        check(r1.moved == 4 && r1.failed.isEmpty, "move as 4 coisas do Toth (moveu \(r1.moved), falhou \(r1.failed))")
+        check(fm.fileExists(atPath: new.appendingPathComponent("Toth_2026-01-01_10.00.00.mp4.edicao/edicao.json").path), "a pasta de edição vai com o vídeo")
+        check(fm.fileExists(atPath: new.appendingPathComponent("Toth_2025-12-31_09.00.00.capture/document.json").path), "a captura antiga em pasta vai inteira")
+        check(fm.fileExists(atPath: old.appendingPathComponent("notas.txt").path) && !r1.removedOld, "o que não é do Toth fica, e a pasta antiga não é apagada")
+        let s1 = CaptureStore.moveStampFiles(from: oldStamps, to: new.appendingPathComponent(CaptureStore.stampsSubfolder))
+        check(s1.moved == 2 && s1.removedOld && !fm.fileExists(atPath: oldStamps.path), "os carimbos passam para «Carimbos» e a pasta antiga some (\(s1.moved))")
+        check(fm.fileExists(atPath: new.appendingPathComponent("Carimbos/logo.png").path), "carimbo no sítio novo")
+
+        // 2) mudar de pasta pelas Preferências: a app usa `new` como pasta atual
+        CaptureStore.overrideFolder = new
+        let state = AppState.shared
+        state.refreshLibrary()
+        check(state.library.count == 3, "a biblioteca vê as 3 capturas/vídeos (\(state.library.count))")
+        check(StampLibrary.folder.lastPathComponent == CaptureStore.stampsSubfolder && StampLibrary.folder.deletingLastPathComponent().resolvingSymlinksInPath().path == new.resolvingSymlinksInPath().path, "a pasta dos carimbos é a subpasta da pasta das capturas (\(StampLibrary.folder.path))")
+        StampLibrary.shared.reload()
+        check(StampLibrary.shared.images.count == 2, "a biblioteca de carimbos lê os 2 migrados (\(StampLibrary.shared.images.count))")
+        let other = dir.appendingPathComponent("Outra/Pasta")
+        try? fm.createDirectory(at: other, withIntermediateDirectories: true)
+        touch(other.appendingPathComponent("Toth_2026-01-02_10.00.00.capture"), "já existia")   // conflito de nome
+        let r2 = CaptureStore.moveContents(from: new, to: other)
+        check(r2.moved == 4 && r2.failed == ["Toth_2026-01-02_10.00.00.capture"], "move o resto (3 + a pasta Carimbos) e reporta o conflito (moveu \(r2.moved), falhou \(r2.failed))")
+        check((try? String(contentsOf: other.appendingPathComponent("Toth_2026-01-02_10.00.00.capture"), encoding: .utf8)) == "já existia", "o ficheiro do destino não é substituído")
+        check(fm.fileExists(atPath: new.appendingPathComponent("Toth_2026-01-02_10.00.00.capture").path) && !r2.removedOld, "o que falhou fica na pasta antiga, que por isso não é apagada")
+        check(fm.fileExists(atPath: other.appendingPathComponent("Carimbos/seta.png").path), "os carimbos migram com as capturas")
+        // 3) e para uma pasta vazia: tudo vai e a antiga desaparece
+        let third = dir.appendingPathComponent("Terceira")
+        let r3 = CaptureStore.moveContents(from: other, to: third)
+        check(r3.moved == 5 && r3.failed.isEmpty && r3.removedOld && !fm.fileExists(atPath: other.path), "para uma pasta vazia vai tudo e a antiga é removida (moveu \(r3.moved), removida \(r3.removedOld))")
+        // 4) o caminho curto e a preferência
+        check(CaptureStore.shortPath(fm.homeDirectoryForCurrentUser.appendingPathComponent("Pictures/TothCapture")) == "~/Pictures/TothCapture", "caminho abreviado com ~")
+        check(CaptureStore.defaultFolder.lastPathComponent == "TothCapture", "a pasta por omissão chama-se TothCapture")
+        CaptureStore.overrideFolder = nil
         return fails
     }
 }

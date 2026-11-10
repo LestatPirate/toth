@@ -160,6 +160,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--librarystrip-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("LIBRARYSTRIP-SELFTEST") { SelfTests.libraryStripSelfTest(dir: dir) }
         }
+        if let i = args.firstIndex(of: "--folder-selftest"), args.count > i + 1 {
+            let fails = SelfTests.folderSelfTest(dir: URL(fileURLWithPath: args[i + 1]))
+            print(fails.isEmpty ? "FOLDER-SELFTEST: OK" : "FOLDER-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+            exit(fails.isEmpty ? 0 : 1)
+        }
         if args.contains("--tools-selftest") {
             let fails = SelfTests.toolsSelfTest()
             print(fails.isEmpty ? "TOOLS-SELFTEST: OK" : "TOOLS-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
@@ -231,6 +236,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--render-prefs"), args.count > i + 1 {
             SelfTests.renderPreferences(to: args[i + 1]); print("RENDER-PREFS: OK"); exit(0)
         }
+        // Versões até à 0.6.0 guardavam em ~/Pictures/Capture (e os carimbos em Application Support): passa tudo para a pasta atual.
+        if !args.contains(where: { $0.hasPrefix("--") }) { CaptureStore.migrateLegacyIfNeeded() }
         // Como numa app normal, o editor abre ao arrancar (e ao clicar no ícone do Dock; ver applicationShouldHandleReopen).
         if !args.contains("--no-window") { MainWindow.show() }
         // Procura atualizações ao abrir (no máximo uma vez por dia; desligável em Preferências).

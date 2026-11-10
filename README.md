@@ -78,7 +78,7 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 | **Tela ajusta-se sempre ao conteúdo** | A área de trabalho cresce quando um elemento sai e **encolhe** quando volta, se esconde ou é apagado. Mudar a área à mão desliga o ajuste; liga-se de novo no painel. |
 | **Nitidez** | Zoom em píxeis do ecrã (1:1 = um píxel da imagem por píxel do ecrã; «Ajustar» nunca amplia além disso), captura e gravação com resolução máxima, H.264 com mais débito. |
 | **Pequenos cuidados** | Imagem colada ao tamanho real, com redimensionar em proporção; carimbos «distintivo» com o desenho branco sobre a cor; sem linhas ténues nas bordas do desfoque e do reparo. |
-| **Interface** | As ferramentas deslizam sozinhas com o rato pousado junto a uma ponta da barra (e com a roda/trackpad em toda a altura). A faixa de baixo mostra as **10 capturas mais recentes**; clicar numa e premir **Backspace** envia-a para o Lixo. |
+| **Interface** | As ferramentas deslizam sozinhas com o rato pousado junto a uma ponta da barra (e com a roda/trackpad em toda a altura). A faixa de baixo mostra as **20 capturas mais recentes**; clicar numa e premir **Backspace** envia-a para o Lixo. |
 
 <details>
 <summary><b>Versões anteriores</b> (0.5.0 · 0.4.0 · 0.3.0)</summary>
@@ -153,7 +153,7 @@ O Toth não tem legendas automáticas, efeitos nem transições, e não partilha
 | Acessibilidade, câmara, contactos, localização | Não | Não são usadas. O Toth não envia teclas nem rolagens a outras apps. |
 | Rede | Só atualizações | Um pedido à API pública do GitHub, sem dados pessoais. Desligável em *Preferências*. |
 
-As capturas ficam em `~/Pictures/Capture`. **Atualizações:** o Toth procura uma versão nova ao abrir (no máximo uma vez por dia), pergunta se quer atualizar, verifica a soma SHA-256 e a assinatura e instala sem tocar nas suas capturas. As versões são assinadas sempre com a mesma identidade, por isso a permissão mantém-se. **Desinstalar:** arraste `Toth.app` para o Lixo.
+As capturas, vídeos e carimbos importados ficam em `~/Pictures/TothCapture` (pasta alterável em *Preferências*, com tudo movido para o novo sítio). **Atualizações:** o Toth procura uma versão nova ao abrir (no máximo uma vez por dia), pergunta se quer atualizar, verifica a soma SHA-256 e a assinatura e instala sem tocar nas suas capturas. As versões são assinadas sempre com a mesma identidade, por isso a permissão mantém-se. **Desinstalar:** arraste `Toth.app` para o Lixo.
 
 <table align="center">
 <tr><td align="center">
@@ -200,7 +200,7 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 | **Canvas always fits the content** | The work area grows when an element goes outside and **shrinks** when it comes back, is hidden or deleted. Changing the area by hand turns the fit off; the panel turns it back on. |
 | **Sharpness** | Zoom in screen pixels (1:1 = one image pixel per screen pixel; “Fit” never enlarges beyond that), capture and recording at full resolution, higher-bitrate H.264. |
 | **Small touches** | Pasted images at real size, with proportional resize; “badge” stamps with a white glyph over the color; no faint lines at the edges of blur and repair. |
-| **Interface** | Tools slide by themselves when the pointer rests near either end of the bar (and with the wheel/trackpad over the whole bar). The bottom strip shows the **10 most recent captures**; click one and press **Backspace** to move it to the Trash. |
+| **Interface** | Tools slide by themselves when the pointer rests near either end of the bar (and with the wheel/trackpad over the whole bar). The bottom strip shows the **20 most recent captures**; click one and press **Backspace** to move it to the Trash. |
 
 <details>
 <summary><b>Earlier versions</b> (0.5.0 · 0.4.0 · 0.3.0)</summary>
@@ -275,7 +275,7 @@ Toth has no automatic captions, effects or transitions, and does not share onlin
 | Accessibility, camera, contacts, location | No | Not used. Toth never sends keys or scrolling to other apps. |
 | Network | Updates only | One request to GitHub's public API, no personal data. Can be turned off in *Preferences*. |
 
-Captures are saved in `~/Pictures/Capture`. **Updates:** Toth checks for a new version on launch (at most once a day), asks whether to update, verifies the SHA-256 checksum and signature, and installs without touching your captures. Releases are always signed with the same identity, so the permission is kept. **Uninstall:** drag `Toth.app` to the Trash.
+Captures, videos and imported stamps are saved in `~/Pictures/TothCapture` (the folder can be changed in *Preferences*, with everything moved to the new place). **Updates:** Toth checks for a new version on launch (at most once a day), asks whether to update, verifies the SHA-256 checksum and signature, and installs without touching your captures. Releases are always signed with the same identity, so the permission is kept. **Uninstall:** drag `Toth.app` to the Trash.
 
 <table align="center">
 <tr><td align="center">

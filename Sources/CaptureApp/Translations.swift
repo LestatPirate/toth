@@ -470,5 +470,17 @@ enum Translations {
         "Tolerância": "Tolerance",
         "Uma cópia dos píxeis como objeto, deixando o original no sítio": "A copy of the pixels as an object, leaving the original in place",
         "Apagado": "Erased",
+        "Pasta das capturas": "Capture folder",
+        "Alterar…": "Change…",
+        "Repor padrão": "Reset to default",
+        "Capturas, vídeos, edições e carimbos importados ficam aqui (subpasta «Carimbos»). Ao alterar, tudo é movido para a nova pasta.": "Captures, videos, edits and imported stamps live here (“Carimbos” subfolder). When you change it, everything is moved to the new folder.",
+        "Escolher": "Choose",
+        "Escolha a pasta onde o Toth guarda as capturas, vídeos e carimbos": "Choose the folder where Toth keeps captures, videos and stamps",
+        "Mover as capturas para %@?": "Move the captures to %@?",
+        "A pasta atual não tem capturas. A partir de agora as novas ficam na pasta escolhida.": "The current folder has no captures. From now on new ones go to the chosen folder.",
+        "%d itens (capturas, vídeos, edições e carimbos) vão ser movidos de %@ para a nova pasta. Nada é apagado antes de estar no destino.": "%d items (captures, videos, edits and stamps) will be moved from %@ to the new folder. Nothing is deleted before it is at the destination.",
+        "1 item movido para %@.": "1 item moved to %@.",
+        "%d itens movidos para %@.": "%d items moved to %@.",
+        "Ficaram na pasta antiga (já existia um com o mesmo nome no destino): %@.": "Left in the old folder (one with the same name already existed at the destination): %@.",
     ]
 }
