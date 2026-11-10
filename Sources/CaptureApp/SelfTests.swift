@@ -1940,3 +1940,86 @@ extension SelfTests {
         return fails
     }
 }
+
+extension SelfTests {
+    // MARK: Texto da imagem (reconhecimento, estilo, editar, copiar)
+
+    @MainActor static func ocrSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir
+        let state = AppState.shared
+        if let e = state.createBlankImage(width: 800, height: 400, backgroundHex: "#FFFFFF", transparent: false) { return ["não criou a imagem: \(e)"] }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        guard let m = state.model, let canvas = CanvasView.current else { return ["sem editor"] }
+        // base: uma linha a negrito azul (Helvetica Neue Bold 32) e uma linha monoespaçada preta (Menlo 24)
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 800, pixelsHigh: 400, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 800, height: 400).fill()
+        let bold = NSFont(name: "HelveticaNeue-Bold", size: 32) ?? NSFont.boldSystemFont(ofSize: 32)
+        let blue = NSColor(srgbRed: 0.11, green: 0.31, blue: 0.85, alpha: 1)
+        ("Guardar alterações" as NSString).draw(at: NSPoint(x: 60, y: 400 - 100), withAttributes: [.font: bold, .foregroundColor: blue])   // (y de baixo) → topo ≈ 100 - ascender
+        let mono = NSFont(name: "Menlo", size: 24) ?? NSFont.monospacedSystemFont(ofSize: 24, weight: .regular)
+        ("Total: 1250 EUR" as NSString).draw(at: NSPoint(x: 60, y: 400 - 220), withAttributes: [.font: mono, .foregroundColor: NSColor.black])
+        NSGraphicsContext.restoreGraphicsState()
+        m.base = rep.cgImage!
+        m.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+
+        m.tool = .ocr   // (dispara o reconhecimento em segundo plano; o síncrono a seguir substitui-o)
+        m.recognizeTextNow()
+        check(m.textBlocks.count == 2, "devia reconhecer 2 linhas (\(m.textBlocks.map(\.text)))")
+        guard let b1 = m.textBlocks.first(where: { $0.text.lowercased().hasPrefix("guardar") }), let b2 = m.textBlocks.first(where: { $0.text.lowercased().hasPrefix("total") }) else {
+            return fails + ["não leu as linhas esperadas: \(m.textBlocks.map(\.text))"]
+        }
+        check(b1.text.lowercased().contains("altera"), "1.ª linha: \(b1.text)")
+        check(b2.text.contains("1250"), "2.ª linha: \(b2.text)")
+        let expectedW = ("Guardar alterações" as NSString).size(withAttributes: [.font: bold]).width
+        check(abs(b1.rect.minX - 60) < 6 && abs(b1.rect.width - Double(expectedW)) < Double(expectedW) * 0.12, "a caixa da 1.ª linha está onde o texto foi desenhado (\(b1.rect), largura esperada \(expectedW))")
+        check(b1.rect.minY > 58 && b1.rect.maxY < 110, "a caixa da 1.ª linha está à altura certa (\(b1.rect))")   // draw(at:) põe a base da linha em y=300 de baixo
+        check(m.textBlocks.first?.id == b1.id, "ordem de leitura: a linha de cima primeiro")
+        // estilo adivinhado
+        guard let g1 = m.guessStyle(for: b1), let g2 = m.guessStyle(for: b2) else { return fails + ["sem estilo adivinhado"] }
+        let c1 = NSColor(hex: g1.colorHex).usingColorSpace(.sRGB)!
+        check(c1.blueComponent > 0.6 && c1.redComponent < 0.35, "cor da 1.ª linha é azul (\(g1.colorHex))")
+        check(g1.bold && !g2.bold, "negrito só na 1.ª linha (\(g1.bold), \(g2.bold))")
+        check(abs(g1.fontSize - 32) <= 5, "tamanho da 1.ª linha ≈ 32 (\(g1.fontSize))")
+        check(abs(g2.fontSize - 24) <= 4, "tamanho da 2.ª linha ≈ 24 (\(g2.fontSize))")
+        check(g2.monospaced && !g1.monospaced, "monoespaçada só a 2.ª linha (\(g2.monospaced), \(g1.monospaced))")
+        check(g2.fontName == "Menlo" && g1.fontName == nil && !g1.serif, "fontes: Menlo para a 2.ª, sistema para a 1.ª (\(String(describing: g2.fontName)), \(String(describing: g1.fontName)), serifa \(g1.serif))")
+        print("OCR-SELFTEST: 1.ª «\(b1.text)» \(g1); 2.ª «\(b2.text)» \(g2); palavras 2.ª: \(b2.words.map { (($0.width * 10).rounded() / 10, $0.chars) }); 1.ª: \(b1.words.map { (($0.width * 10).rounded() / 10, $0.chars) })")
+        // copiar
+        m.toggleBlock(b2.id, extend: false)
+        m.copyCommand()
+        check(NSPasteboard.general.string(forType: .string) == b2.text, "⌘C copia a linha marcada")
+        m.copyRecognizedText(all: true)
+        check(NSPasteboard.general.string(forType: .string) == b1.text + "\n" + b2.text, "copiar tudo junta as linhas por ordem")
+        // clicar marca; ⇧ junta; clique fora desmarca
+        canvas.debugMouse(at: Point(x: b1.rect.minX + 10, y: b1.rect.minY + b1.rect.height / 2))
+        check(m.selectedBlocks == [b1.id], "clique marca a linha")
+        canvas.debugMouse(at: Point(x: b2.rect.minX + 10, y: b2.rect.minY + b2.rect.height / 2), shift: true)
+        check(m.selectedBlocks == [b1.id, b2.id], "⇧ junta")
+        canvas.debugMouse(at: Point(x: 700, y: 380))
+        check(m.selectedBlocks.isEmpty, "clique fora desmarca")
+        // editar: Reparo + Texto agrupados, com o texto, tamanho e cor adivinhados; a ferramenta passa a Mover
+        let n0 = m.doc.annotations.count
+        guard let tid = m.editTextBlock(b1.id), let t = m.doc.annotations.first(where: { $0.id == tid }) else { return fails + ["editar não criou a caixa de texto"] }
+        check(m.doc.annotations.count == n0 + 2 && m.tool == .select && m.selection == tid, "editar cria 2 objetos, passa a Mover e seleciona o texto")
+        check(t.editableString == b1.text && t.style.text.bold && t.style.text.colorHex == g1.colorHex && abs((t.effectiveFontSize ?? 0) - g1.fontSize) < 0.01, "a caixa tem o texto, o negrito, a cor e o tamanho adivinhados")
+        let patch = m.doc.annotations.first { $0.id != tid && $0.group == t.group }
+        check(patch?.shape.isRepair == true && (patch?.shape.bounds.contains(Point(x: b1.rect.minX + 1, y: b1.rect.minY + 1)) ?? false), "o Reparo agrupado cobre o texto original")
+        check(m.textBlocks.count == 1, "a linha editada sai da lista")
+        // a caixa de texto desenha as letras por cima do sítio original: a exportação continua a ter tinta azul lá
+        if let png = m.exportPNG(), let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) {
+            var blueInk = 0
+            for x in stride(from: Int(b1.rect.minX), to: Int(b1.rect.maxX), by: 2) { for y in stride(from: Int(b1.rect.minY), to: Int(b1.rect.maxY), by: 2) {
+                if let p = pixel(img, x, y), p.b > 150, p.r < 120 { blueInk += 1 }
+            } }
+            check(blueInk > 40, "o texto reescrito aparece em azul no mesmo sítio (\(blueInk) píxeis)")
+        } else { fails.append("sem exportação") }
+        m.undo()
+        check(m.doc.annotations.count == n0, "desfazer tira os dois objetos de uma vez")
+        m.tool = .select
+        return fails
+    }
+}

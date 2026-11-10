@@ -5,13 +5,13 @@ import AppKit
 import CaptureCore
 
 enum Tool: String, CaseIterable, Identifiable {
-    case select, area, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, canvas
+    case select, area, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, ocr, canvas
     var id: String { rawValue }
     var title: String {
         switch self {
         case .select: L("Mover"); case .arrow: L("Seta"); case .line: L("Linha"); case .callout: L("Balão"); case .rect: L("Retângulo")
         case .ellipse: L("Elipse"); case .text: L("Texto"); case .step: L("Etapa"); case .highlight: L("Marcador"); case .blur: L("Pixelização"); case .gaussian: L("Blur"); case .canvas: L("Tela")
-        case .stamp: L("Carimbo"); case .repair: L("Reparo"); case .area: L("Selecionar")
+        case .stamp: L("Carimbo"); case .repair: L("Reparo"); case .area: L("Selecionar"); case .ocr: L("Texto da imagem")
         }
     }
     /// Estilo inicial de cada ferramenta (cada uma lembra o seu último estilo).
@@ -27,7 +27,7 @@ enum Tool: String, CaseIterable, Identifiable {
         switch self {
         case .select: "cursorarrow"; case .arrow: "arrow.up.right"; case .line: "line.diagonal"; case .callout: "bubble.left"; case .rect: "rectangle"
         case .ellipse: "circle"; case .text: "textformat"; case .step: "1.circle"; case .highlight: "highlighter"; case .blur: "square.grid.3x3"; case .gaussian: "drop"; case .canvas: "aspectratio"
-        case .stamp: "checkmark.seal"; case .repair: "bandage"; case .area: "selection.pin.in.out"
+        case .stamp: "checkmark.seal"; case .repair: "bandage"; case .area: "selection.pin.in.out"; case .ocr: "text.viewfinder"
         }
     }
 }
@@ -42,6 +42,8 @@ final class EditorModel: ObservableObject {
         didSet {
             if tool != oldValue { toolLocked = false }
             if tool == .canvas && oldValue != .canvas { canvasEntryDepth = undoStack.count }
+            if tool == .ocr && oldValue != .ocr { recognizeText() }
+            if tool != .ocr && oldValue == .ocr { selectedBlocks = [] }
         }
     }
     @Published var selection: UUID? { didSet { if selection == nil { extraSelection = [] } else { extraSelection.remove(selection!) } } }
@@ -215,6 +217,111 @@ final class EditorModel: ObservableObject {
         let id = addAnnotation(.image(origin: Point(x: p.x - w / 2, y: p.y - h / 2), width: w, height: h, asset: name))
         mutate { _ = $0.expandAreaToFit(ids: [id]) }
         finishedDrawing()
+    }
+
+    // MARK: Texto da imagem (reconhecimento)
+
+    /// As linhas de texto reconhecidas na imagem (só enquanto a ferramenta está ativa).
+    @Published var textBlocks: [TextBlock] = []
+    @Published var recognizing = false
+    @Published var selectedBlocks: Set<UUID> = []
+    @Published var recognitionError: String?
+    private var recognitionRun = 0
+
+    /// Reconhece o texto da imagem como está (em segundo plano; o resultado chega ao painel e ao canvas).
+    func recognizeText() {
+        guard let r = renderedPixels(), let img = renderedImage() else { return }
+        recognitionRun += 1
+        let run = recognitionRun
+        recognizing = true; recognitionError = nil; selectedBlocks = []
+        let origin = r.origin
+        Task.detached(priority: .userInitiated) {
+            let result = Result { try TextRecognizer.recognize(img, origin: origin) }
+            await MainActor.run { [weak self] in
+                guard let self, run == self.recognitionRun else { return }
+                self.recognizing = false
+                switch result {
+                case .success(let blocks): self.textBlocks = blocks
+                case .failure(let e): self.textBlocks = []; self.recognitionError = e.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// Versão síncrona (testes).
+    func recognizeTextNow() {
+        guard let r = renderedPixels(), let img = renderedImage() else { return }
+        recognitionRun += 1
+        recognizing = false; selectedBlocks = []
+        textBlocks = (try? TextRecognizer.recognize(img, origin: r.origin)) ?? []
+    }
+
+    /// A imagem renderizada (área exportada) como CGImage.
+    func renderedImage() -> CGImage? {
+        guard let png = exportPNG(), let src = CGImageSourceCreateWithData(png as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(src, 0, nil)
+    }
+
+    /// O texto reconhecido: os blocos marcados (ou todos), por ordem de leitura, uma linha cada.
+    func recognizedText(all: Bool = false) -> String {
+        let chosen = (all || selectedBlocks.isEmpty) ? textBlocks : textBlocks.filter { selectedBlocks.contains($0.id) }
+        return chosen.map(\.text).joined(separator: "\n")
+    }
+
+    /// ⌘C na ferramenta: copia o texto reconhecido (marcado, ou todo).
+    func copyRecognizedText(all: Bool = false) {
+        let s = recognizedText(all: all)
+        guard !s.isEmpty else { NSSound.beep(); return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
+    }
+
+    /// ⌘C: conforme a ferramenta, texto reconhecido, píxeis da área, objetos, ou a imagem toda.
+    func copyCommand() {
+        if tool == .ocr { copyRecognizedText(); return }
+        if selection != nil { copySelection() } else { copyToPasteboard() }
+    }
+
+    func toggleBlock(_ id: UUID, extend: Bool) {
+        if extend { if selectedBlocks.contains(id) { selectedBlocks.remove(id) } else { selectedBlocks.insert(id) } }
+        else { selectedBlocks = [id] }
+    }
+
+    /// Estilo adivinhado de um bloco (tamanho, cor, peso, fonte).
+    func guessStyle(for block: TextBlock) -> GuessedTextStyle? {
+        guard let r = renderedPixels() else { return nil }
+        return TextRecognizer.guessStyle(for: block, pixels: r.pixels, width: r.width, height: r.height, origin: r.origin)
+    }
+
+    /// Torna um bloco editável: um Reparo apaga o texto original a partir do fundo e uma caixa de Texto com as mesmas
+    /// palavras, tamanho e cor fica por cima, agrupada com ele. Devolve o id da caixa de texto (já selecionada).
+    @discardableResult
+    func editTextBlock(_ id: UUID) -> UUID? {
+        guard let block = textBlocks.first(where: { $0.id == id }), let g = guessStyle(for: block) else { return nil }
+        let r = block.rect
+        let pad = max(2, r.height * 0.2)
+        let patch = Rect(x: (r.minX - pad).rounded(.down), y: (r.minY - pad).rounded(.down), width: (r.width + 2 * pad).rounded(.up), height: (r.height + 2 * pad).rounded(.up))
+        var fmt = TextFormat(); fmt.fontName = g.fontName; fmt.bold = g.bold; fmt.colorHex = g.colorHex
+        let font = RichText.font(fmt, size: g.fontSize)
+        // a 1.ª linha do texto começa no topo da caixa (mais a margem); as maiúsculas ficam a (ascender − capHeight) daí
+        let hasTall = block.text.contains { $0.isUppercase || $0.isNumber || "bdfhklt".contains($0) }
+        let topGap = Double(font.ascender - (hasTall ? font.capHeight : font.xHeight))
+        let lineH = Double(font.ascender - font.descender + font.leading)
+        let origin = Point(x: r.minX - Double(RichText.padX), y: r.minY - topGap - Double(RichText.padY))
+        let box = Shape.textBox(origin: origin, width: r.width + 2 * Double(RichText.padX) + g.fontSize * 0.75, height: max(lineH + 2 * Double(RichText.padY), 48), string: block.text, fontSize: g.fontSize)
+        var textStyle = Style(lineVisible: false); textStyle.text = fmt
+        let group = UUID()
+        var textID = UUID()
+        perform { d in
+            var p = d.add(.patch(origin: Point(x: patch.x, y: patch.y), width: patch.width, height: patch.height), style: Style()); p.group = group; d.update(p)
+            var t = d.add(box, style: textStyle); t.group = group; d.update(t); textID = t.id
+            _ = d.expandAreaToFit(ids: [t.id])
+        }
+        textBlocks.removeAll { $0.id == id }
+        selectedBlocks.remove(id)
+        tool = .select
+        selection = textID
+        return textID
     }
 
     // MARK: Selecionar área (retângulo, elipse, varinha)

@@ -297,6 +297,34 @@ struct PropertiesPanel: View {
         }
     }
 
+    /// Texto da imagem: o que foi reconhecido e o que fazer com ele.
+    private var ocrSection: some View {
+        section(L("Texto da imagem")) {
+            if model.recognizing {
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(L("A reconhecer o texto…")).font(.caption).foregroundStyle(.secondary) }
+            } else if let e = model.recognitionError {
+                Text(e).font(.caption).foregroundStyle(.red)
+            } else if model.textBlocks.isEmpty {
+                Text(L("Não foi encontrado texto na imagem.")).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text(model.selectedBlocks.isEmpty ? L("%d linhas de texto", model.textBlocks.count) : L("%d de %d linhas marcadas", model.selectedBlocks.count, model.textBlocks.count))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text(L("Clique numa linha para a marcar (⇧ junta várias); ⌘C copia o texto marcado. Duplo clique numa linha torna-a editável: o original é apagado com um Reparo e fica uma caixa de Texto com as mesmas palavras, tamanho, cor e peso."))
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Button(L("Copiar todo o texto")) { model.copyRecognizedText(all: true) }.disabled(model.textBlocks.isEmpty)
+                Button(L("Copiar linhas marcadas (⌘C)")) { model.copyRecognizedText() }.disabled(model.selectedBlocks.isEmpty)
+                Button(L("Editar linha marcada")) {
+                    if let id = model.selectedBlocks.first, model.selectedBlocks.count == 1, model.editTextBlock(id) != nil { CanvasView.current?.editSelectedText() }
+                }.disabled(model.selectedBlocks.count != 1)
+                Button(L("Reconhecer de novo")) { model.recognizeText() }.disabled(model.recognizing)
+            }.controlSize(.small)
+            Text(L("Reconhecimento feito no seu Mac (Vision), em português e inglês. Nada sai do computador."))
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var repairSection: some View {
         section(L("Reparo")) {
             Picker("", selection: repairClones) {
@@ -374,7 +402,7 @@ struct PropertiesPanel: View {
     private var isStep: Bool { if case .step = model.selected?.shape { return true }; return model.selected == nil && model.tool == .step }
     private var hasLine: Bool {
         if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image, .stamp, .patch, .clone, .erase: return false; default: return true } }
-        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair, .area].contains(model.tool)
+        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair, .area, .ocr].contains(model.tool)
     }
 
     var body: some View {
@@ -404,6 +432,7 @@ struct PropertiesPanel: View {
                     }
                 }
                 if model.tool == .area && model.selected == nil { selectAreaSection }
+                if model.tool == .ocr && model.selected == nil { ocrSection }
                 if isStep { stepSection }
                 if isImageObject { imageObjectSection }
                 if isStamp { stampSection }
@@ -426,7 +455,7 @@ struct PropertiesPanel: View {
                     }
                 }
                 if supportsText { textSection }
-                if !((model.tool == .canvas || model.tool == .area) && model.selected == nil) { section(L("Geral")) {
+                if !((model.tool == .canvas || model.tool == .area || model.tool == .ocr) && model.selected == nil) { section(L("Geral")) {
                     slider(L("Opacidade"), value: opacity, range: 0.1...1, format: "%.0f%%", scale: 100)
                     row(L("Sombra")) { Toggle("", isOn: shadow).labelsHidden() }
                     if let sel = model.selected {

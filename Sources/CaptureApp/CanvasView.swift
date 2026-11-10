@@ -214,6 +214,18 @@ final class CanvasView: NSView {
         if let r = areaDragRect {
             if model.areaMode == .ellipse { drawAnts(ellipse: r.cg, ctx) } else { drawAnts(r.cg, ctx) }
         }
+        if model.tool == .ocr {
+            // linhas de texto reconhecidas: contorno leve; as marcadas, preenchidas
+            for b in model.textBlocks {
+                let r = b.rect.cg.insetBy(dx: -2 / scale, dy: -2 / scale)
+                let path = CGPath(roundedRect: r, cornerWidth: 3 / scale, cornerHeight: 3 / scale, transform: nil)
+                let on = model.selectedBlocks.contains(b.id)
+                ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(on ? 0.28 : 0.10).cgColor)
+                ctx.addPath(path); ctx.fillPath()
+                ctx.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(on ? 1 : 0.6).cgColor); ctx.setLineWidth((on ? 1.5 : 1) / scale)
+                ctx.addPath(path); ctx.strokePath()
+            }
+        }
         if !guides.xs.isEmpty || !guides.ys.isEmpty {
             ctx.setStrokeColor(NSColor.systemPink.cgColor); ctx.setLineWidth(1 / scale)
             let v = CGRect(x: -origin.x / scale, y: -origin.y / scale, width: bounds.width / scale, height: bounds.height / scale)
@@ -523,6 +535,13 @@ final class CanvasView: NSView {
             } else {
                 model.addStep(at: p)
             }
+        case .ocr:
+            // clique num bloco marca-o (⇧ junta); duplo clique torna-o editável; fora de tudo desmarca
+            if let b = model.textBlocks.last(where: { $0.rect.insetBy(dx: -3 / Double(scale), dy: -3 / Double(scale)).contains(p) }) {
+                if event.clickCount == 2 { if let id = model.editTextBlock(b.id) { beginEditing(id, isNew: false) } }
+                else { model.toggleBlock(b.id, extend: event.modifierFlags.contains(.shift)) }
+            } else { model.selectedBlocks = [] }
+            needsDisplay = true
         case .area:
             let op = combine(for: event)
             // de dentro da seleção (sem modificadores): arrastar levanta-a como objeto e move-a já; um clique não a levanta
@@ -942,6 +961,8 @@ final class CanvasView: NSView {
 
     /// Abre o editor no elemento selecionado e deixa-o aberto (flag `--edit-hold`, para captura de ecrã).
     func debugHoldEditing() { if let id = model.selection { beginEditing(id, isNew: false) } }
+    /// Abre a edição em linha do texto selecionado (botão «Editar» do painel Texto da imagem).
+    func editSelectedText() { if let id = model.selection, model.selected?.editableString != nil { beginEditing(id, isNew: false) } }
 
     /// Autoteste: a caixa ajusta-se ao texto enquanto se escreve, e a letra acompanha o redimensionar.
     func selfTestTextFit() -> [String] {
@@ -1165,7 +1186,7 @@ final class CanvasView: NSView {
     @objc func undo(_ sender: Any?) { model.undo() }
     @objc func redo(_ sender: Any?) { model.redo() }
     @objc func cut(_ sender: Any?) { model.cutSelection() }
-    @objc func copy(_ sender: Any?) { if model.selection != nil { model.copySelection() } else { model.copyToPasteboard() } }
+    @objc func copy(_ sender: Any?) { model.copyCommand() }
     @objc func paste(_ sender: Any?) { model.paste() }
     @objc func duplicate(_ sender: Any?) { model.duplicateSelection() }
 
@@ -1229,7 +1250,7 @@ final class CanvasView: NSView {
         let shift = event.modifierFlags.contains(.shift)
         switch key {
         case "z": if shift { model.redo() } else { model.undo() }
-        case "c": if model.selection != nil { model.copySelection() } else { model.copyToPasteboard() }
+        case "c": model.copyCommand()
         case "x": model.cutSelection()
         case "v": model.paste()
         case "d": model.duplicateSelection()

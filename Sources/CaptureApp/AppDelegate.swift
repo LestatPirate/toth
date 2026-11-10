@@ -157,6 +157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let type = (try? f.resourceValues(forKeys: [.contentTypeKey]).contentType?.identifier) ?? "?"
             print("ASSOC-CHECK: \(f.lastPathComponent) | tipo=\(type) | abre com=\(app)"); exit(0)
         }
+        if let i = args.firstIndex(of: "--ocr-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1]); later("OCR-SELFTEST") { SelfTests.ocrSelfTest(dir: dir) }
+        }
         if let i = args.firstIndex(of: "--librarystrip-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("LIBRARYSTRIP-SELFTEST") { SelfTests.libraryStripSelfTest(dir: dir) }
         }
@@ -548,7 +551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func undo(_ sender: Any?) { AppState.shared.model?.undo() }
     @objc func redo(_ sender: Any?) { AppState.shared.model?.redo() }
     @objc func cut(_ sender: Any?) { AppState.shared.model?.cutSelection() }
-    @objc func copy(_ sender: Any?) { if let m = AppState.shared.model { if m.selection != nil { m.copySelection() } else { m.copyToPasteboard() } } }
+    @objc func copy(_ sender: Any?) { AppState.shared.model?.copyCommand() }
     @objc func paste(_ sender: Any?) { AppState.shared.model?.paste() }
     @objc func duplicate(_ sender: Any?) { AppState.shared.model?.duplicateSelection() }
     @objc func groupSelection() { AppState.shared.model?.groupSelection() }

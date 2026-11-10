@@ -62,6 +62,7 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 
 - **Captura → anotação → vídeo, sem mudar de app.** A mesma barra de ferramentas serve para anotar uma imagem e para anotar um vídeo. Uma seta desenhada sobre um fotograma tem **início e fim** e pode **seguir** o que se move.
 - **Nada é destrutivo.** Pixelização, desfoque, reparo, recortes, cortes de vídeo: tudo são camadas que pode mudar ou tirar amanhã. A imagem e o vídeo originais nunca são alterados. Tudo fica num ficheiro `.capture` que reabre como deixou.
+- **Texto da imagem, para copiar e editar.** Reconhece o texto de qualquer captura (no Mac, sem rede), copia-o com ⌘C e, com um duplo clique, **torna-o editável no mesmo estilo**: tamanho, cor, negrito e a fonte mais parecida, com o original apagado por baixo.
 - **Reparo e seleção a sério numa app de capturas.** **Preencher** apaga um elemento a partir do que o rodeia; **Clonar** cobre-o com outra zona. A **varinha** seleciona por cor (arraste para apanhar mais), e a área levanta-se, duplica-se, apaga-se ou preenche-se.
 - **A tela segue o conteúdo.** Arraste uma seta para fora da imagem e a área de trabalho cresce; volte com ela e encolhe. Mova, rode e redimensione a própria captura sem a estragar.
 - **Nitidez de píxel.** Captura e gravação à resolução nativa do ecrã, zoom 1:1 em píxeis do ecrã, H.264 com débito alto. O que vê é o que fica.
@@ -73,6 +74,7 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 
 | | |
 |---|---|
+| **Texto da imagem** | Ferramenta nova: reconhece o texto da captura (Vision, local; PT e EN) e marca cada linha. Clique e **⌘C** copia; **duplo clique** torna a linha editável: um Reparo apaga o original e uma caixa de Texto fica no mesmo sítio com as mesmas palavras, **tamanho, cor, negrito** e a fonte mais parecida. |
 | **Ferramenta Selecionar** | **Retângulo, elipse ou varinha** (por cor, com tolerância e «só contíguos»). Com a varinha, **arraste** para ir apanhando mais zonas. Modos **Nova / Juntar / Tirar** (⇧ junta e ⌥ tira em qualquer modo), ⌘A tudo, Esc limpa. |
 | **O que se faz com a área** | **Arraste de dentro** para a levantar como objeto e movê-la logo (o sítio fica apagado); **Return** levanta sem mover; **⌘D** duplica; **⌘C** copia os píxeis com transparência; **Delete** apaga (cor de fundo ou transparente); **Preencher (Reparo)** apaga a partir do que a rodeia. O objeto levantado tem a forma da seleção. |
 | **Tela ajusta-se sempre ao conteúdo** | A área de trabalho cresce quando um elemento sai e **encolhe** quando volta, se esconde ou é apagado. Mudar a área à mão desliga o ajuste; liga-se de novo no painel. |
@@ -129,7 +131,7 @@ O Toth pode substituir, em parte, estas apps para quem só precisa do essencial:
 
 | Tarefa | Apps habituais | O que o Toth cobre |
 |---|---|---|
-| Captura e anotação | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Captura de região e de janela, anotações (setas, texto, etapas, carimbos, pixelização, desfoque, reparo, seleção por varinha) e edição que pode reabrir |
+| Captura e anotação | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Captura de região e de janela, anotações (setas, texto, etapas, carimbos, pixelização, desfoque, reparo, seleção por varinha, texto reconhecido e editável) e edição que pode reabrir |
 | Captura com rolagem | CleanShot X, Snagit, Shottr | Página inteira por rolagem |
 | Gravação de ecrã | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Gravação de uma área ou de uma janela, com áudio do sistema e microfone; GIF |
 | Edição de vídeo simples | iMovie, ScreenFlow, Camtasia | Cortes, cópia, inversão, quebra, velocidade, anotações com tempo, música e narração: um editor básico, não uma suíte completa |
@@ -186,6 +188,7 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 
 - **Capture → annotation → video, without switching apps.** The same toolbar annotates an image and a video. An arrow drawn over a frame has a **start and an end** and can **follow** what moves.
 - **Nothing is destructive.** Pixelate, blur, repair, cut-outs, video cuts: they are all layers you can change or remove tomorrow. The original image and video are never altered. Everything lives in a `.capture` file that reopens as you left it.
+- **Image text, to copy and edit.** Recognizes the text in any capture (on the Mac, no network), copies it with ⌘C and, with a double-click, **makes it editable in the same style**: size, color, bold and the closest font, with the original erased underneath.
 - **Real repair and selection in a screenshot app.** **Fill** removes an element from its surroundings; **Clone** covers it with another part of the image. The **magic wand** selects by color (drag to pick up more), and the area lifts, duplicates, erases or fills.
 - **The canvas follows the content.** Drag an arrow out of the image and the work area grows; bring it back and it shrinks. Move, rotate and resize the capture itself without damaging it.
 - **Pixel sharpness.** Capture and recording at the screen's native resolution, 1:1 zoom in screen pixels, high-bitrate H.264. What you see is what you keep.
@@ -195,6 +198,7 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 
 | | |
 |---|---|
+| **Image text** | New tool: recognizes the text in the capture (Vision, local; PT and EN) and marks each line. Click and **⌘C** copies; **double-click** makes the line editable: a Repair erases the original and a Text box takes its place with the same words, **size, color, bold** and the closest font. |
 | **Select tool** | **Rectangle, ellipse or magic wand** (by color, with tolerance and “contiguous only”). With the wand, **drag** to keep picking up more areas. **New / Add / Subtract** modes (⇧ adds and ⌥ subtracts in any mode), ⌘A all, Esc clears. |
 | **What you do with the area** | **Drag from inside** to lift it as an object and move it right away (the spot is erased); **Return** lifts without moving; **⌘D** duplicates; **⌘C** copies the pixels with transparency; **Delete** erases (background color or transparent); **Fill (Repair)** erases from the surroundings. The lifted object keeps the shape of the selection. |
 | **Canvas always fits the content** | The work area grows when an element goes outside and **shrinks** when it comes back, is hidden or deleted. Changing the area by hand turns the fit off; the panel turns it back on. |
@@ -251,7 +255,7 @@ Toth can stand in, in part, for these apps if all you need is the essentials: ca
 
 | Task | Usual apps | What Toth covers |
 |---|---|---|
-| Capture and annotation | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Region and window capture, annotations (arrows, text, steps, stamps, pixelate, blur, repair, wand selection) and editing you can reopen |
+| Capture and annotation | Shottr, CleanShot X, Skitch, Snagit, Monosnap, Lightshot | Region and window capture, annotations (arrows, text, steps, stamps, pixelate, blur, repair, wand selection, recognized and editable text) and editing you can reopen |
 | Scrolling capture | CleanShot X, Snagit, Shottr | A whole page by scrolling |
 | Screen recording | QuickTime Player, Kap, Loom, ScreenFlow, Camtasia | Recording an area or a window, with system audio and microphone; GIF |
 | Simple video editing | iMovie, ScreenFlow, Camtasia | Cuts, copy, reverse, break, speed, timed annotations, music and narration: a basic editor, not a full suite |
