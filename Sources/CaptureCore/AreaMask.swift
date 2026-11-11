@@ -109,6 +109,18 @@ public struct AreaMask: Equatable, Sendable {
         }
     }
 
+    /// A parte da máscara dentro de `r` (píxeis inteiros, arredondados para fora); vazia se não se tocarem.
+    public func clipped(to r: Rect) -> AreaMask {
+        let cx0 = max(x, Int(r.minX.rounded(.down))), cy0 = max(y, Int(r.minY.rounded(.down)))
+        let cx1 = min(x + width, Int(r.maxX.rounded(.up))), cy1 = min(y + height, Int(r.maxY.rounded(.up)))
+        guard cx1 > cx0, cy1 > cy0 else { return AreaMask(x: x, y: y, width: 0, height: 0, alpha: []) }
+        if cx0 == x, cy0 == y, cx1 == x + width, cy1 == y + height { return self }
+        let w = cx1 - cx0, h = cy1 - cy0
+        var out = [UInt8](repeating: 0, count: w * h)
+        for j in 0..<h { for i in 0..<w { out[j * w + i] = alpha[(cy0 - y + j) * width + (cx0 - x + i)] } }
+        return AreaMask(x: cx0, y: cy0, width: w, height: h, alpha: out)
+    }
+
     /// Tira as filas e colunas vazias à volta.
     public func trimmed() -> AreaMask {
         var minX = width, minY = height, maxX = -1, maxY = -1

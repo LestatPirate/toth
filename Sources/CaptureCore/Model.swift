@@ -148,6 +148,8 @@ public enum Shape: Codable, Equatable, Sendable {
     case patch(origin: Point, width: Double, height: Double, mask: String? = nil)
     /// Apagar: a região (ou a parte coberta pela `mask`) passa a ser a cor de fundo do documento (ou transparente).
     case erase(origin: Point, width: Double, height: Double, mask: String? = nil)
+    /// Preencher: a região (ou a parte coberta pela `mask`) passa a ser a cor do estilo (`colorHex`, com a opacidade).
+    case fill(origin: Point, width: Double, height: Double, mask: String? = nil)
     /// Reparo por clonagem: a região é coberta com o que está por baixo noutro sítio (`source` = canto superior esquerdo da origem).
     case clone(origin: Point, width: Double, height: Double, source: Point)
 }
@@ -311,11 +313,56 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         return area != before
     }
 
-    /// Área = imagem original + todos os objetos visíveis ("ajustar ao conteúdo").
+    /// Área = imagem original + todos os objetos visíveis ("ajustar ao conteúdo"). Os efeitos (Reparo, Blur…) e o
+    /// «Apagado» não contam como conteúdo: nunca fazem a área crescer. Pelo contrário: uma faixa apagada que vá de
+    /// lado a lado junto a uma borda tira-se à área (o que foi apagado desaparece em vez de ficar um espaço vazio).
     public mutating func fitAreaToContent() {
+        _ = setArea(roundedOut: contentBounds, if: nil)
+    }
+
+    /// Caixa do conteúdo: imagem + objetos visíveis, menos as faixas apagadas junto às bordas.
+    public var contentBounds: Rect {
         var union = imageRect
-        for a in annotations where a.visible { union = union.union(a.worldBounds) }
-        _ = setArea(roundedOut: union, if: nil)
+        var erased: [Rect] = []
+        for a in annotations where a.visible {
+            switch a.shape {
+            case .erase: erased.append(a.worldBounds)
+            case .patch, .clone, .blur, .gaussian, .fill: continue
+            default: union = union.union(a.worldBounds)
+            }
+        }
+        // objetos por cima do apagado contam como conteúdo: só o que está só coberto por apagados desaparece
+        let objects = annotations.filter { a in
+            guard a.visible else { return false }
+            switch a.shape { case .erase, .patch, .clone, .blur, .gaussian, .fill: return false; default: return true }
+        }.map(\.worldBounds)
+        var r = union
+        var changed = true
+        while changed, !erased.isEmpty {
+            changed = false
+            for e in erased {
+                let e = e.insetBy(dx: -0.5, dy: -0.5)   // tolerância de meio píxel nas bordas
+                let spansX = e.minX <= r.minX && e.maxX >= r.maxX, spansY = e.minY <= r.minY && e.maxY >= r.maxY
+                func clear(_ band: Rect) -> Bool { !objects.contains { $0.intersects(band) } }
+                if spansX, e.minY <= r.minY, e.maxY > r.minY, e.maxY < r.maxY - 1 {
+                    let band = Rect(x: r.minX, y: r.minY, width: r.width, height: e.maxY - r.minY)
+                    if clear(band) { r = Rect(x: r.minX, y: e.maxY, width: r.width, height: r.maxY - e.maxY); changed = true }
+                }
+                if spansX, e.maxY >= r.maxY, e.minY < r.maxY, e.minY > r.minY + 1 {
+                    let band = Rect(x: r.minX, y: e.minY, width: r.width, height: r.maxY - e.minY)
+                    if clear(band) { r = Rect(x: r.minX, y: r.minY, width: r.width, height: e.minY - r.minY); changed = true }
+                }
+                if spansY, e.minX <= r.minX, e.maxX > r.minX, e.maxX < r.maxX - 1 {
+                    let band = Rect(x: r.minX, y: r.minY, width: e.maxX - r.minX, height: r.height)
+                    if clear(band) { r = Rect(x: e.maxX, y: r.minY, width: r.maxX - e.maxX, height: r.height); changed = true }
+                }
+                if spansY, e.maxX >= r.maxX, e.minX < r.maxX, e.minX > r.minX + 1 {
+                    let band = Rect(x: e.minX, y: r.minY, width: r.maxX - e.minX, height: r.height)
+                    if clear(band) { r = Rect(x: r.minX, y: r.minY, width: e.minX - r.minX, height: r.height); changed = true }
+                }
+            }
+        }
+        return r
     }
 
     /// Arredonda para fora (pixels inteiros) e grava, se diferente da área atual.

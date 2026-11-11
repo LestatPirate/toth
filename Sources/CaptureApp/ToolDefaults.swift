@@ -74,6 +74,7 @@ extension Tool {
         case .stamp: .stamp
         case .patch, .clone: .repair
         case .erase: nil
+        case .fill: .fill
         }
     }
 }

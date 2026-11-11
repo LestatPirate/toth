@@ -551,7 +551,40 @@ enum SelfTests {
         check(m.areaSelection == nil && m.tool == .area, "Esc limpa a seleção sem mudar de ferramenta")
         m.selectAll()
         check(m.areaSelection?.rect == Rect(x: 0, y: 0, width: 600, height: 400), "⌘A seleciona a área toda")
-        m.clearAreaSelection(); m.tool = .select
+        m.clearAreaSelection()
+
+        // 6) recortar pela borda: selecionar para lá da imagem fica cortado pela área, e apagar a faixa encolhe a área
+        m.tool = .area; m.areaMode = .rect
+        canvas.debugMouse(at: Point(x: 650, y: -40), dragTo: Point(x: 450, y: 450))
+        check(m.areaSelection?.rect == Rect(x: 450, y: 0, width: 150, height: 400), "a seleção fica dentro da área (\(String(describing: m.areaSelection?.rect)))")
+        m.eraseSelection()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 450, height: 400), "apagar a faixa da direita encolhe a área (\(m.doc.area))")
+        canvas.debugMouse(at: Point(x: -30, y: 350), dragTo: Point(x: 500, y: 460))
+        check(m.areaSelection?.rect == Rect(x: 0, y: 350, width: 450, height: 50), "a seleção fica dentro da área já encolhida (\(String(describing: m.areaSelection?.rect)))")
+        m.eraseSelection()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 450, height: 350), "apagar a faixa de baixo encolhe outra vez (\(m.doc.area))")
+        canvas.debugMouse(at: Point(x: 200, y: 50), dragTo: Point(x: 250, y: 100))
+        m.eraseSelection()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 450, height: 350), "apagar no meio não mexe na área (\(m.doc.area))")
+        m.undo(); m.undo(); m.undo()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "desfazer repõe a área (\(m.doc.area))")
+
+        // 7) Pintar: clique na zona vermelha pinta-a de verde; o pintado é um objeto com cor; a área não cresce
+        m.tool = .fill
+        do { var st = m.currentStyle; st.colorHex = "#00FF00"; m.setStyle(st) }
+        let nFill = m.doc.annotations.count
+        canvas.debugMouse(at: Point(x: 400, y: 200))
+        check(m.doc.annotations.count == nFill + 1, "pintar cria um objeto")
+        if case .fill = m.selected?.shape {} else { fails.append("o objeto novo é um Pintado (\(String(describing: m.selected?.shape)))") }
+        check(isGreen(rgb(400, 200)) && isGreen(rgb(301, 101)), "a zona vermelha ficou verde (\(String(describing: rgb(400, 200))))")
+        check(isWhite(rgb(250, 50)) && isBlue(rgb(150, 150)), "o resto não mudou")
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "pintar não mexe na área (\(m.doc.area))")
+        check(m.tool == .select, "depois de pintar volta a Mover")
+        do { var st = m.currentStyle; st.colorHex = "#FF00FF"; m.setStyle(st) }
+        check(rgb(400, 200).map { $0.0 > 200 && $0.2 > 200 && $0.1 < 60 } ?? false, "mudar a cor do pintado muda a pintura")
+        m.undo(); m.undo()
+        check(m.doc.annotations.count == nFill, "desfazer tira o pintado")
+        m.tool = .select
         return fails
     }
 

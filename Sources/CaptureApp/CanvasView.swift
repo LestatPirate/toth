@@ -535,6 +535,11 @@ final class CanvasView: NSView {
             } else {
                 model.addStep(at: p)
             }
+        case .fill:
+            // clique sobre um preenchido já feito seleciona-o (⌥ + clique preenche por cima); senão, preenche a zona dessa cor
+            if !event.modifierFlags.contains(.option), let hit = model.topmost(at: p, tolerance: tol), case .fill = hit.shape {
+                selectExisting(hit.id)
+            } else if model.fillColor(at: p) == nil { NSSound.beep() }
         case .ocr:
             // clique num bloco marca-o (⇧ junta); duplo clique torna-o editável; fora de tudo desmarca
             if let b = model.textBlocks.last(where: { $0.rect.insetBy(dx: -3 / Double(scale), dy: -3 / Double(scale)).contains(p) }) {

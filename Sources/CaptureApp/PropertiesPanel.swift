@@ -401,8 +401,24 @@ struct PropertiesPanel: View {
     }
     private var isStep: Bool { if case .step = model.selected?.shape { return true }; return model.selected == nil && model.tool == .step }
     private var hasLine: Bool {
-        if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image, .stamp, .patch, .clone, .erase: return false; default: return true } }
-        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair, .area, .ocr].contains(model.tool)
+        if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image, .stamp, .patch, .clone, .erase, .fill: return false; default: return true } }
+        return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair, .area, .ocr, .fill].contains(model.tool)
+    }
+    private var isFill: Bool { if case .fill = model.selected?.shape { return true }; return model.selected == nil && model.tool == .fill }
+    private var fillTolerance: Binding<Double> { Binding(get: { model.fillTolerance }, set: { model.fillTolerance = $0 }) }
+    private var fillContiguous: Binding<Bool> { Binding(get: { model.fillContiguous }, set: { model.fillContiguous = $0 }) }
+
+    /// Preencher: a cor e, antes de clicar, até que ponto as cores parecidas contam.
+    private var fillSection: some View {
+        section(L("Pintar")) {
+            row(L("Cor")) { ColorPicker("", selection: lineColor).labelsHidden() }
+            if model.selected == nil {
+                slider(L("Tolerância"), value: fillTolerance, range: 0...128, format: "%.0f")
+                row(L("Só píxeis contíguos")) { Toggle("", isOn: fillContiguous).labelsHidden() }
+                Text(L("Clique numa zona da imagem (uma cor, ou o vazio) para a pintar com esta cor. O preenchido fica um objeto: muda-se a cor, move-se ou tira-se."))
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     var body: some View {
@@ -437,6 +453,7 @@ struct PropertiesPanel: View {
                 if isImageObject { imageObjectSection }
                 if isStamp { stampSection }
                 if isRepair { repairSection }
+                if isFill { fillSection }
                 if isHighlight {
                     section(L("Marcador")) { row(L("Cor")) { ColorPicker("", selection: lineColor).labelsHidden() } }
                 }

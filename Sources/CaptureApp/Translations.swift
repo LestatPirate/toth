@@ -493,5 +493,8 @@ enum Translations {
         "1 item movido para %@.": "1 item moved to %@.",
         "%d itens movidos para %@.": "%d items moved to %@.",
         "Ficaram na pasta antiga (já existia um com o mesmo nome no destino): %@.": "Left in the old folder (one with the same name already existed at the destination): %@.",
+        "Pintar": "Paint",
+        "Pintado": "Painted",
+        "Clique numa zona da imagem (uma cor, ou o vazio) para a pintar com esta cor. O preenchido fica um objeto: muda-se a cor, move-se ou tira-se.": "Click a part of the image (one color, or empty space) to paint it with this color. The painted area becomes an object: change its color, move it or remove it.",
     ]
 }

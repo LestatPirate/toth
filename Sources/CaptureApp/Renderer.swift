@@ -519,6 +519,13 @@ enum Renderer {
             ctx.setAlpha(1)
             ctx.fill(box)
 
+        case let .fill(_, _, _, mask):
+            // a região (ou a parte coberta pela máscara) passa a ser a cor do estilo
+            let box = a.shape.bounds.cg
+            if let mask, let mimg = assets?.image(named: mask) { clipFlipped(ctx, to: box, mask: mimg) }
+            ctx.setShadow(offset: .zero, blur: 0, color: nil)
+            ctx.fill(box)
+
         case let .stamp(_, _, _, symbol):
             drawStamp(symbol, in: a.shape.bounds.cg, color: c, ctx)
 

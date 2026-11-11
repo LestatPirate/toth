@@ -194,6 +194,42 @@ private func tmp() -> URL {
     #expect(doc.area == doc.imageRect)
 }
 
+@Test func erasedEdgeBandsShrinkTheAreaAndNeverGrowIt() throws {
+    var doc = CaptureDocument(canvasWidth: 100, canvasHeight: 50)
+    // um apagado que sai da imagem não a faz crescer
+    let big = doc.add(.erase(origin: Point(x: -20, y: -20), width: 50, height: 90))
+    doc.autoFitArea()
+    #expect(doc.area == Rect(x: 30, y: 0, width: 70, height: 50))   // e a faixa esquerda (0…30) apagada de cima a baixo desaparece
+    doc.remove(id: big.id)
+    doc.autoFitArea()
+    #expect(doc.area == doc.imageRect)
+    // faixa de baixo apagada de lado a lado: a área encolhe; uma apagada só a meio não conta
+    let bottom = doc.add(.erase(origin: Point(x: 0, y: 40), width: 100, height: 10))
+    doc.autoFitArea()
+    #expect(doc.area == Rect(x: 0, y: 0, width: 100, height: 40))
+    let middle = doc.add(.erase(origin: Point(x: 0, y: 20), width: 100, height: 5))
+    doc.autoFitArea()
+    #expect(doc.area == Rect(x: 0, y: 0, width: 100, height: 40))
+    // um objeto por cima da faixa apagada mantém-na (é conteúdo)
+    let obj = doc.add(.rect(origin: Point(x: 10, y: 42), width: 10, height: 5), style: Style(lineVisible: false))
+    doc.autoFitArea()
+    #expect(doc.area == doc.imageRect)
+    doc.remove(id: obj.id); doc.remove(id: middle.id); doc.remove(id: bottom.id)
+    // Reparo, Blur e Pintado nunca fazem a área crescer
+    doc.add(.patch(origin: Point(x: 90, y: 0), width: 50, height: 10))
+    doc.add(.fill(origin: Point(x: -30, y: 0), width: 50, height: 10))
+    doc.autoFitArea()
+    #expect(doc.area == doc.imageRect)
+}
+
+@Test func areaMaskClipsToRect() {
+    let m = AreaMask.rect(Rect(x: -10, y: -10, width: 30, height: 30))
+    let c = m.clipped(to: Rect(x: 0, y: 0, width: 100, height: 50))
+    #expect(c.rect == Rect(x: 0, y: 0, width: 20, height: 20) && c.isFullRect)
+    #expect(m.clipped(to: Rect(x: 50, y: 50, width: 10, height: 10)).isEmpty)
+    #expect(m.clipped(to: Rect(x: -20, y: -20, width: 100, height: 100)) == m)
+}
+
 @Test func legacyCropDecodesAsWorkArea() throws {
     let json = ##"{"formatVersion":1,"canvasWidth":100,"canvasHeight":50,"crop":{"origin":{"x":10,"y":5},"width":40,"height":20},"annotations":[]}"##.data(using: .utf8)!
     let doc = try JSONDecoder().decode(CaptureDocument.self, from: json)

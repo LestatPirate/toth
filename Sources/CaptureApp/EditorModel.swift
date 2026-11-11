@@ -5,13 +5,13 @@ import AppKit
 import CaptureCore
 
 enum Tool: String, CaseIterable, Identifiable {
-    case select, area, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, ocr, canvas
+    case select, area, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, fill, ocr, canvas
     var id: String { rawValue }
     var title: String {
         switch self {
         case .select: L("Mover"); case .arrow: L("Seta"); case .line: L("Linha"); case .callout: L("Balão"); case .rect: L("Retângulo")
         case .ellipse: L("Elipse"); case .text: L("Texto"); case .step: L("Etapa"); case .highlight: L("Marcador"); case .blur: L("Pixelização"); case .gaussian: L("Blur"); case .canvas: L("Tela")
-        case .stamp: L("Carimbo"); case .repair: L("Reparo"); case .area: L("Selecionar"); case .ocr: L("Texto da imagem")
+        case .stamp: L("Carimbo"); case .repair: L("Reparo"); case .area: L("Selecionar"); case .ocr: L("Texto da imagem"); case .fill: L("Pintar")
         }
     }
     /// Estilo inicial de cada ferramenta (cada uma lembra o seu último estilo).
@@ -27,7 +27,7 @@ enum Tool: String, CaseIterable, Identifiable {
         switch self {
         case .select: "cursorarrow"; case .arrow: "arrow.up.right"; case .line: "line.diagonal"; case .callout: "bubble.left"; case .rect: "rectangle"
         case .ellipse: "circle"; case .text: "textformat"; case .step: "1.circle"; case .highlight: "highlighter"; case .blur: "square.grid.3x3"; case .gaussian: "drop"; case .canvas: "aspectratio"
-        case .stamp: "checkmark.seal"; case .repair: "bandage"; case .area: "selection.pin.in.out"; case .ocr: "text.viewfinder"
+        case .stamp: "checkmark.seal"; case .repair: "bandage"; case .area: "selection.pin.in.out"; case .ocr: "text.viewfinder"; case .fill: "paintbrush.pointed.fill"
         }
     }
 }
@@ -364,10 +364,43 @@ final class EditorModel: ObservableObject {
         return (px, w, h, Point(x: a.minX.rounded(.down), y: a.minY.rounded(.down)))
     }
 
-    /// Junta, tira ou substitui a seleção por `m` (em coordenadas do documento).
+    /// Junta, tira ou substitui a seleção por `m` (em coordenadas do documento). O que cai fora da área de trabalho
+    /// não conta: selecionar para lá da imagem não a faz crescer.
     func selectArea(_ m: AreaMask, combine: AreaMask.Combine = .replace) {
+        let m = m.clipped(to: doc.area)
         let next = (areaSelection.map { $0.combined(with: m, combine) } ?? (combine == .subtract ? nil : m))
         areaSelection = (next?.isEmpty ?? true) ? nil : next
+    }
+
+    // MARK: Preencher (balde de tinta)
+
+    /// Tolerância e contiguidade do Preencher (independentes das da varinha).
+    var fillTolerance: Double {
+        get { (UserDefaults.standard.object(forKey: "fillTolerance") as? Double) ?? 32 }
+        set { UserDefaults.standard.set(max(0, min(255, newValue)), forKey: "fillTolerance"); objectWillChange.send() }
+    }
+    var fillContiguous: Bool {
+        get { (UserDefaults.standard.object(forKey: "fillContiguous") as? Bool) ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "fillContiguous"); objectWillChange.send() }
+    }
+
+    /// Preencher: a zona de cor parecida com a do ponto `p` (como a varinha) passa a ser a cor da ferramenta, como um
+    /// objeto «Preenchido» (não destrutivo: move-se, muda de cor e tira-se). Devolve o id, ou `nil` se não houver píxel aí.
+    @discardableResult
+    func fillColor(at p: Point) -> UUID? {
+        guard let r = renderedPixels() else { return nil }
+        let local = Point(x: p.x - r.origin.x, y: p.y - r.origin.y)
+        guard var m = AreaMask.wand(pixels: r.pixels, width: r.width, height: r.height, at: local, tolerance: Int(fillTolerance), contiguous: fillContiguous) else { return nil }
+        m.x += Int(r.origin.x); m.y += Int(r.origin.y)
+        m = m.trimmed()
+        guard !m.isEmpty else { return nil }
+        let maskName = maskAsset(m)
+        var id = UUID()
+        let style = self.style
+        perform { id = $0.add(.fill(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), mask: maskName), style: style).id }
+        selection = id
+        finishedDrawing()
+        return id
     }
 
     /// Píxeis renderizados guardados durante um gesto da varinha (arrastar vai apanhando mais zonas sem voltar a desenhar).

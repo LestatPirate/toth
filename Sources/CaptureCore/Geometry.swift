@@ -21,6 +21,8 @@ public struct Rect: Equatable, Sendable {
         let x0 = min(minX, o.minX), y0 = min(minY, o.minY)
         return Rect(x: x0, y: y0, width: max(maxX, o.maxX) - x0, height: max(maxY, o.maxY) - y0)
     }
+    /// `true` se as duas caixas se sobrepõem (com área, não só a tocar-se na borda).
+    public func intersects(_ o: Rect) -> Bool { minX < o.maxX && o.minX < maxX && minY < o.maxY && o.minY < maxY }
 }
 
 /// Rotações e caixas envolventes (sem CoreGraphics).
@@ -65,13 +67,13 @@ public extension Shape {
         switch self {
         case .arrow: "Seta"; case .line: "Linha"; case .rect: "Retângulo"; case .ellipse: "Elipse"
         case .text, .textBox: "Texto"; case .step: "Etapa"; case .highlight: "Marcador"; case .blur: "Pixelização"; case .gaussian: "Blur"; case .image: "Imagem"; case .callout: "Balão"
-        case .stamp: "Carimbo"; case .patch, .clone: "Reparo"; case .erase: "Apagado"
+        case .stamp: "Carimbo"; case .patch, .clone: "Reparo"; case .erase: "Apagado"; case .fill: "Pintado"
         }
     }
 
-    /// Ficheiro da máscara (reparo ou apagado com forma), se houver.
+    /// Ficheiro da máscara (reparo, apagado ou preenchido com forma), se houver.
     var maskAsset: String? {
-        switch self { case let .patch(_, _, _, m), let .erase(_, _, _, m): return m; default: return nil }
+        switch self { case let .patch(_, _, _, m), let .erase(_, _, _, m), let .fill(_, _, _, m): return m; default: return nil }
     }
 
     /// Símbolo do carimbo (só para `stamp`).
@@ -221,7 +223,7 @@ public extension Shape {
         case let .arrow(a, b), let .line(a, b):
             return Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
         case let .rect(o, w, h), let .ellipse(o, w, h), let .highlight(o, w, h), let .blur(o, w, h, _), let .textBox(o, w, h, _, _),
-             let .gaussian(o, w, h, _), let .image(o, w, h, _), let .stamp(o, w, h, _), let .patch(o, w, h, _), let .clone(o, w, h, _), let .erase(o, w, h, _):
+             let .gaussian(o, w, h, _), let .image(o, w, h, _), let .stamp(o, w, h, _), let .patch(o, w, h, _), let .clone(o, w, h, _), let .erase(o, w, h, _), let .fill(o, w, h, _):
             return Rect(x: min(o.x, o.x + w), y: min(o.y, o.y + h), width: abs(w), height: abs(h))
         case let .text(o, s, size):
             let lines = s.split(separator: "\n", omittingEmptySubsequences: false)
@@ -257,6 +259,7 @@ public extension Shape {
         case let .patch(o, w, h, k): return .patch(origin: m(o), width: w, height: h, mask: k)
         case let .clone(o, w, h, s): return .clone(origin: m(o), width: w, height: h, source: m(s))
         case let .erase(o, w, h, k): return .erase(origin: m(o), width: w, height: h, mask: k)
+        case let .fill(o, w, h, k): return .fill(origin: m(o), width: w, height: h, mask: k)
         }
     }
 
@@ -280,6 +283,7 @@ public extension Shape {
         case let .patch(o, w, h, mk): return .patch(origin: m(o), width: w * k, height: h * k, mask: mk)
         case let .clone(o, w, h, s): return .clone(origin: m(o), width: w * k, height: h * k, source: m(s))
         case let .erase(o, w, h, mk): return .erase(origin: m(o), width: w * k, height: h * k, mask: mk)
+        case let .fill(o, w, h, mk): return .fill(origin: m(o), width: w * k, height: h * k, mask: mk)
         }
     }
 
@@ -318,7 +322,7 @@ public extension Shape {
     var handles: [Point] {
         switch self {
         case let .arrow(a, b), let .line(a, b): return [a, b]
-        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image, .stamp, .patch, .erase: return Shape.corners(bounds)
+        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image, .stamp, .patch, .erase, .fill: return Shape.corners(bounds)
         case let .callout(_, _, _, tail, _, _): return Shape.corners(calloutBox!) + [tail]
         case .clone: let s = cloneSourceRect!; return Shape.corners(bounds) + [Point(x: s.x + s.width / 2, y: s.y + s.height / 2)]   // 5.ª alça: a origem
         case .step: return Shape.corners(bounds)   // 4 cantos: o círculo cresce mantendo a proporção
@@ -363,7 +367,7 @@ public extension Shape {
             let sx: Double = dx != 0 ? (dx > 0 ? 1 : -1) : (h[index].x >= fixed.x ? 1 : -1)
             let sy: Double = dy != 0 ? (dy > 0 ? 1 : -1) : (h[index].y >= fixed.y ? 1 : -1)
             return .stamp(origin: Point(x: min(fixed.x, fixed.x + sx * w), y: min(fixed.y, fixed.y + sy * hh)), width: w, height: hh, symbol: sym)
-        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image, .patch, .erase:
+        case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image, .patch, .erase, .fill:
             let h = handles
             guard h.indices.contains(index) else { return self }
             let (o, w, hh) = rectFrom(h[(index + 2) % 4])
@@ -371,6 +375,7 @@ public extension Shape {
             case .rect: return .rect(origin: o, width: w, height: hh)
             case let .patch(_, _, _, k): return .patch(origin: o, width: w, height: hh, mask: k)
             case let .erase(_, _, _, k): return .erase(origin: o, width: w, height: hh, mask: k)
+            case let .fill(_, _, _, k): return .fill(origin: o, width: w, height: hh, mask: k)
             case .ellipse: return .ellipse(origin: o, width: w, height: hh)
             case .highlight: return .highlight(origin: o, width: w, height: hh)
             case let .blur(_, _, _, r): return .blur(origin: o, width: w, height: hh, radius: r)
@@ -516,7 +521,7 @@ public extension Annotation {
         let b = shape.bounds
         let pad: Double
         switch shape {
-        case .highlight, .blur, .gaussian, .image, .step, .stamp, .patch, .clone, .erase: pad = 0
+        case .highlight, .blur, .gaussian, .image, .step, .stamp, .patch, .clone, .erase, .fill: pad = 0
         default: pad = style.lineVisible ? style.lineWidth / 2 : 0
         }
         return b.insetBy(dx: -pad, dy: -pad)
