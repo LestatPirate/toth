@@ -47,6 +47,8 @@ enum MainMenu {
         add(file, L("Capturar ecrã inteiro"), #selector(AppDelegate.captureFullScreen), target: t)
         file.addItem(.separator())
         add(file, L("Salvar como…"), #selector(AppDelegate.saveAs), "s", mods: [.command, .shift], target: t)
+        add(file, L("Exportar (último formato e pasta)"), #selector(AppDelegate.exportQuick), "e", target: t)
+        add(file, L("Copiar a imagem final"), #selector(AppDelegate.copyAll), "c", mods: [.command, .shift], target: t)
         add(file, L("Fechar janela"), #selector(NSWindow.performClose(_:)), "w")
 
         // Editar
@@ -59,6 +61,23 @@ enum MainMenu {
         add(edit, L("Colar"), Selector(("paste:")), "v")
         add(edit, L("Duplicar"), Selector(("duplicate:")), "d")
         add(edit, L("Selecionar tudo"), #selector(NSText.selectAll(_:)), "a")
+        add(edit, L("Apagar"), #selector(AppDelegate.deleteSelection), "\u{8}", mods: [], target: t)
+        edit.addItem(.separator())
+        add(edit, L("Terminar a edição / confirmar"), #selector(AppDelegate.confirmEdit), "\r", mods: [.command], target: t)
+        add(edit, L("Cancelar / voltar a Mover"), #selector(AppDelegate.escapeEdit), "\u{1B}", mods: [], target: t)
+        edit.addItem(.separator())
+        add(edit, L("Ajustar a tela ao conteúdo"), #selector(AppDelegate.fitArea), "f", mods: [.command, .shift], target: t)
+        add(edit, L("Mudar o nome da captura…"), #selector(AppDelegate.renameCapture), "r", mods: [.command, .shift], target: t)
+
+        // Ferramentas (uma tecla cada; não valem enquanto se escreve)
+        let tools = submenu(L("Ferramentas"))
+        for tool in Tool.allCases {
+            let item = tools.addItem(withTitle: tool.title, action: #selector(AppDelegate.chooseTool(_:)), keyEquivalent: tool.key)
+            item.keyEquivalentModifierMask = []; item.target = t; item.representedObject = tool.rawValue
+            item.image = NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil)
+        }
+        tools.addItem(.separator())
+        add(tools, L("Guardar como estilo rápido"), #selector(AppDelegate.saveQuickStyle), "k", mods: [.command, .shift], target: t)
 
         // Organizar
         let arrange = submenu(L("Organizar"))

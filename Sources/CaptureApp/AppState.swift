@@ -44,7 +44,7 @@ final class AppState: ObservableObject {
         if VideoFiles.isVideo(url) { openVideo(url); return }
         do {
             let m = try EditorModel(url: url)
-            m.onSaved = { [weak self] in self?.revision += 1 }
+            m.onSaved = { [weak self] in self?.revision += 1; LibraryIndex.shared.reload(url) }
             model = m
             videoURL = nil
             refreshLibrary()
@@ -70,7 +70,14 @@ final class AppState: ObservableObject {
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
             .map(LibraryItem.init)
         folderCaptureCount = library.filter { CaptureContainer.isFolderCapture($0.url) }.count
+        LibraryIndex.shared.openURL = { [weak self] in self?.model?.url }
+        if showBrowser { LibraryIndex.shared.sync(library) }
     }
+
+    /// Texto e data da pesquisa na biblioteca.
+    @Published var searchText = ""
+    @Published var searchDate: LibraryIndex.DateFilter = .all
+    func openBrowser() { showBrowser = true; LibraryIndex.shared.sync(library) }
 
     // MARK: Faixa de baixo (só as mais recentes)
 
@@ -197,7 +204,7 @@ final class AppState: ObservableObject {
     /// Mostra a biblioteca: uma grelha com a pré-visualização atual de cada captura, para escolher clicando.
     func openSaved() {
         refreshLibrary()
-        showBrowser = true
+        openBrowser()
     }
 
     /// Escolhe uma captura da biblioteca e abre-a no editor.

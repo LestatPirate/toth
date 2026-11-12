@@ -1581,7 +1581,8 @@ enum SelfTests {
         window.appearance = NSAppearance(named: .aqua)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        let until = Date().addingTimeInterval(0.6)
+        while Date() < until { CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.1, false) }   // (processa também as miniaturas, que chegam pelo run loop)
         host.layoutSubtreeIfNeeded()
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
         host.cacheDisplay(in: host.bounds, to: rep)
@@ -1837,6 +1838,13 @@ enum SelfTests {
         state.toggleLibraryStrip()
         check(state.showLibraryStrip == false && defaults.object(forKey: "libraryStripVisible") as? Bool == false, "ocultar devia ficar guardado")
         guard let hidden = renderMainWindow(state, size: size) else { return ["sem render (oculta)"] }
+        // (os dois renders ficam na pasta do teste, para se ver o que foi medido)
+        for (name, r) in [("strip-visivel.png", shown), ("strip-oculta.png", hidden)] {
+            if let ctx = CGContext(data: nil, width: r.w, height: r.h, bitsPerComponent: 8, bytesPerRow: r.w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                r.px.withUnsafeBytes { ctx.data?.copyMemory(from: $0.baseAddress!, byteCount: r.px.count) }
+                if let img = ctx.makeImage(), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) { try? png.write(to: dir.appendingPathComponent(name)) }
+            }
+        }
 
         // zona do canto inferior esquerdo (onde estariam as miniaturas): com a faixa visível tem conteúdo variado; oculta, é só a barra do rodapé
         func distinctColors(_ r: (px: [UInt8], w: Int, h: Int), rows: Range<Int>, columns: Range<Int>) -> Int {
@@ -1844,12 +1852,19 @@ enum SelfTests {
             for y in rows { for x in columns { let o = (y * r.w + x) * 4; set.insert(UInt32(r.px[o]) << 16 | UInt32(r.px[o + 1]) << 8 | UInt32(r.px[o + 2])) } }
             return set.count
         }
-        let bottom = (shown.h - 70)..<(shown.h - 10), left = 12..<240
+        let bottom = (shown.h - 70)..<(shown.h - 10), left = 170..<290   // (no rodapé, à esquerda fica o nome da captura e ao centro o zoom: esta zona evita os dois)
         let withStrip = distinctColors(shown, rows: bottom, columns: left)
         let without = distinctColors(hidden, rows: bottom, columns: left)
-        print("LIBRARYSTRIP-SELFTEST: cores distintas na zona de baixo: visível \(withStrip), oculta \(without)")
-        check(withStrip >= without + 15, "com a faixa visível devia haver miniaturas em baixo (\(withStrip) cores contra \(without) sem a faixa)")
-        check(without < 8, "com a faixa oculta não devia haver miniaturas em baixo (\(without) cores)")
+        // (as miniaturas são do azul das capturas criadas: conta-se o azul, que a barra do rodapé não tem)
+        func bluePixels(_ r: (px: [UInt8], w: Int, h: Int), rows: Range<Int>, columns: Range<Int>) -> Int {
+            var n = 0
+            for y in rows { for x in columns { let o = (y * r.w + x) * 4; if r.px[o] < 90 && r.px[o + 1] > 70 && r.px[o + 1] < 140 && r.px[o + 2] > 160 { n += 1 } } }
+            return n
+        }
+        let blueShown = bluePixels(shown, rows: bottom, columns: left), blueHidden = bluePixels(hidden, rows: bottom, columns: left)
+        print("LIBRARYSTRIP-SELFTEST: cores distintas na zona de baixo: visível \(withStrip), oculta \(without); azul: \(blueShown) / \(blueHidden)")
+        check(blueShown > 1000, "com a faixa visível devia haver miniaturas em baixo (\(blueShown) píxeis azuis, \(withStrip) cores)")
+        check(blueHidden == 0 && without < 8, "com a faixa oculta não devia haver miniaturas em baixo (\(blueHidden) píxeis azuis, \(without) cores)")
 
         // a faixa oculta mantém o botão para a voltar a mostrar (o rodapé continua lá)
         state.toggleLibraryStrip()
@@ -1976,6 +1991,198 @@ extension SelfTests {
 
 extension SelfTests {
     // MARK: Texto da imagem (reconhecimento, estilo, editar, copiar)
+
+    /// Cortar faixa, nome da captura, Exportar (⌘E), estilos rápidos, menu Ferramentas e pesquisa da biblioteca.
+    @MainActor static func featuresSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir
+        let state = AppState.shared
+        if let e = state.createBlankImage(width: 600, height: 400, backgroundHex: "#FFFFFF", transparent: false) { return ["não criou a imagem: \(e)"] }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        guard let m = state.model, let canvas = CanvasView.current else { return ["sem editor"] }
+        // base: faixas de cor: vermelho em y 0…100, verde 100…200, azul 200…300, amarelo 300…400; à direita (x ≥ 500) tudo preto
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 600, pixelsHigh: 400, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        for (i, c) in [NSColor.red, .green, .blue, .yellow].enumerated() { c.setFill(); NSRect(x: 0, y: 300 - i * 100, width: 600, height: 100).fill() }   // (y de baixo)
+        NSColor.black.setFill(); NSRect(x: 500, y: 0, width: 100, height: 400).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        m.base = rep.cgImage!
+        m.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        func rgb(_ x: Int, _ y: Int) -> (Int, Int, Int, Int)? {
+            guard let png = m.exportPNG(), let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+            // (as coordenadas são da área exportada, que começa na origem da área)
+            let a = m.doc.area
+            guard let p = pixel(img, x - Int(a.minX), y - Int(a.minY)) else { return nil }
+            return (p.r, p.g, p.b, p.a)
+        }
+        func isGreen(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.1 > 200 && $0.0 < 60 && $0.2 < 60 } ?? false }
+        func isYellow(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.0 > 200 && $0.1 > 200 && $0.2 < 60 } ?? false }
+        func isRed(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.0 > 200 && $0.1 < 60 && $0.2 < 60 } ?? false }
+        func isBlack(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.0 < 40 && $0.1 < 40 && $0.2 < 40 } ?? false }
+
+        // 1) Cortar faixa horizontal (a azul, y 200…300): o amarelo sobe para y 200…300 e a área fica 600×300
+        let n0 = m.doc.annotations.count
+        m.tool = .cutout; m.cutoutZigzag = true
+        var st = m.currentStyle; st.colorHex = "#FF00FF"; m.setStyle(st)
+        canvas.debugMouse(at: Point(x: 300, y: 200), dragTo: Point(x: 310, y: 300))
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 300), "cortar a faixa azul encolhe a área para 600×300 (\(m.doc.area))")
+        check(isYellow(rgb(300, 250)) && isGreen(rgb(300, 150)) && isRed(rgb(300, 50)), "o amarelo subiu para o lugar do azul (\(String(describing: rgb(300, 250))))")
+        check(m.doc.annotations.count == n0 + 3, "cortar cria apagado + imagem + ziguezague (\(m.doc.annotations.count - n0))")
+        check(m.doc.annotations.contains { if case .zigzag = $0.shape { return $0.style.colorHex == "#FF00FF" } else { return false } }, "a linha de corte é um ziguezague com a cor da ferramenta")
+        check(m.tool == .select && m.selected?.shape.imageAsset != nil, "depois de cortar volta a Mover com a parte movida selecionada")
+        var seamSeen = false
+        for y in 190...210 where !seamSeen { for x in 280...320 where !seamSeen { if let p = rgb(x, y), p.0 > 200, p.2 > 200, p.1 < 80 { seamSeen = true } } }
+        check(seamSeen, "a linha de corte vê-se junto ao corte")
+        m.undo()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe a área e tira os três objetos")
+
+        // 2) Cortar faixa vertical sem ziguezague (x 400…500): o preto encosta ao x 400 e a área fica 500×400
+        m.tool = .cutout; m.cutoutZigzag = false
+        canvas.debugMouse(at: Point(x: 400, y: 50), dragTo: Point(x: 500, y: 60))
+        check(m.doc.area == Rect(x: 0, y: 0, width: 500, height: 400), "cortar a faixa vertical encolhe a área para 500×400 (\(m.doc.area))")
+        check(isBlack(rgb(450, 50)) && isRed(rgb(350, 50)), "o preto encostou ao x 400 (\(String(describing: rgb(450, 50))))")
+        check(m.doc.annotations.count == n0 + 2, "sem ziguezague são só dois objetos")
+        // uma faixa que toque na borda não corta (seria recortar pela borda, não juntar)
+        m.tool = .cutout
+        canvas.debugMouse(at: Point(x: 100, y: -20), dragTo: Point(x: 100, y: 50))
+        check(m.doc.annotations.count == n0 + 2, "uma faixa que toca na borda não corta")
+        m.undo()
+        m.cutoutZigzag = true
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "desfazer repõe (\(m.doc.area))")
+
+        // 3) Nome da captura: fica no documento e reabre com ele; vazio volta à data
+        let dateTitle = m.displayTitle
+        m.setTitle("  Fatura de outubro ")
+        check(m.doc.title == "Fatura de outubro" && m.displayTitle == "Fatura de outubro", "o nome fica no documento (\(String(describing: m.doc.title)))")
+        if let reread = try? CapturePackage.read(from: m.url) { check(reread.title == "Fatura de outubro", "o nome fica gravado no pacote") } else { fails.append("não releu o pacote") }
+        m.setTitle("")
+        check(m.doc.title == nil && m.displayTitle == dateTitle, "nome vazio volta à data")
+        m.setTitle("Fatura de outubro")
+
+        // 4) Exportar (⌘E): sem «Salvar como» antes, não grava sozinho; com um formato e pasta lembrados, grava com o nome da captura
+        let exportDir = dir.appendingPathComponent("export", isDirectory: true)
+        try? FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+        EditorModel.lastExport = (.jpeg, exportDir)
+        let out = m.exportQuick()
+        check(out?.lastPathComponent == "Fatura de outubro.jpg" && FileManager.default.fileExists(atPath: out?.path ?? ""), "⌘E grava «Fatura de outubro.jpg» na última pasta (\(String(describing: out?.path)))")
+        let out2 = m.exportQuick()
+        check(out2?.lastPathComponent == "Fatura de outubro 2.jpg", "o segundo ⌘E não sobrescreve (\(String(describing: out2?.lastPathComponent)))")
+        check(m.statusMessage?.contains("Exportado") == true, "mostra o aviso «Exportado»")
+        EditorModel.lastExport = nil
+        check(EditorModel.lastExport == nil, "limpar o último formato")
+
+        // 5) Estilos rápidos: guardar o da ferramenta, aplicar a um objeto do mesmo tipo e a uma ferramenta, mudar o nome, apagar
+        let styles = QuickStyles.shared
+        let before = styles.items
+        m.tool = .arrow
+        var arrowStyle = m.currentStyle; arrowStyle.colorHex = "#123456"; arrowStyle.lineWidth = 9; m.setStyle(arrowStyle)
+        guard let q = m.saveQuickStyle() else { return fails + ["não guardou o estilo rápido"] }
+        check(q.toolValue == .arrow && q.style.colorHex == "#123456" && q.style.lineWidth == 9, "o estilo rápido guarda ferramenta e estilo")
+        check(styles.items.count == before.count + 1, "ficou na lista")
+        // um texto selecionado: aplicar um estilo de seta muda para a ferramenta Seta (tipos diferentes)
+        m.tool = .rect
+        var rectStyle = m.currentStyle; rectStyle.colorHex = "#00AA00"; m.setStyle(rectStyle)
+        canvas.debugMouse(at: Point(x: 50, y: 50), dragTo: Point(x: 150, y: 120))
+        guard let rectID = m.selection else { return fails + ["não criou o retângulo"] }
+        m.applyQuickStyle(q)
+        check(m.tool == .arrow && m.selection == nil && m.currentStyle.colorHex == "#123456", "aplicar a outro tipo passa para a ferramenta do estilo (\(m.tool), \(m.currentStyle.colorHex))")
+        check(m.doc.annotations.first { $0.id == rectID }?.style.colorHex == "#00AA00", "o retângulo não mudou")
+        // um retângulo selecionado e um estilo de retângulo: aplica-se ao objeto
+        let q2 = styles.add(tool: .rect, style: Style(colorHex: "#AA0000", lineWidth: 2), values: [:], name: "Teste")
+        m.selection = rectID
+        m.applyQuickStyle(q2)
+        check(m.doc.annotations.first { $0.id == rectID }?.style.colorHex == "#AA0000" && m.selection == rectID, "aplicar ao objeto do mesmo tipo muda-lhe o estilo")
+        styles.rename(q2.id, to: "Vermelho fino")
+        check(styles.items.first { $0.id == q2.id }?.name == "Vermelho fino", "mudar o nome")
+        // atualizar: o estilo rápido passa a ter o estilo atual (do retângulo selecionado), mantendo o nome; fica guardado
+        var r2 = m.currentStyle; r2.lineWidth = 11; m.setStyle(r2)
+        m.updateQuickStyle(q2)
+        check(styles.items.first { $0.id == q2.id }?.style.lineWidth == 11 && styles.items.first { $0.id == q2.id }?.name == "Vermelho fino", "atualizar guarda o estilo atual e mantém o nome")
+        if let data = UserDefaults.standard.data(forKey: "quickStyles.v1"), let saved = try? JSONDecoder().decode([QuickStyle].self, from: data) {
+            check(saved.first { $0.id == q2.id }?.style.lineWidth == 11, "fica guardado nas preferências")
+        } else { fails.append("os estilos rápidos não ficaram nas preferências") }
+        m.tool = .arrow; m.selection = nil
+        m.updateQuickStyle(q2)
+        check(styles.items.first { $0.id == q2.id }?.style.lineWidth == 11, "um estilo de retângulo não se atualiza com a ferramenta Seta")
+        m.selection = rectID
+        styles.remove(q.id); styles.remove(q2.id)
+        check(styles.items == before, "apagar deixa a lista como estava")
+        m.delete(rectID)
+
+        // 6) Menu Ferramentas: uma tecla por ferramenta; desativado com um texto selecionado (escrever edita-o)
+        guard let app = NSApp.delegate as? AppDelegate, let tools = NSApp.mainMenu?.items.first(where: { $0.title == L("Ferramentas") })?.submenu else { return fails + ["sem menu Ferramentas"] }
+        let keys = tools.items.compactMap { $0.representedObject as? String }.compactMap(Tool.init(rawValue:))
+        check(keys == Tool.allCases, "o menu tem todas as ferramentas (\(keys.count))")
+        check(Set(Tool.allCases.map(\.key)).count == Tool.allCases.count, "as teclas das ferramentas não se repetem")
+        if let item = tools.items.first(where: { ($0.representedObject as? String) == Tool.step.rawValue }) {
+            m.selection = nil
+            check(app.validateMenuItem(item), "sem texto selecionado a tecla da ferramenta vale")
+            app.chooseTool(item)
+            check(m.tool == .step, "o item escolhe a ferramenta (\(m.tool))")
+            m.tool = .text
+            canvas.debugMouse(at: Point(x: 200, y: 200))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            canvas.selfTestTypeAndFinish("olá")
+            if let tid = m.selection, m.selected?.editableString != nil {
+                check(!app.validateMenuItem(item), "com um texto selecionado a tecla não vale (escrever edita)")
+                m.delete(tid)
+            } else { fails.append("não ficou com o texto selecionado (\(String(describing: m.selected?.shape)))") }
+        } else { fails.append("sem item Etapa") }
+        let edit = NSApp.mainMenu?.items.first { $0.title == L("Editar") }?.submenu
+        check(edit?.items.contains { $0.keyEquivalent == "e" && $0.keyEquivalentModifierMask == [.command] } == false
+              && NSApp.mainMenu?.items.first { $0.title == L("Ficheiro") }?.submenu?.items.contains { $0.keyEquivalent == "e" && $0.keyEquivalentModifierMask == [.command] } == true, "⌘E está no menu Ficheiro")
+        check(edit?.items.contains { $0.keyEquivalent == "\u{8}" } == true && edit?.items.contains { $0.keyEquivalent == "\u{1B}" } == true, "Apagar (⌫) e Esc estão no menu Editar")
+
+        // 7) Pesquisa da biblioteca: por nome, por texto das anotações, por texto da imagem (OCR) e por data
+        m.tool = .text
+        canvas.debugMouse(at: Point(x: 100, y: 100))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        canvas.selfTestTypeAndFinish("Relatório mensal")
+        let first = m.url
+        // segunda captura com texto escrito na imagem
+        let rep2 = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 600, pixelsHigh: 200, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep2)
+        NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 600, height: 200).fill()
+        ("Orçamento aprovado" as NSString).draw(at: NSPoint(x: 40, y: 80), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 36), .foregroundColor: NSColor.black])
+        NSGraphicsContext.restoreGraphicsState()
+        guard let second = try? CaptureStore.save(rep2.cgImage!) else { return fails + ["não gravou a 2.ª captura"] }
+        state.refreshLibrary()
+        let index = LibraryIndex.shared
+        // (o reconhecimento em segundo plano precisa da fila principal a correr, o que não acontece dentro do autoteste:
+        // aqui faz-se já, no fio principal, com o mesmo código)
+        index.recognizes = false
+        state.openBrowser()
+        let deadline = Date().addingTimeInterval(20)
+        // (`RunLoop.run(until:)` não chega: dentro de um bloco da fila principal não processa os blocos do run loop; o CFRunLoop sim)
+        while (index.entry(for: second) == nil || index.entry(for: first)?.annotationText.isEmpty != false) && Date() < deadline {
+            CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.2, false)
+        }
+        check(index.pending == 2, "as duas capturas ficam à espera de reconhecimento (\(index.pending))")
+        index.recognizeNow(second)
+        check(index.pending == 1, "depois de reconhecer uma, fica uma à espera (\(index.pending))")
+        check(index.entry(for: second)?.recognizedText?.contains("aprovado") == true, "reconheceu o texto da 2.ª captura (\(String(describing: index.entry(for: second)?.recognizedText)))")
+        check(CaptureContainer.readEntry(LibraryIndex.textFile, at: second) != nil, "o texto ficou guardado em text.txt dentro do pacote")
+        check(index.entry(for: first)?.annotationText.contains("Relatório") == true, "o texto da anotação da 1.ª entrou no índice (\(String(describing: index.entry(for: first)?.annotationText)))")
+        check(index.entry(for: first)?.title == "Fatura de outubro", "o nome da 1.ª entrou no índice")
+        let lib = state.library
+        check(index.filter(lib, query: "fatura", date: .all).map { LibraryIndex.key($0.url) } == [LibraryIndex.key(first)], "pesquisa por nome")
+        check(index.filter(lib, query: "RELATORIO", date: .all).map { LibraryIndex.key($0.url) } == [LibraryIndex.key(first)], "pesquisa por texto da anotação, sem acentos nem maiúsculas")
+        check(index.filter(lib, query: "orçamento aprovado", date: .all).map { LibraryIndex.key($0.url) } == [LibraryIndex.key(second)], "pesquisa por texto da imagem")
+        check(index.filter(lib, query: "", date: .today).count == lib.count && index.filter(lib, query: "", date: .year).count == lib.count, "filtro de data: hoje e este ano apanham as duas")
+        check(index.filter(lib, query: "nada disto", date: .all).isEmpty, "sem resultados")
+        check(index.title(for: first) == "Fatura de outubro", "a biblioteca mostra o nome dado")
+        // voltar a abrir a biblioteca lê o text.txt já guardado: não volta a reconhecer
+        state.showBrowser = false
+        state.openBrowser()
+        let d2 = Date().addingTimeInterval(10)
+        while index.pending != 1 && Date() < d2 { CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.2, false) }
+        check(index.pending == 1 && index.entry(for: second)?.recognizedText?.contains("aprovado") == true, "o texto guardado no pacote é lido sem reconhecer de novo (\(index.pending))")
+        state.showBrowser = false
+        index.recognizes = true
+        return fails
+    }
 
     @MainActor static func ocrSelfTest(dir: URL) -> [String] {
         var fails: [String] = []

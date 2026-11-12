@@ -150,6 +150,8 @@ public enum Shape: Codable, Equatable, Sendable {
     case erase(origin: Point, width: Double, height: Double, mask: String? = nil)
     /// Preencher: a região (ou a parte coberta pela `mask`) passa a ser a cor do estilo (`colorHex`, com a opacidade).
     case fill(origin: Point, width: Double, height: Double, mask: String? = nil)
+    /// Linha em ziguezague (a «linha de corte» do Cortar faixa; desenha-se com a cor e a espessura do estilo).
+    case zigzag(from: Point, to: Point)
     /// Reparo por clonagem: a região é coberta com o que está por baixo noutro sítio (`source` = canto superior esquerdo da origem).
     case clone(origin: Point, width: Double, height: Double, source: Point)
 }
@@ -238,6 +240,8 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     public var autoExpand: Bool = true
     /// Número da próxima etapa, se foi reiniciado/definido pelo utilizador; `nil` = continuar a sequência.
     public var nextStepNumber: Int?
+    /// Nome dado pelo utilizador (`nil` = o nome do ficheiro, a data da captura).
+    public var title: String?
     public private(set) var annotations: [Annotation] = []
 
     public init(canvasWidth: Double, canvasHeight: Double) {
@@ -245,7 +249,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case formatVersion, canvasWidth, canvasHeight, workArea, crop, imageFrame, backgroundHex, transparentBackground, autoExpand, nextStepNumber, annotations
+        case formatVersion, canvasWidth, canvasHeight, workArea, crop, imageFrame, backgroundHex, transparentBackground, autoExpand, nextStepNumber, title, annotations
     }
 
     public init(from decoder: Decoder) throws {
@@ -260,6 +264,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         transparentBackground = try c.decodeIfPresent(Bool.self, forKey: .transparentBackground) ?? false
         autoExpand = try c.decodeIfPresent(Bool.self, forKey: .autoExpand) ?? true
         nextStepNumber = try c.decodeIfPresent(Int.self, forKey: .nextStepNumber)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
         annotations = try c.decodeIfPresent([Annotation].self, forKey: .annotations) ?? []
     }
 
@@ -274,6 +279,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         try c.encode(transparentBackground, forKey: .transparentBackground)
         try c.encode(autoExpand, forKey: .autoExpand)
         try c.encodeIfPresent(nextStepNumber, forKey: .nextStepNumber)
+        try c.encodeIfPresent(title, forKey: .title)
         try c.encode(annotations, forKey: .annotations)
     }
 
@@ -327,14 +333,14 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         for a in annotations where a.visible {
             switch a.shape {
             case .erase: erased.append(a.worldBounds)
-            case .patch, .clone, .blur, .gaussian, .fill: continue
+            case .patch, .clone, .blur, .gaussian, .fill, .zigzag: continue   // (o ziguezague é a linha de um corte: não conta)
             default: union = union.union(a.worldBounds)
             }
         }
         // objetos por cima do apagado contam como conteúdo: só o que está só coberto por apagados desaparece
         let objects = annotations.filter { a in
             guard a.visible else { return false }
-            switch a.shape { case .erase, .patch, .clone, .blur, .gaussian, .fill: return false; default: return true }
+            switch a.shape { case .erase, .patch, .clone, .blur, .gaussian, .fill, .zigzag: return false; default: return true }
         }.map(\.worldBounds)
         var r = union
         var changed = true
@@ -343,26 +349,42 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
             for e in erased {
                 let e = e.insetBy(dx: -0.5, dy: -0.5)   // tolerância de meio píxel nas bordas
                 let spansX = e.minX <= r.minX && e.maxX >= r.maxX, spansY = e.minY <= r.minY && e.maxY >= r.maxY
-                func clear(_ band: Rect) -> Bool { !objects.contains { $0.intersects(band) } }
+                // a faixa encolhe até ao objeto que mais entra nela (os objetos por cima do apagado são conteúdo)
                 if spansX, e.minY <= r.minY, e.maxY > r.minY, e.maxY < r.maxY - 1 {
                     let band = Rect(x: r.minX, y: r.minY, width: r.width, height: e.maxY - r.minY)
-                    if clear(band) { r = Rect(x: r.minX, y: e.maxY, width: r.width, height: r.maxY - e.maxY); changed = true }
+                    let limit = objects.filter { $0.intersects(band) }.map(\.minY).min() ?? e.maxY
+                    let top = min(e.maxY, limit)
+                    if top > r.minY + 0.5 { r = Rect(x: r.minX, y: top, width: r.width, height: r.maxY - top); changed = true }
                 }
                 if spansX, e.maxY >= r.maxY, e.minY < r.maxY, e.minY > r.minY + 1 {
                     let band = Rect(x: r.minX, y: e.minY, width: r.width, height: r.maxY - e.minY)
-                    if clear(band) { r = Rect(x: r.minX, y: r.minY, width: r.width, height: e.minY - r.minY); changed = true }
+                    let limit = objects.filter { $0.intersects(band) }.map(\.maxY).max() ?? e.minY
+                    let bottom = max(e.minY, limit)
+                    if bottom < r.maxY - 0.5 { r = Rect(x: r.minX, y: r.minY, width: r.width, height: bottom - r.minY); changed = true }
                 }
                 if spansY, e.minX <= r.minX, e.maxX > r.minX, e.maxX < r.maxX - 1 {
                     let band = Rect(x: r.minX, y: r.minY, width: e.maxX - r.minX, height: r.height)
-                    if clear(band) { r = Rect(x: e.maxX, y: r.minY, width: r.maxX - e.maxX, height: r.height); changed = true }
+                    let limit = objects.filter { $0.intersects(band) }.map(\.minX).min() ?? e.maxX
+                    let left = min(e.maxX, limit)
+                    if left > r.minX + 0.5 { r = Rect(x: left, y: r.minY, width: r.maxX - left, height: r.height); changed = true }
                 }
                 if spansY, e.maxX >= r.maxX, e.minX < r.maxX, e.minX > r.minX + 1 {
                     let band = Rect(x: e.minX, y: r.minY, width: r.maxX - e.minX, height: r.height)
-                    if clear(band) { r = Rect(x: r.minX, y: r.minY, width: e.minX - r.minX, height: r.height); changed = true }
+                    let limit = objects.filter { $0.intersects(band) }.map(\.maxX).max() ?? e.minX
+                    let right = max(e.minX, limit)
+                    if right < r.maxX - 0.5 { r = Rect(x: r.minX, y: r.minY, width: right - r.minX, height: r.height); changed = true }
                 }
             }
         }
         return r
+    }
+
+    /// Todo o texto escrito nas anotações (para a pesquisa da biblioteca).
+    public var annotationText: String {
+        annotations.compactMap { a -> String? in
+            let s = a.editableString ?? (a.caption.isEmpty ? nil : a.caption)
+            return s?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? s : nil
+        }.joined(separator: "\n")
     }
 
     /// Arredonda para fora (pixels inteiros) e grava, se diferente da área atual.

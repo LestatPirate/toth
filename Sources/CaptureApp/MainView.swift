@@ -173,6 +173,7 @@ private struct FooterBar: View {
         ZStack {
             HStack { Spacer(); if let model = state.model { ZoomControls(model: model); DragOutHandle(model: model).frame(width: 26, height: 22).padding(.leading, 6) }; Spacer() }
             HStack {
+                if let model = state.model { CaptureTitle(model: model) }
                 Spacer()
                 // mostrar/ocultar a biblioteca (faixa de miniaturas)
                 Button { withAnimation(.easeInOut(duration: 0.2)) { state.toggleLibraryStrip() } } label: {
@@ -188,6 +189,24 @@ private struct FooterBar: View {
         }
         .padding(.horizontal, 12).frame(height: 30)
         .background(.bar)
+    }
+}
+
+/// Nome da captura (à esquerda na barra de baixo): clicar muda o nome. Ao lado, o aviso curto do editor (ex.: «Exportado»).
+private struct CaptureTitle: View {
+    @ObservedObject var model: EditorModel
+    var body: some View {
+        HStack(spacing: 8) {
+            Button { MainWindow.promptRename(model) } label: {
+                HStack(spacing: 4) {
+                    Text(model.displayTitle).font(.system(size: 12, weight: model.doc.title == nil ? .regular : .semibold)).lineLimit(1)
+                    Image(systemName: "pencil").font(.system(size: 9)).foregroundStyle(.secondary)
+                }.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help(L("Mudar o nome da captura (⌘⇧R)"))
+            .accessibilityIdentifier("capture-title")
+            if let s = model.statusMessage { Text(s).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).transition(.opacity) }
+        }.frame(maxWidth: 420, alignment: .leading)
     }
 }
 
@@ -299,7 +318,8 @@ final class ThumbLoader: ObservableObject {
         loadedKey = key
         Task.detached(priority: .utility) {
             let img = Thumbnails.load(url)
-            await MainActor.run { [weak self] in self?.image = img }
+            // (pelo run loop, e não pela fila principal: chega também dentro de um `RunLoop.run` encaixado, como nos autotestes)
+            RunLoop.main.perform { MainActor.assumeIsolated { [weak self] in self?.image = img } }
         }
     }
 }

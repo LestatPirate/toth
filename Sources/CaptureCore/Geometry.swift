@@ -65,7 +65,7 @@ public extension Shape {
     var isCallout: Bool { if case .callout = self { return true }; return false }
     var kindName: String {
         switch self {
-        case .arrow: "Seta"; case .line: "Linha"; case .rect: "Retângulo"; case .ellipse: "Elipse"
+        case .arrow: "Seta"; case .line: "Linha"; case .zigzag: "Ziguezague"; case .rect: "Retângulo"; case .ellipse: "Elipse"
         case .text, .textBox: "Texto"; case .step: "Etapa"; case .highlight: "Marcador"; case .blur: "Pixelização"; case .gaussian: "Blur"; case .image: "Imagem"; case .callout: "Balão"
         case .stamp: "Carimbo"; case .patch, .clone: "Reparo"; case .erase: "Apagado"; case .fill: "Pintado"
         }
@@ -210,7 +210,7 @@ public extension Shape {
     func fixedPoint(forHandle index: Int) -> Point? {
         let h = handles
         switch self {
-        case .arrow, .line: return h.indices.contains(1 - index) ? h[1 - index] : nil
+        case .arrow, .line, .zigzag: return h.indices.contains(1 - index) ? h[1 - index] : nil
         case .callout, .clone: return index < 4 && h.count >= 4 ? h[(index + 2) % 4] : nil
         case .text: return nil
         default: return h.count >= 4 && h.indices.contains(index) ? h[(index + 2) % 4] : nil
@@ -220,7 +220,7 @@ public extension Shape {
     /// Caixa envolvente aproximada, em coordenadas da imagem.
     var bounds: Rect {
         switch self {
-        case let .arrow(a, b), let .line(a, b):
+        case let .arrow(a, b), let .line(a, b), let .zigzag(a, b):
             return Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
         case let .rect(o, w, h), let .ellipse(o, w, h), let .highlight(o, w, h), let .blur(o, w, h, _), let .textBox(o, w, h, _, _),
              let .gaussian(o, w, h, _), let .image(o, w, h, _), let .stamp(o, w, h, _), let .patch(o, w, h, _), let .clone(o, w, h, _), let .erase(o, w, h, _), let .fill(o, w, h, _):
@@ -245,6 +245,7 @@ public extension Shape {
         switch self {
         case let .arrow(a, b): return .arrow(from: m(a), to: m(b))
         case let .line(a, b): return .line(from: m(a), to: m(b))
+        case let .zigzag(a, b): return .zigzag(from: m(a), to: m(b))
         case let .rect(o, w, h): return .rect(origin: m(o), width: w, height: h)
         case let .ellipse(o, w, h): return .ellipse(origin: m(o), width: w, height: h)
         case let .text(o, s, f): return .text(origin: m(o), string: s, fontSize: f)
@@ -269,6 +270,7 @@ public extension Shape {
         switch self {
         case let .arrow(a, b): return .arrow(from: m(a), to: m(b))
         case let .line(a, b): return .line(from: m(a), to: m(b))
+        case let .zigzag(a, b): return .zigzag(from: m(a), to: m(b))
         case let .rect(o, w, h): return .rect(origin: m(o), width: w * k, height: h * k)
         case let .ellipse(o, w, h): return .ellipse(origin: m(o), width: w * k, height: h * k)
         case let .text(o, s, f): return .text(origin: m(o), string: s, fontSize: f * k)
@@ -290,7 +292,7 @@ public extension Shape {
     /// `true` se o ponto toca na forma (com tolerância em pixels da imagem).
     func hits(_ p: Point, tolerance t: Double) -> Bool {
         switch self {
-        case let .arrow(a, b), let .line(a, b):
+        case let .arrow(a, b), let .line(a, b), let .zigzag(a, b):
             return Shape.distance(from: p, toSegment: a, b) <= t
         case let .callout(_, _, _, tail, _, _):
             if calloutBox!.insetBy(dx: -t, dy: -t).contains(p) { return true }
@@ -321,7 +323,7 @@ public extension Shape {
     /// Pontos de redimensionamento (extremos das linhas/setas, cantos das formas, ponteiro do callout).
     var handles: [Point] {
         switch self {
-        case let .arrow(a, b), let .line(a, b): return [a, b]
+        case let .arrow(a, b), let .line(a, b), let .zigzag(a, b): return [a, b]
         case .rect, .ellipse, .highlight, .blur, .textBox, .gaussian, .image, .stamp, .patch, .erase, .fill: return Shape.corners(bounds)
         case let .callout(_, _, _, tail, _, _): return Shape.corners(calloutBox!) + [tail]
         case .clone: let s = cloneSourceRect!; return Shape.corners(bounds) + [Point(x: s.x + s.width / 2, y: s.y + s.height / 2)]   // 5.ª alça: a origem
@@ -349,6 +351,7 @@ public extension Shape {
         switch self {
         case let .arrow(a, b): return index == 0 ? .arrow(from: p, to: b) : .arrow(from: a, to: p)
         case let .line(a, b): return index == 0 ? .line(from: p, to: b) : .line(from: a, to: p)
+        case let .zigzag(a, b): return index == 0 ? .zigzag(from: p, to: b) : .zigzag(from: a, to: p)
         case let .clone(_, w0, h0, src):
             let h = handles
             if index == 4 { return .clone(origin: bounds.originPoint, width: w0, height: h0, source: Point(x: p.x - abs(w0) / 2, y: p.y - abs(h0) / 2)) }

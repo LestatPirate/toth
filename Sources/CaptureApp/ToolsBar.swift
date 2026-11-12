@@ -205,7 +205,7 @@ struct ToolsBar: View {
     @ObservedObject var model: EditorModel
     @StateObject private var scroll = ToolsScroll()
     /// Nas anotações de um vídeo não há Tela (o enquadramento é o do vídeo).
-    private var tools: [Tool] { model.isVideoOverlay ? Tool.allCases.filter { $0 != .canvas && $0 != .ocr && $0 != .fill } : Tool.allCases }
+    private var tools: [Tool] { model.isVideoOverlay ? Tool.allCases.filter { !$0.imagesOnly } : Tool.allCases }
     private let arrowWidth: CGFloat = 22
 
     var body: some View {

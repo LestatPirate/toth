@@ -59,6 +59,9 @@ final class CanvasView: NSView {
     /// Carregou dentro da seleção de área: se arrastar, levanta-a como objeto e move-a; se só clicar, fica como está (ou,
     /// com a varinha, volta a escolher).
     private var areaLiftPending: Point?
+    /// Cortar faixa: a faixa que se está a arrastar (de lado a lado ou de cima a baixo) e a sua direção.
+    private var cutBand: (rect: Rect, horizontal: Bool)?
+    private var cutDragging = false
     /// Varinha a arrastar: por onde o rato passa vai juntando (ou, com ⌥/modo Tirar, tirando) as zonas de cor parecida.
     private var wandDragSubtract: Bool?
     /// Objeto existente sob o rato quando se começou a desenhar: se for só um clique (sem arrastar), seleciona-se esse objeto.
@@ -213,6 +216,11 @@ final class CanvasView: NSView {
         }
         if let r = areaDragRect {
             if model.areaMode == .ellipse { drawAnts(ellipse: r.cg, ctx) } else { drawAnts(r.cg, ctx) }
+        }
+        if let band = cutBand {
+            // a faixa que vai ser cortada: as duas partes juntam-se ao largar
+            ctx.setFillColor(NSColor.systemRed.withAlphaComponent(0.22).cgColor); ctx.fill(band.rect.cg)
+            drawAnts(band.rect.cg, ctx)
         }
         if model.tool == .ocr {
             // linhas de texto reconhecidas: contorno leve; as marcadas, preenchidas
@@ -535,6 +543,9 @@ final class CanvasView: NSView {
             } else {
                 model.addStep(at: p)
             }
+        case .cutout:
+            // arrastar na vertical marca uma faixa de lado a lado; na horizontal, de cima a baixo; ao largar, corta e junta
+            cutDragging = true; cutBand = nil
         case .fill:
             // clique sobre um preenchido já feito seleciona-o (⌥ + clique preenche por cima); senão, preenche a zona dessa cor
             if !event.modifierFlags.contains(.option), let hit = model.topmost(at: p, tolerance: tol), case .fill = hit.shape {
@@ -617,6 +628,12 @@ final class CanvasView: NSView {
             if let last = lastPoint, Int(last.x.rounded(.down)) == Int(p.x.rounded(.down)), Int(last.y.rounded(.down)) == Int(p.y.rounded(.down)) { return }
             model.wandExtend(at: p, subtract: subtract); lastPoint = p; return
         }
+        if cutDragging, let start = dragStart {
+            let a = model.doc.area, horizontal = abs(p.y - start.y) >= abs(p.x - start.x)
+            let band = horizontal ? Rect(x: a.minX, y: min(start.y, p.y), width: a.width, height: abs(p.y - start.y))
+                                  : Rect(x: min(start.x, p.x), y: a.minY, width: abs(p.x - start.x), height: a.height)
+            cutBand = (band, horizontal); needsDisplay = true; return
+        }
         if areaDragRect != nil, let start = dragStart {
             var r = Rect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
             if event.modifierFlags.contains(.shift) && areaCombine == .replace { let s = max(r.width, r.height); r = Rect(x: p.x >= start.x ? start.x : start.x - s, y: p.y >= start.y ? start.y : start.y - s, width: s, height: s) }
@@ -692,6 +709,12 @@ final class CanvasView: NSView {
     override func mouseUp(with event: NSEvent) {
         defer { creating = nil; moving = false; dragStart = nil; resizing = nil; areaDrag = nil; imageDrag = nil; rotating = false; resizeStart = nil; moveStart = nil; guides = ([], []); marquee = nil; groupDrag = nil; areaDragRect = nil; areaLiftPending = nil; wandDragSubtract = nil; needsDisplay = true }
         if wandDragSubtract != nil { model.wandEnd(); return }
+        if cutDragging {
+            cutDragging = false
+            if let band = cutBand, (band.horizontal ? band.rect.height : band.rect.width) >= 2 { model.cutOut(band: band.rect, horizontal: band.horizontal) }
+            cutBand = nil; needsDisplay = true
+            return
+        }
         if let p0 = areaLiftPending {   // clique sem arrastar dentro da seleção
             areaLiftPending = nil
             if model.areaMode == .wand { model.wandSelect(at: p0, combine: .replace) }
@@ -970,6 +993,12 @@ final class CanvasView: NSView {
     func editSelectedText() { if let id = model.selection, model.selected?.editableString != nil { beginEditing(id, isNew: false) } }
 
     /// Autoteste: a caixa ajusta-se ao texto enquanto se escreve, e a letra acompanha o redimensionar.
+    /// Para testes: escreve no editor em linha (aberto por um clique com a ferramenta Texto) e termina.
+    func selfTestTypeAndFinish(_ text: String) {
+        editor?.insertText(text, replacementRange: NSRange(location: 0, length: editor?.string.utf16.count ?? 0))
+        finishEditing()
+    }
+
     func selfTestTextFit() -> [String] {
         var fails: [String] = []
         func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
@@ -1246,6 +1275,16 @@ final class CanvasView: NSView {
             } else { super.keyDown(with: event) }
         }
     }
+
+    /// Menu «Terminar a edição / confirmar» (⌘↩): como a tecla Return.
+    func confirmFromMenu() {
+        if editor != nil { finishEditing(); return }
+        if model.tool == .canvas { model.tool = .select }
+        else if model.tool == .area, model.areaSelection != nil { model.liftSelection(erase: true) }
+        else if let id = model.selection, model.selected?.editableString != nil { beginEditing(id, isNew: false) }
+    }
+    /// Menu «Cancelar / voltar a Mover» (Esc).
+    func escapeFromMenu() { if editor != nil { finishEditing() } else { model.escape() } }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.modifierFlags.contains(.command), let key = event.charactersIgnoringModifiers?.lowercased() else {

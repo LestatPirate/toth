@@ -404,6 +404,16 @@ struct PropertiesPanel: View {
         if let s = model.selected?.shape { switch s { case .text, .textBox, .blur, .highlight: return supportsBox; case .step, .gaussian, .image, .stamp, .patch, .clone, .erase, .fill: return false; default: return true } }
         return ![Tool.text, .highlight, .blur, .gaussian, .step, .canvas, .stamp, .repair, .area, .ocr, .fill].contains(model.tool)
     }
+    private var cutoutZigzag: Binding<Bool> { Binding(get: { model.cutoutZigzag }, set: { model.cutoutZigzag = $0 }) }
+
+    /// Cortar faixa: a linha de corte (a cor e a espessura são as da secção Linha).
+    private var cutoutSection: some View {
+        section(L("Cortar faixa")) {
+            row(L("Linha de corte em ziguezague")) { Toggle("", isOn: cutoutZigzag).labelsHidden() }
+            Text(L("Arraste de cima para baixo para marcar uma faixa de lado a lado (ou da esquerda para a direita, de cima a baixo). Ao largar, a faixa desaparece e as duas partes juntam-se; a área encolhe."))
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
     private var isFill: Bool { if case .fill = model.selected?.shape { return true }; return model.selected == nil && model.tool == .fill }
     private var fillTolerance: Binding<Double> { Binding(get: { model.fillTolerance }, set: { model.fillTolerance = $0 }) }
     private var fillContiguous: Binding<Bool> { Binding(get: { model.fillContiguous }, set: { model.fillContiguous = $0 }) }
@@ -427,6 +437,7 @@ struct PropertiesPanel: View {
                 Text(L("Propriedades")).font(.headline)
                 Text(model.selected.map { L($0.shape.kindName) } ?? (model.tool == .canvas ? L("Área de trabalho") : L("Padrão para novos elementos")))
                     .font(.caption).foregroundStyle(.secondary)
+                QuickStylesSection(model: model)
 
                 if model.tool == .canvas {
                     Picker("", selection: canvasTarget) {
@@ -454,6 +465,7 @@ struct PropertiesPanel: View {
                 if isStamp { stampSection }
                 if isRepair { repairSection }
                 if isFill { fillSection }
+                if model.tool == .cutout && model.selected == nil { cutoutSection }
                 if isHighlight {
                     section(L("Marcador")) { row(L("Cor")) { ColorPicker("", selection: lineColor).labelsHidden() } }
                 }
@@ -604,5 +616,79 @@ extension NSColor {
     var hexString: String {
         let c = usingColorSpace(.sRGB) ?? self
         return String(format: "#%02X%02X%02X", Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+    }
+}
+
+/// Estilos rápidos: uma fila de amostras (cor + ícone da ferramenta); clique aplica, «+» guarda o estilo atual,
+/// botão direito muda o nome ou apaga.
+struct QuickStylesSection: View {
+    @ObservedObject var model: EditorModel
+    @ObservedObject var styles: QuickStyles = .shared
+    private let columns = [GridItem(.adaptive(minimum: 34, maximum: 34), spacing: 6)]
+
+    /// A ferramenta a que os estilos mostrados pertencem: a do elemento selecionado, ou a atual.
+    private var tool: Tool? {
+        let t = model.selected.flatMap { Tool.forShape($0.shape) } ?? model.tool
+        return [.select, .area, .canvas, .ocr].contains(t) ? nil : t
+    }
+
+    var body: some View {
+        if let tool { content(tool) }
+    }
+
+    /// Cada estilo rápido pertence à sua ferramenta: aqui só se veem (e guardam) os desta.
+    private func content(_ tool: Tool) -> some View {
+        let mine = styles.items.filter { $0.toolValue == tool }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(L("Estilos rápidos: %@", tool.title)).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Spacer()
+                Button { model.saveQuickStyle() } label: { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help(L("Guardar o estilo atual (do elemento selecionado, ou da ferramenta) como estilo rápido"))
+                    .accessibilityIdentifier("quickstyle-add")
+            }
+            if mine.isEmpty {
+                Text(L("Carregue em + para guardar o estilo atual desta ferramenta.")).font(.caption2).foregroundStyle(.secondary)
+            } else {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                    ForEach(mine) { q in swatch(q) }
+                }
+            }
+        }
+    }
+
+    private func swatch(_ q: QuickStyle) -> some View {
+        let tool = q.toolValue
+        let color = Color(nsColor: NSColor(hex: q.style.fillHex ?? q.style.colorHex))
+        let fg = Color(nsColor: NSColor(hex: q.style.text.colorHex ?? (q.style.fillHex != nil ? q.style.colorHex : "#FFFFFF")))
+        let current = model.currentStyle == q.style
+        return Button { model.applyQuickStyle(q) } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6).fill(color.opacity(max(0.35, q.style.opacity)))
+                Image(systemName: tool.symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(fg)
+            }
+            .frame(width: 34, height: 28)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(current ? Color.accentColor : Color.secondary.opacity(0.35), lineWidth: current ? 2 : 1))
+        }
+        .buttonStyle(.plain)
+        .help(q.name)
+        .contextMenu {
+            Button(L("Atualizar com o estilo atual")) { model.updateQuickStyle(q) }
+            Button(L("Mudar o nome…")) { rename(q) }
+            Button(L("Apagar"), role: .destructive) { styles.remove(q.id) }
+            Divider()
+            Button(L("Repor os exemplos")) { styles.resetToStarter() }
+        }
+    }
+
+    private func rename(_ q: QuickStyle) {
+        let alert = NSAlert()
+        alert.messageText = L("Nome do estilo rápido")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24)); field.stringValue = q.name
+        alert.accessoryView = field
+        alert.addButton(withTitle: "OK"); alert.addButton(withTitle: L("Cancelar"))
+        alert.window.initialFirstResponder = field
+        if alert.runModal() == .alertFirstButtonReturn { styles.rename(q.id, to: field.stringValue) }
     }
 }

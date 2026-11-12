@@ -10,6 +10,7 @@ struct LibraryBrowser: View {
     @ObservedObject var state: AppState
     @ObservedObject var settings: ShortcutSettings = .shared
     @ObservedObject var localizer: Localizer = .shared
+    @ObservedObject var index: LibraryIndex = .shared
     private let columns = [GridItem(.adaptive(minimum: 200, maximum: 280), spacing: 16)]
 
     var body: some View {
@@ -27,6 +28,25 @@ struct LibraryBrowser: View {
             }
             .padding(12)
             Divider()
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(L("Pesquisar por nome, texto das anotações ou texto da imagem"), text: $state.searchText).textFieldStyle(.plain)
+                        .accessibilityIdentifier("library-search")
+                    if !state.searchText.isEmpty {
+                        Button { state.searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor)))
+                Picker("", selection: $state.searchDate) { ForEach(LibraryIndex.DateFilter.allCases) { Text($0.title).tag($0) } }.labelsHidden().frame(width: 150)
+                if index.pending > 0 {
+                    ProgressView().controlSize(.small)
+                    Text(L("A reconhecer o texto de %d capturas…", index.pending)).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            Divider()
             if state.library.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "photo.on.rectangle").font(.system(size: 40)).foregroundStyle(.secondary)
@@ -34,13 +54,21 @@ struct LibraryBrowser: View {
                     Text(L("Tire uma com %@ ou importe uma imagem.", settings.shortcut.shown)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 18) {
-                        ForEach(state.library) { item in
-                            BrowserCell(item: item, state: state)
+                let shown = index.filter(state.library, query: state.searchText, date: state.searchDate)
+                if shown.isEmpty {
+                    VStack(spacing: 6) {
+                        Text(L("Nenhuma captura bate com a pesquisa")).font(.title3)
+                        if index.pending > 0 { Text(L("O texto das imagens ainda está a ser reconhecido.")).foregroundStyle(.secondary) }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 18) {
+                            ForEach(shown) { item in
+                                BrowserCell(item: item, state: state, index: index)
+                            }
                         }
+                        .padding(16)
                     }
-                    .padding(16)
                 }
             }
         }
@@ -52,8 +80,9 @@ struct LibraryBrowser: View {
 private struct BrowserCell: View {
     let item: LibraryItem
     @ObservedObject var state: AppState
+    @ObservedObject var index: LibraryIndex
 
-    private var title: String { LibraryNames.title(forFileName: item.url.deletingPathExtension().lastPathComponent) }
+    private var title: String { index.title(for: item.url) }
 
     var body: some View {
         let isCurrent = state.isCurrent(item.url)
@@ -79,17 +108,20 @@ private struct BrowserCell: View {
 /// Nome do ficheiro -> título legível (a data da captura, no idioma da app).
 @MainActor
 enum LibraryNames {
-    private static let parser: DateFormatter = {
+    nonisolated(unsafe) private static let parser: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"; f.locale = Locale(identifier: "en_US_POSIX"); return f
     }()
 
     /// Nomes atuais "Toth_2026-10-15_17.43.28[_2]"; também os antigos "Toth 2026-…" e "Capture 2026-…" (com espaços).
-    static func title(forFileName name: String) -> String {
+    static func title(forFileName name: String) -> String { date(forFileName: name).map(display) ?? name }
+
+    /// A data no nome do ficheiro, se o tiver.
+    nonisolated static func date(forFileName name: String) -> Date? {
         for prefix in ["Toth_", "Toth ", "Capture "] where name.hasPrefix(prefix) {
             let stamp = String(name.dropFirst(prefix.count).prefix(19)).replacingOccurrences(of: "_", with: " ")
-            if let d = parser.date(from: stamp) { return display(d) }
+            if let d = parser.date(from: stamp) { return d }
         }
-        return name
+        return nil
     }
 
     private static func display(_ d: Date) -> String {

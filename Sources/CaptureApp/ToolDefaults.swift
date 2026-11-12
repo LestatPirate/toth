@@ -75,6 +75,7 @@ extension Tool {
         case .patch, .clone: .repair
         case .erase: nil
         case .fill: .fill
+        case .zigzag: .cutout
         }
     }
 }

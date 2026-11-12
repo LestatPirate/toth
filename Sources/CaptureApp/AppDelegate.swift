@@ -157,6 +157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let type = (try? f.resourceValues(forKeys: [.contentTypeKey]).contentType?.identifier) ?? "?"
             print("ASSOC-CHECK: \(f.lastPathComponent) | tipo=\(type) | abre com=\(app)"); exit(0)
         }
+        if let i = args.firstIndex(of: "--features-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1]); later("FEATURES-SELFTEST") { SelfTests.featuresSelfTest(dir: dir) }
+        }
         if let i = args.firstIndex(of: "--ocr-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("OCR-SELFTEST") { SelfTests.ocrSelfTest(dir: dir) }
         }
@@ -540,6 +543,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func newBlankImage() { MainWindow.show(); AppState.shared.showNewImage = true }
     @objc func newFromClipboard() { MainWindow.show(); AppState.shared.pasteAsNewCapture() }
     @objc func saveAs() { AppState.shared.model?.exportToFile() }
+    @objc func exportQuick() { AppState.shared.model?.exportQuick() }
+    @objc func copyAll() { AppState.shared.model?.copyToPasteboard() }
+    @objc func deleteSelection() { AppState.shared.model?.deleteSelection() }
+    @objc func fitArea() { AppState.shared.model?.fitAreaToContent() }
+    @objc func saveQuickStyle() { AppState.shared.model?.saveQuickStyle() }
+    @objc func confirmEdit() { CanvasView.current?.confirmFromMenu() }
+    @objc func escapeEdit() { CanvasView.current?.escapeFromMenu() }
+    @objc func renameCapture() { AppState.shared.model.map { MainWindow.promptRename($0) } }
+    @objc func chooseTool(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let tool = Tool(rawValue: raw), let m = AppState.shared.model else { return }
+        m.tool = tool
+    }
     @objc func toggleProperties() { PanelLayout.shared.toggle() }
     @objc func toggleLibrary() { AppState.shared.toggleLibraryStrip() }
     @objc func zoomIn() { AppState.shared.model?.zoomIn() }
@@ -828,5 +843,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSAlert(error: error).runModal()
             }
         }
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    /// Os atalhos de uma só tecla (ferramentas, Apagar, Esc) não podem roubar as teclas a quem está a escrever: ficam
+    /// desativados enquanto um campo de texto (ou o editor de texto do canvas) tem o foco, ou quando há um objeto de
+    /// texto selecionado (escrever começa a editá-lo).
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        let singleKey = item.keyEquivalentModifierMask.isEmpty && !item.keyEquivalent.isEmpty
+        if singleKey {
+            if let r = NSApp.keyWindow?.firstResponder, r is NSTextView || r is NSTextField { return false }
+            guard let m = AppState.shared.model else { return false }
+            if item.action == #selector(chooseTool(_:)) {
+                if m.selected?.editableString != nil { return false }
+                if let raw = item.representedObject as? String, let tool = Tool(rawValue: raw), m.isVideoOverlay, tool.imagesOnly { return false }
+            }
+            return true
+        }
+        if item.action == #selector(exportQuick) || item.action == #selector(copyAll) || item.action == #selector(fitArea) || item.action == #selector(saveQuickStyle)
+            || item.action == #selector(renameCapture) || item.action == #selector(confirmEdit) || item.action == #selector(saveAs) {
+            return AppState.shared.model != nil
+        }
+        return true
     }
 }

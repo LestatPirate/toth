@@ -5,13 +5,13 @@ import AppKit
 import CaptureCore
 
 enum Tool: String, CaseIterable, Identifiable {
-    case select, area, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, fill, ocr, canvas
+    case select, area, arrow, line, text, callout, rect, ellipse, step, stamp, highlight, blur, gaussian, repair, fill, cutout, ocr, canvas
     var id: String { rawValue }
     var title: String {
         switch self {
         case .select: L("Mover"); case .arrow: L("Seta"); case .line: L("Linha"); case .callout: L("Balão"); case .rect: L("Retângulo")
         case .ellipse: L("Elipse"); case .text: L("Texto"); case .step: L("Etapa"); case .highlight: L("Marcador"); case .blur: L("Pixelização"); case .gaussian: L("Blur"); case .canvas: L("Tela")
-        case .stamp: L("Carimbo"); case .repair: L("Reparo"); case .area: L("Selecionar"); case .ocr: L("Texto da imagem"); case .fill: L("Pintar")
+        case .stamp: L("Carimbo"); case .repair: L("Reparo"); case .area: L("Selecionar"); case .ocr: L("Texto da imagem"); case .fill: L("Pintar"); case .cutout: L("Cortar faixa")
         }
     }
     /// Estilo inicial de cada ferramenta (cada uma lembra o seu último estilo).
@@ -20,14 +20,24 @@ enum Tool: String, CaseIterable, Identifiable {
         case .highlight: Style(colorHex: "#FFD60A", opacity: 0.4)
         case .text: Style(lineVisible: false)                  // caixa de texto: sem contorno nem fundo
         case .callout: Style(fillHex: "#FFFFFF")               // balão: fundo branco
+        case .cutout: Style(colorHex: "#FFFFFF", lineWidth: 3)   // linha de corte branca
         default: Style()
         }
     }
+    /// Tecla (sem modificadores) que escolhe a ferramenta, no menu Ferramentas.
+    var key: String {
+        switch self {
+        case .select: "v"; case .area: "m"; case .arrow: "a"; case .line: "l"; case .text: "t"; case .callout: "b"; case .rect: "r"; case .ellipse: "e"
+        case .step: "n"; case .stamp: "s"; case .highlight: "h"; case .blur: "p"; case .gaussian: "g"; case .repair: "j"; case .fill: "k"; case .cutout: "x"; case .ocr: "o"; case .canvas: "c"
+        }
+    }
+    /// Só nas imagens (não no modo Anotar do vídeo).
+    var imagesOnly: Bool { [.canvas, .ocr, .fill, .cutout].contains(self) }
     var symbol: String {
         switch self {
         case .select: "cursorarrow"; case .arrow: "arrow.up.right"; case .line: "line.diagonal"; case .callout: "bubble.left"; case .rect: "rectangle"
         case .ellipse: "circle"; case .text: "textformat"; case .step: "1.circle"; case .highlight: "highlighter"; case .blur: "square.grid.3x3"; case .gaussian: "drop"; case .canvas: "aspectratio"
-        case .stamp: "checkmark.seal"; case .repair: "bandage"; case .area: "selection.pin.in.out"; case .ocr: "text.viewfinder"; case .fill: "paintbrush.pointed.fill"
+        case .stamp: "checkmark.seal"; case .repair: "bandage"; case .area: "selection.pin.in.out"; case .ocr: "text.viewfinder"; case .fill: "paintbrush.pointed.fill"; case .cutout: "scissors"
         }
     }
 }
@@ -370,6 +380,109 @@ final class EditorModel: ObservableObject {
         let m = m.clipped(to: doc.area)
         let next = (areaSelection.map { $0.combined(with: m, combine) } ?? (combine == .subtract ? nil : m))
         areaSelection = (next?.isEmpty ?? true) ? nil : next
+    }
+
+    // MARK: Cortar faixa (Cut Out)
+
+    /// Depois de cortar, fica uma linha em ziguezague a marcar o corte?
+    var cutoutZigzag: Bool {
+        get { (UserDefaults.standard.object(forKey: "cutoutZigzag") as? Bool) ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "cutoutZigzag"); objectWillChange.send() }
+    }
+
+    /// Corta a faixa `band` (horizontal: de lado a lado; vertical: de cima a baixo) e junta as duas partes: a parte de
+    /// depois da faixa levanta-se como objeto imagem (com o que estava desenhado nela) e encosta-se à de antes; o resto
+    /// fica apagado e a área encolhe. Tudo num só passo de undo. Devolve `false` se a faixa não estiver dentro da área.
+    @discardableResult
+    func cutOut(band: Rect, horizontal: Bool) -> Bool {
+        let a = doc.area
+        let lo = horizontal ? a.minY : a.minX, hi = horizontal ? a.maxY : a.maxX
+        let b0 = max(lo, (horizontal ? band.minY : band.minX).rounded()), b1 = min(hi, (horizontal ? band.maxY : band.maxX).rounded())
+        guard b1 - b0 >= 1, b0 > lo + 0.5, b1 < hi - 0.5 else { NSSound.beep(); return false }
+        let tail = horizontal ? Rect(x: a.minX, y: b1, width: a.width, height: a.maxY - b1) : Rect(x: b1, y: a.minY, width: a.maxX - b1, height: a.height)
+        let saved = areaSelection
+        areaSelection = AreaMask.rect(tail)
+        let png = selectionPNG()
+        areaSelection = saved
+        guard let png, let name = try? assets.add(png: png) else { NSSound.beep(); return false }
+        let erased = horizontal ? Rect(x: a.minX, y: b0, width: a.width, height: a.maxY - b0) : Rect(x: b0, y: a.minY, width: a.maxX - b0, height: a.height)
+        let dest = horizontal ? Point(x: a.minX, y: b0) : Point(x: b0, y: a.minY)
+        let seam: CaptureCore.Shape = horizontal ? .zigzag(from: Point(x: a.minX, y: b0), to: Point(x: a.maxX, y: b0)) : .zigzag(from: Point(x: b0, y: a.minY), to: Point(x: b0, y: a.maxY))
+        let group = UUID(), zig = cutoutZigzag, seamStyle = style
+        var imageID = UUID()
+        perform { d in
+            // o que estava todo depois da faixa já vai nos píxeis levantados
+            for x in d.annotations where x.visible && (horizontal ? x.worldBounds.minY >= b1 - 0.5 : x.worldBounds.minX >= b1 - 0.5) { _ = d.remove(id: x.id) }
+            var e = d.add(.erase(origin: Point(x: erased.x, y: erased.y), width: erased.width, height: erased.height)); e.group = group; d.update(e)
+            var img = d.add(.image(origin: dest, width: tail.width, height: tail.height, asset: name), style: Style(lineVisible: false)); img.group = group; d.update(img)
+            imageID = img.id
+            if zig { var z = d.add(seam, style: seamStyle); z.group = group; d.update(z) }
+        }
+        selection = imageID
+        finishedDrawing()
+        return true
+    }
+
+    // MARK: Nome da captura
+
+    /// Nome a mostrar: o dado pelo utilizador ou, sem ele, a data da captura (do nome do ficheiro).
+    var displayTitle: String { doc.title ?? LibraryNames.title(forFileName: url.deletingPathExtension().lastPathComponent) }
+    /// Muda o nome (vazio = volta à data). Não é um passo de undo.
+    func setTitle(_ s: String) {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        let new: String? = t.isEmpty ? nil : t
+        guard new != doc.title else { return }
+        mutate { $0.title = new }; commit()
+    }
+
+    /// Aviso curto na barra de baixo (ex.: «Exportado para …»), que desaparece sozinho.
+    @Published var statusMessage: String?
+    func flash(_ s: String) {
+        statusMessage = s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if self?.statusMessage == s { self?.statusMessage = nil } }
+    }
+
+    // MARK: Estilos rápidos
+
+    /// Aplica um estilo rápido (que pertence a uma ferramenta): ao que está selecionado, se for dessa ferramenta; senão
+    /// passa para a ferramenta dele com esse estilo como padrão.
+    func applyQuickStyle(_ q: QuickStyle) {
+        let tool = q.toolValue
+        let sameKind = !selectedAll.isEmpty && selectedAll.allSatisfy { Tool.forShape($0.shape) == tool }
+        if sameKind {
+            setStyle(q.style)
+            if let size = q.values["fontSize"], selected?.effectiveFontSize != nil { setFontSize(size) }
+        } else {
+            selection = nil; extraSelection = []
+            self.tool = tool
+            ToolDefaults.shared.setStyle(q.style, for: tool)
+            for (k, v) in q.values { ToolDefaults.shared.setValue(v, k, for: tool) }
+            objectWillChange.send()
+        }
+    }
+
+    /// A ferramenta a que o estilo atual pertence (a do selecionado, ou a atual); `nil` se não tem estilo para guardar.
+    var quickStyleTool: Tool? {
+        let tool = selected.flatMap { Tool.forShape($0.shape) } ?? self.tool
+        return [.select, .area, .canvas, .ocr].contains(tool) ? nil : tool
+    }
+    private func quickStyleValues(for tool: Tool) -> [String: Double] {
+        var values: [String: Double] = [:]
+        if [.text, .callout, .rect, .ellipse].contains(tool) { values["fontSize"] = selected?.effectiveFontSize ?? fontSize(for: tool) }
+        return values
+    }
+
+    /// Guarda o estilo atual (do selecionado, ou da ferramenta) como estilo rápido dessa ferramenta. Devolve `nil` se não houver o que guardar.
+    @discardableResult
+    func saveQuickStyle() -> QuickStyle? {
+        guard let tool = quickStyleTool else { NSSound.beep(); return nil }
+        return QuickStyles.shared.add(tool: tool, style: currentStyle, values: quickStyleValues(for: tool))
+    }
+
+    /// Substitui um estilo rápido pelo estilo atual (só se for da mesma ferramenta).
+    func updateQuickStyle(_ q: QuickStyle) {
+        guard let tool = quickStyleTool, tool == q.toolValue else { NSSound.beep(); return }
+        QuickStyles.shared.update(q.id, style: currentStyle, values: quickStyleValues(for: tool))
     }
 
     // MARK: Preencher (balde de tinta)
@@ -1089,6 +1202,36 @@ final class EditorModel: ObservableObject {
         // Em JPEG a transparência passa para a cor de fundo do documento (ou branco).
         let flatten = doc.transparentBackground ? NSColor.white : NSColor(hex: doc.backgroundHex)
         if let data = ImageFiles.encode(png: png, as: format, flattenOn: flatten) { try? data.write(to: dest) }
+        Self.lastExport = (format, dest.deletingLastPathComponent())
+    }
+
+    /// Último formato e pasta de «Salvar como» (para o «Exportar» (⌘E) repetir sem perguntar).
+    static var lastExport: (format: ImageFiles.Format, folder: URL)? {
+        get {
+            guard let f = UserDefaults.standard.string(forKey: "lastExportFormat"), let fmt = ImageFiles.Format.allCases.first(where: { $0.ext == f }),
+                  let p = UserDefaults.standard.string(forKey: "lastExportFolder") else { return nil }
+            return (fmt, URL(fileURLWithPath: p, isDirectory: true))
+        }
+        set {
+            UserDefaults.standard.set(newValue?.format.ext, forKey: "lastExportFormat")
+            UserDefaults.standard.set(newValue?.folder.path, forKey: "lastExportFolder")
+        }
+    }
+
+    /// «Exportar» (⌘E): grava logo na última pasta com o último formato, com o nome da captura (sem sobrescrever);
+    /// se ainda não houve nenhum «Salvar como», abre esse diálogo. Devolve o ficheiro gravado.
+    @discardableResult
+    func exportQuick() -> URL? {
+        guard let last = Self.lastExport, FileManager.default.fileExists(atPath: last.folder.path) else { exportToFile(); return nil }
+        guard let png = exportPNG() else { return nil }
+        let base = displayTitle.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: ".")
+        var dest = last.folder.appendingPathComponent(base).appendingPathExtension(last.format.ext)
+        var n = 2
+        while FileManager.default.fileExists(atPath: dest.path) { dest = last.folder.appendingPathComponent("\(base) \(n)").appendingPathExtension(last.format.ext); n += 1 }
+        let flatten = doc.transparentBackground ? NSColor.white : NSColor(hex: doc.backgroundHex)
+        guard let data = ImageFiles.encode(png: png, as: last.format, flattenOn: flatten), (try? data.write(to: dest, options: .atomic)) != nil else { NSSound.beep(); return nil }
+        flash(L("Exportado: %@", CaptureStore.shortPath(dest)))
+        return dest
     }
 }
 

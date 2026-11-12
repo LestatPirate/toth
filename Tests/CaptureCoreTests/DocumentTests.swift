@@ -210,10 +210,10 @@ private func tmp() -> URL {
     let middle = doc.add(.erase(origin: Point(x: 0, y: 20), width: 100, height: 5))
     doc.autoFitArea()
     #expect(doc.area == Rect(x: 0, y: 0, width: 100, height: 40))
-    // um objeto por cima da faixa apagada mantém-na (é conteúdo)
+    // um objeto por cima da faixa apagada é conteúdo: a área encolhe só até onde ele chega (y 47)
     let obj = doc.add(.rect(origin: Point(x: 10, y: 42), width: 10, height: 5), style: Style(lineVisible: false))
     doc.autoFitArea()
-    #expect(doc.area == doc.imageRect)
+    #expect(doc.area == Rect(x: 0, y: 0, width: 100, height: 47))
     doc.remove(id: obj.id); doc.remove(id: middle.id); doc.remove(id: bottom.id)
     // Reparo, Blur e Pintado nunca fazem a área crescer
     doc.add(.patch(origin: Point(x: 90, y: 0), width: 50, height: 10))

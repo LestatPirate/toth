@@ -30,6 +30,20 @@ enum MainWindow {
     /// Para testes.
     static func closeForTests() { window?.close() }
 
+    /// «Mudar o nome da captura…»: pede o nome (vazio = volta à data).
+    static func promptRename(_ model: EditorModel) {
+        let alert = NSAlert()
+        alert.messageText = L("Nome da captura")
+        alert.informativeText = L("Deixe vazio para voltar à data da captura.")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = model.doc.title ?? ""
+        field.placeholderString = model.displayTitle
+        alert.accessoryView = field
+        alert.addButton(withTitle: "OK"); alert.addButton(withTitle: L("Cancelar"))
+        alert.window.initialFirstResponder = field
+        if alert.runModal() == .alertFirstButtonReturn { model.setTitle(field.stringValue) }
+    }
+
     static func show() {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1360, height: 820),

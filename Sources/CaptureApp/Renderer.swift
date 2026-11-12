@@ -461,6 +461,10 @@ enum Renderer {
         case let .line(p, q):
             ctx.move(to: CGPoint(x: p.x, y: p.y)); ctx.addLine(to: CGPoint(x: q.x, y: q.y)); ctx.strokePath()
 
+        case let .zigzag(p, q):
+            ctx.setLineJoin(.miter)
+            ctx.addPath(zigzagPath(from: CGPoint(x: p.x, y: p.y), to: CGPoint(x: q.x, y: q.y), lineWidth: a.style.lineWidth)); ctx.strokePath()
+
         case let .arrow(p, q):
             // Um só contorno preenchido (haste + ponta): sem linha de junção, e a sombra e a opacidade aplicam-se uma só vez.
             ctx.addPath(arrowPath(from: CGPoint(x: p.x, y: p.y), to: CGPoint(x: q.x, y: q.y), lineWidth: a.style.lineWidth))
@@ -538,5 +542,25 @@ enum Renderer {
             }
 
         }
+    }
+}
+
+extension Renderer {
+    /// Linha em ziguezague entre dois pontos: dentes com amplitude e passo proporcionais à espessura.
+    static func zigzagPath(from p: CGPoint, to q: CGPoint, lineWidth lw: Double) -> CGPath {
+        let path = CGMutablePath()
+        let dx = q.x - p.x, dy = q.y - p.y, len = hypot(dx, dy)
+        guard len > 0 else { path.move(to: p); path.addLine(to: q); return path }
+        let amp = max(3, lw * 2), step = max(4, lw * 2.5)
+        let ux = dx / len, uy = dy / len, nx = -uy, ny = ux
+        let n = max(2, Int((len / step).rounded()))
+        let s = len / CGFloat(n)
+        path.move(to: p)
+        for i in 1..<n {
+            let t = CGFloat(i) * s, side: CGFloat = i % 2 == 1 ? 1 : -1
+            path.addLine(to: CGPoint(x: p.x + ux * t + nx * amp * side, y: p.y + uy * t + ny * amp * side))
+        }
+        path.addLine(to: q)
+        return path
     }
 }
