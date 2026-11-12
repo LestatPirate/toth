@@ -12,7 +12,7 @@
 
 <br>
 
-[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.6.0-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
+[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.6.1-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
 [![Site](https://img.shields.io/badge/SITE-lestatpirate.github.io%2Ftoth-111111?style=for-the-badge&logo=github&logoColor=white)](https://lestatpirate.github.io/toth/)
 [![Licença](https://img.shields.io/badge/LICEN%C3%87A-MIT-111111?style=for-the-badge)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-15%2B-111111?style=for-the-badge&logo=apple&logoColor=white)](#instalação)
@@ -68,28 +68,36 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 - **Nitidez de píxel.** Captura e gravação à resolução nativa do ecrã, zoom 1:1 em píxeis do ecrã, H.264 com débito alto. O que vê é o que fica.
 - **Privacidade verificável.** O único pedido de rede é a procura de atualizações (desligável), as versões são verificadas por SHA-256 e assinatura, e o código é aberto.
 
-### Novidades da versão 0.6.0
-
-<p align="center"><img src="docs/images/toth-select-pt.png" alt="Ferramenta Selecionar do Toth: retângulo, elipse e varinha" width="880"></p>
+### Novidades da versão 0.6.1
 
 | | |
 |---|---|
 | **Texto da imagem** | Ferramenta nova: reconhece o texto da captura (Vision, local; PT e EN) e marca cada linha. Clique e **⌘C** copia; **duplo clique** torna a linha editável: um Reparo apaga o original e uma caixa de Texto fica no mesmo sítio com as mesmas palavras, **tamanho, cor, negrito** e a fonte mais parecida. |
-| **Ferramenta Selecionar** | **Retângulo, elipse ou varinha** (por cor, com tolerância e «só contíguos»). Com a varinha, **arraste** para ir apanhando mais zonas. Modos **Nova / Juntar / Tirar** (⇧ junta e ⌥ tira em qualquer modo), ⌘A tudo, Esc limpa. |
-| **O que se faz com a área** | **Arraste de dentro** para a levantar como objeto e movê-la logo (o sítio fica apagado); **Return** levanta sem mover; **⌘D** duplica; **⌘C** copia os píxeis com transparência; **Delete** apaga (cor de fundo ou transparente); **Preencher (Reparo)** apaga a partir do que a rodeia. O objeto levantado tem a forma da seleção. |
-| **Tela ajusta-se sempre ao conteúdo** | A área de trabalho cresce quando um elemento sai e **encolhe** quando volta, se esconde ou é apagado. Apagar uma faixa junto a uma borda **recorta** a área (o apagado nunca a faz crescer, e selecionar para lá da imagem fica cortado pela área). Mudar a área à mão desliga o ajuste; liga-se de novo no painel. |
 | **Pintar** | Ferramenta nova: escolha a cor e clique numa zona da imagem (uma cor, ou o vazio) para a pintar; tolerância e «só contíguos» no painel. O **Pintado** é um objeto: muda-se a cor, move-se ou tira-se. |
 | **Cortar faixa** | Ferramenta nova (Cut Out): arraste uma faixa de lado a lado ou de cima a baixo e, ao largar, a faixa desaparece e as duas partes **juntam-se**, com **linha de corte em ziguezague** opcional. Não destrutivo, num só passo de undo. |
 | **Estilos rápidos** | No topo do painel, por ferramenta: guarde o estilo atual com **+**, aplique com um clique, atualize, mude o nome ou apague (botão direito). Vêm exemplos: seta vermelha grossa, texto branco com fundo escuro, etapa azul… |
 | **Atalhos e menus** | Uma **tecla por ferramenta** (menu Ferramentas), **⌘E** exporta com o último formato e pasta, **⌘⇧C** copia a imagem final, **⌘⇧F** ajusta a tela, **⌘⇧R** muda o nome, **⌘↩**/Esc terminam ou cancelam a edição, **⌫** apaga. Tudo visível nos menus. |
 | **Nome da captura** | Clique no nome na barra de baixo para o mudar; fica no pacote e é o nome do ficheiro exportado. |
 | **Pesquisa na biblioteca** | Por nome, texto das anotações ou **texto da imagem** (OCR local, em segundo plano, guardado em cada pacote), e por data. |
+| **Recortar pela borda** | Apagar uma faixa junto a uma borda **recorta** a área: o apagado nunca a faz crescer, e selecionar para lá da imagem fica cortado pela área. |
+| **Pasta das capturas** | Por omissão `~/Pictures/TothCapture`; alterável nas Preferências, com capturas, vídeos e carimbos (subpasta «Carimbos») movidos para o novo sítio. |
+
+<p align="center"><img src="docs/images/toth-select-pt.png" alt="Ferramenta Selecionar do Toth: retângulo, elipse e varinha" width="880"></p>
+
+<details>
+<summary><b>Versões anteriores</b> (0.6.0 · 0.5.0 · 0.4.0 · 0.3.0)</summary>
+
+#### 0.6.0 — Selecionar, tela que segue o conteúdo e nitidez
+
+| | |
+|---|---|
+| **Ferramenta Selecionar** | **Retângulo, elipse ou varinha** (por cor, com tolerância e «só contíguos»). Com a varinha, **arraste** para ir apanhando mais zonas. Modos **Nova / Juntar / Tirar** (⇧ junta e ⌥ tira em qualquer modo), ⌘A tudo, Esc limpa. |
+| **O que se faz com a área** | **Arraste de dentro** para a levantar como objeto e movê-la logo (o sítio fica apagado); **Return** levanta sem mover; **⌘D** duplica; **⌘C** copia os píxeis com transparência; **Delete** apaga (cor de fundo ou transparente); **Preencher (Reparo)** apaga a partir do que a rodeia. O objeto levantado tem a forma da seleção. |
+| **Tela ajusta-se sempre ao conteúdo** | A área de trabalho cresce quando um elemento sai e **encolhe** quando volta, se esconde ou é apagado. Mudar a área à mão desliga o ajuste; liga-se de novo no painel. |
 | **Nitidez** | Zoom em píxeis do ecrã (1:1 = um píxel da imagem por píxel do ecrã; «Ajustar» nunca amplia além disso), captura e gravação com resolução máxima, H.264 com mais débito. |
 | **Pequenos cuidados** | Imagem colada ao tamanho real, com redimensionar em proporção; carimbos «distintivo» com o desenho branco sobre a cor; sem linhas ténues nas bordas do desfoque e do reparo. |
 | **Interface** | As ferramentas deslizam sozinhas com o rato pousado junto a uma ponta da barra (e com a roda/trackpad em toda a altura). A faixa de baixo mostra as **20 capturas mais recentes**; clicar numa e premir **Backspace** envia-a para o Lixo. |
 
-<details>
-<summary><b>Versões anteriores</b> (0.5.0 · 0.4.0 · 0.3.0)</summary>
 
 #### 0.5.0 — Captura de janela, carimbos, Reparo e vídeo com anotações
 
@@ -149,7 +157,7 @@ O Toth não tem legendas automáticas, efeitos nem transições, e não partilha
 ### Instalação
 **Requisitos:** macOS 15 ou superior (Apple Silicon e Intel; testado em Apple Silicon).
 
-1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.6.0.zip` e descomprima.
+1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.6.1.zip` e descomprima.
 2. Arraste `Toth.app` para **Aplicações**.
 3. **Primeira abertura (uma só vez).** A app ainda não está notarizada pela Apple, por isso o macOS mostra *“Toth” não aberto*. **Não mova para o Lixo:** clique em **OK**, abra **Definições do Sistema → Privacidade e Segurança**, desça até **Segurança**, clique em **Abrir mesmo assim** junto a “Toth” e confirme. (No macOS 14 ou anterior: botão direito → **Abrir**. No Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Permissão guiada.** Ao abrir, o Toth verifica a **Gravação de Ecrã** e, se faltar, mostra um guia de 3 passos: **Conceder permissão** → ativar o Toth na lista → **Reiniciar o Toth**.
@@ -200,20 +208,34 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 - **Pixel sharpness.** Capture and recording at the screen's native resolution, 1:1 zoom in screen pixels, high-bitrate H.264. What you see is what you keep.
 - **Verifiable privacy.** The only network request is the update check (which you can turn off), releases are verified by SHA-256 and signature, and the code is open.
 
-### What's new in 0.6.0
+### What's new in 0.6.1
 
 | | |
 |---|---|
 | **Image text** | New tool: recognizes the text in the capture (Vision, local; PT and EN) and marks each line. Click and **⌘C** copies; **double-click** makes the line editable: a Repair erases the original and a Text box takes its place with the same words, **size, color, bold** and the closest font. |
+| **Paint** | New tool: pick a color and click a part of the image (one color, or empty space) to paint it; tolerance and “contiguous only” in the panel. The **Painted** area is an object: change its color, move it or remove it. |
+| **Cut out** | New tool: drag a band from side to side or top to bottom and, on release, the band disappears and the two parts **join**, with an optional **zigzag cut line**. Non-destructive, one undo step. |
+| **Quick styles** | At the top of the panel, per tool: save the current style with **+**, apply with one click, update, rename or delete (right-click). Examples included: thick red arrow, white text on dark background, blue step… |
+| **Shortcuts and menus** | One **key per tool** (Tools menu), **⌘E** exports with the last format and folder, **⌘⇧C** copies the final image, **⌘⇧F** fits the canvas, **⌘⇧R** renames, **⌘↩**/Esc finish or cancel editing, **⌫** deletes. All visible in the menus. |
+| **Capture name** | Click the name in the bottom bar to change it; it is stored in the package and used as the exported file name. |
+| **Library search** | By name, annotation text or **image text** (local OCR, in the background, stored in each package), and by date. |
+| **Crop by the edge** | Erasing a band along an edge **crops** the area: an erased region never makes it grow, and selecting beyond the image is clipped to the area. |
+| **Captures folder** | `~/Pictures/TothCapture` by default; changeable in Preferences, with captures, videos and stamps (“Carimbos” subfolder) moved to the new place. |
+
+<details>
+<summary><b>Earlier versions</b> (0.6.0 · 0.5.0 · 0.4.0 · 0.3.0)</summary>
+
+#### 0.6.0 — Select, a canvas that follows the content, and sharpness
+
+| | |
+|---|---|
 | **Select tool** | **Rectangle, ellipse or magic wand** (by color, with tolerance and “contiguous only”). With the wand, **drag** to keep picking up more areas. **New / Add / Subtract** modes (⇧ adds and ⌥ subtracts in any mode), ⌘A all, Esc clears. |
 | **What you do with the area** | **Drag from inside** to lift it as an object and move it right away (the spot is erased); **Return** lifts without moving; **⌘D** duplicates; **⌘C** copies the pixels with transparency; **Delete** erases (background color or transparent); **Fill (Repair)** erases from the surroundings. The lifted object keeps the shape of the selection. |
 | **Canvas always fits the content** | The work area grows when an element goes outside and **shrinks** when it comes back, is hidden or deleted. Changing the area by hand turns the fit off; the panel turns it back on. |
 | **Sharpness** | Zoom in screen pixels (1:1 = one image pixel per screen pixel; “Fit” never enlarges beyond that), capture and recording at full resolution, higher-bitrate H.264. |
 | **Small touches** | Pasted images at real size, with proportional resize; “badge” stamps with a white glyph over the color; no faint lines at the edges of blur and repair. |
-| **Interface** | Tools slide by themselves when the pointer rests near either end of the bar (and with the wheel/trackpad over the whole bar). The bottom strip shows the **20 most recent captures**; click one and press **Backspace** to move it to the Trash. |
+| **Interface** | As ferramentas deslizam sozinhas com o rato pousado junto a uma ponta da barra (e com a roda/trackpad em toda a altura). A faixa de baixo mostra as **20 capturas mais recentes**; clicar numa e premir **Backspace** envia-a para o Lixo. |
 
-<details>
-<summary><b>Earlier versions</b> (0.5.0 · 0.4.0 · 0.3.0)</summary>
 
 #### 0.5.0 — Window capture, stamps, Repair and annotated video
 
@@ -273,7 +295,7 @@ Toth has no automatic captions, effects or transitions, and does not share onlin
 ### Installation
 **Requirements:** macOS 15 or later (Apple Silicon and Intel; tested on Apple Silicon).
 
-1. Under [**Releases**](../../releases/latest), download `Toth-0.6.0.zip` and unzip it.
+1. Under [**Releases**](../../releases/latest), download `Toth-0.6.1.zip` and unzip it.
 2. Drag `Toth.app` to **Applications**.
 3. **First launch (once).** The app is not yet notarized by Apple, so macOS shows *“Toth” Not Opened*. **Don't move it to the Trash:** click **Done**, open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to “Toth” and confirm. (On macOS 14 or earlier: right-click → **Open**. In Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Guided permission.** On launch, Toth checks **Screen Recording** and, if missing, shows a 3-step guide: **Grant permission** → turn Toth on in the list → **Restart Toth**.
