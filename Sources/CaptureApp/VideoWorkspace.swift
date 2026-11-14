@@ -8,9 +8,62 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Vídeo aberto no editor: o leitor ocupa a área de trabalho, com os controlos de reprodução. (A edição do vídeo vem depois.)
+/// Vídeos da biblioteca: um **pacote** `Nome.tothvideo` (uma pasta que o Finder mostra como um só ficheiro) com o
+/// vídeo (`video.mp4`), a edição (`edicao.json`), os trechos gerados e as anotações. Ficheiros soltos `.mp4/.mov/.m4v`
+/// (formato antigo, ou abertos de fora) continuam a abrir; a edição deles fica numa pasta `.edicao` ao lado.
 enum VideoFiles {
     static let extensions: Set<String> = ["mp4", "mov", "m4v"]
-    static func isVideo(_ url: URL) -> Bool { extensions.contains(url.pathExtension.lowercased()) }
+    static let packageExtension = "tothvideo"
+    /// Nome do vídeo dentro do pacote (a extensão é a do original).
+    static let innerBase = "video"
+    static func isRawVideo(_ url: URL) -> Bool { extensions.contains(url.pathExtension.lowercased()) }
+    static func isPackage(_ url: URL) -> Bool { url.pathExtension.lowercased() == packageExtension }
+    /// Vídeo solto ou pacote.
+    static func isVideo(_ url: URL) -> Bool { isRawVideo(url) || isPackage(url) }
+    /// O ficheiro de vídeo em si: o próprio, ou o de dentro do pacote (`nil` se o pacote não o tiver).
+    static func mediaURL(_ url: URL) -> URL? {
+        guard isPackage(url) else { return isRawVideo(url) ? url : nil }
+        let items = (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? []
+        return items.first { $0.deletingPathExtension().lastPathComponent == innerBase && isRawVideo($0) }
+    }
+    /// Onde fica a edição: dentro do pacote; num vídeo solto, na pasta `.edicao` ao lado.
+    static func editFolder(for url: URL) -> URL { isPackage(url) ? url : url.appendingPathExtension("edicao") }
+
+    /// Cria um pacote novo na pasta das capturas com o vídeo `video` (movido ou copiado) e, se existir, a pasta de
+    /// edição `.edicao` ao lado dele (movida para dentro). `name`: nome do pacote sem extensão (por omissão, o do vídeo).
+    @discardableResult
+    static func makePackage(from video: URL, move: Bool, name: String? = nil, in folder: URL = CaptureStore.folder) throws -> URL {
+        let fm = FileManager.default
+        let base = name ?? video.deletingPathExtension().lastPathComponent
+        var pkg = folder.appendingPathComponent(base).appendingPathExtension(packageExtension)
+        var n = 2
+        while fm.fileExists(atPath: pkg.path) { pkg = folder.appendingPathComponent("\(base)_\(n)").appendingPathExtension(packageExtension); n += 1 }
+        try fm.createDirectory(at: pkg, withIntermediateDirectories: true)
+        let inner = pkg.appendingPathComponent(innerBase).appendingPathExtension(video.pathExtension.lowercased())
+        if move { try fm.moveItem(at: video, to: inner) } else { try fm.copyItem(at: video, to: inner) }
+        guard fm.fileExists(atPath: inner.path) else { throw CocoaError(.fileWriteUnknown) }
+        let sidecar = video.appendingPathExtension("edicao")
+        if move, fm.fileExists(atPath: sidecar.path) {
+            for item in (try? fm.contentsOfDirectory(at: sidecar, includingPropertiesForKeys: nil)) ?? [] {
+                let dest = pkg.appendingPathComponent(item.lastPathComponent)
+                if !fm.fileExists(atPath: dest.path) { try? fm.moveItem(at: item, to: dest) }
+            }
+            if ((try? fm.contentsOfDirectory(atPath: sidecar.path)) ?? []).filter({ !$0.hasPrefix(".") }).isEmpty { try? fm.removeItem(at: sidecar) }
+        }
+        return pkg
+    }
+
+    /// Passa os vídeos soltos da pasta (e as suas pastas `.edicao`) para pacotes. Devolve quantos passaram.
+    @discardableResult
+    static func migrateLoose(in folder: URL) -> Int {
+        let fm = FileManager.default
+        let items = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        var n = 0
+        for v in items where isRawVideo(v) {
+            if (try? makePackage(from: v, move: true, in: folder)) != nil { n += 1 }
+        }
+        return n
+    }
 }
 
 struct PlayerView: NSViewRepresentable {
@@ -249,7 +302,7 @@ struct VideoWorkspace: View {
                 VideoIconButton(symbol: "doc.on.clipboard", help: L("Colar na posição de reprodução, empurrando o resto (⌘V)"), disabled: !model.canPaste) { perform(.paste) }
                 VideoIconButton(symbol: "rectangle.on.rectangle", help: L("Colar por cima, substituindo o que lá estiver (⌥⌘V)"), disabled: !model.canPaste) { perform(.pasteOver) }
                 VideoIconButton(symbol: "backward.fill", help: L("Inverter o trecho: passa a tocar de trás para a frente"), disabled: !model.canCut || model.working != nil) { perform(.reverse) }
-                VideoIconButton(symbol: "gauge.with.needle", help: L("Velocidade do clipe marcado (2× acelera, 0,5× é câmara lenta; o som acompanha)"), prominent: (model.selectedRate ?? 1) != 1, disabled: model.selectedRate == nil) {
+                VideoIconButton(symbol: "gauge.with.needle", help: L("Velocidade do trecho marcado, ou do vídeo todo se nada estiver marcado (2× acelera, 0,5× é câmara lenta; o som acompanha e mantém o tom)"), prominent: (model.selectedRate ?? 1) != 1, disabled: model.sourceSize.width <= 0) {
                     let cur = model.selectedRate ?? 1
                     popUpMenu(VideoEditorModel.speeds.map { r in (r == r.rounded() ? "\(Int(r))×" : String(format: "%.2g×", r), abs(cur - r) < 1e-9, true, { Task { await model.setSpeed(r) } }) })
                 }
@@ -295,7 +348,7 @@ struct VideoWorkspace: View {
             Divider()
             HStack(spacing: 8) {
                 Image(systemName: "video.fill").foregroundStyle(.secondary)
-                Text(model.url.lastPathComponent).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                Text(model.url.deletingPathExtension().lastPathComponent).font(.system(size: 11, weight: .medium)).lineLimit(1)
                 Text(model.info).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 if model.isOutputTransformed { Text("→ \(Int(model.canvasSize.width)) × \(Int(model.canvasSize.height))" + (model.outputRotation != 0 ? " · \(Int(model.outputRotation.rounded()))°" : "")).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor) }
                 Spacer()

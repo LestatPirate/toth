@@ -83,11 +83,22 @@ final class AppState: ObservableObject {
 
     /// Quantas capturas a faixa de baixo mostra (as mais recentes); o resto está em «Abrir Biblioteca».
     static let stripLimit = 20
-    /// As capturas da faixa: as `stripLimit` mais recentes e, se for mais antiga, também a que está aberta.
+    /// As capturas da faixa: as `stripLimit` mais recentes que não foram ocultadas e, se for mais antiga, também a que está aberta.
     var stripItems: [LibraryItem] {
-        var items = Array(library.prefix(Self.stripLimit))
+        var items = Array(library.filter { !isHiddenFromStrip($0.url) }.prefix(Self.stripLimit))
         if let open = library.first(where: { isCurrent($0.url) }), !items.contains(open) { items.append(open) }
         return items
+    }
+
+    // MARK: Ocultar da faixa (fica na biblioteca)
+
+    private static let hiddenKey = "stripHidden"
+    /// Nomes dos ficheiros ocultados da faixa de baixo (continuam na biblioteca).
+    @Published private(set) var hiddenFromStrip: Set<String> = Set(UserDefaults.standard.stringArray(forKey: AppState.hiddenKey) ?? [])
+    func isHiddenFromStrip(_ url: URL) -> Bool { hiddenFromStrip.contains(url.lastPathComponent) }
+    func setHiddenFromStrip(_ url: URL, _ hidden: Bool) {
+        if hidden { hiddenFromStrip.insert(url.lastPathComponent) } else { hiddenFromStrip.remove(url.lastPathComponent) }
+        UserDefaults.standard.set(Array(hiddenFromStrip).sorted(), forKey: Self.hiddenKey)
     }
 
     /// Miniatura da faixa em que se clicou por último: Backspace/Delete envia-a para o Lixo. Limpa-se ao clicar noutro
@@ -150,7 +161,8 @@ final class AppState: ObservableObject {
     /// Envia para o Lixo (recuperável).
     func trash(_ url: URL) {
         try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-        if VideoFiles.isVideo(url) { try? FileManager.default.removeItem(at: url.appendingPathExtension("edicao")) }
+        if VideoFiles.isRawVideo(url) { try? FileManager.default.removeItem(at: url.appendingPathExtension("edicao")) }
+        setHiddenFromStrip(url, false)
         if model?.url == url { model = nil }
         if videoURL == url { videoURL = nil }
         refreshLibrary()
@@ -189,15 +201,16 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// «Salvar como» para um vídeo: copia o MP4 para onde o utilizador escolher.
+    /// «Salvar como» para um vídeo: copia o ficheiro de vídeo (o de dentro do pacote) para onde o utilizador escolher.
     func saveVideoAs(_ url: URL) {
+        guard let media = VideoFiles.mediaURL(url) else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = url.lastPathComponent
-        panel.allowedContentTypes = [UTType(filenameExtension: url.pathExtension) ?? .mpeg4Movie]
+        panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + media.pathExtension
+        panel.allowedContentTypes = [UTType(filenameExtension: media.pathExtension) ?? .mpeg4Movie]
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         do {
             if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
-            try FileManager.default.copyItem(at: url, to: dest)
+            try FileManager.default.copyItem(at: media, to: dest)
         } catch { errorMessage = L("Não foi possível guardar o vídeo: %@", error.localizedDescription) }
     }
 
@@ -227,13 +240,18 @@ final class AppState: ObservableObject {
         open(urls: panel.urls)
     }
 
-    /// Abre ficheiros: capturas `.capture` abrem-se; imagens importam-se como captura nova. Também usado quando o macOS
-    /// entrega ficheiros à app (duplo clique num `.capture`, "Abrir com" Toth, arrastar para o ícone do Dock).
+    /// Abre ficheiros: capturas `.capture` e pacotes `.tothvideo` abrem-se; imagens e vídeos de fora da biblioteca
+    /// importam-se (cópia) como captura ou pacote novo, sem tocar no original. Também usado quando o macOS entrega
+    /// ficheiros à app (duplo clique, "Abrir com" Toth, arrastar para o ícone do Dock).
     func open(urls: [URL]) {
         var skipped: [String] = []
+        let lib = CaptureStore.folder.standardizedFileURL.resolvingSymlinksInPath().path
         for url in urls {
-            if url.pathExtension.lowercased() == "capture" || VideoFiles.isVideo(url) {
+            let inLibrary = url.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().path == lib
+            if url.pathExtension.lowercased() == "capture" || VideoFiles.isPackage(url) || (VideoFiles.isRawVideo(url) && inLibrary) {
                 open(url)
+            } else if VideoFiles.isRawVideo(url) {
+                do { open(try VideoFiles.makePackage(from: url, move: false)) } catch { skipped.append(url.lastPathComponent) }
             } else if let img = ImageFiles.load(url) {
                 do { open(try CaptureStore.save(img)) } catch { skipped.append(url.lastPathComponent) }
             } else {

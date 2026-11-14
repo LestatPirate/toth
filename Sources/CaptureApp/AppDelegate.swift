@@ -456,6 +456,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(fails.isEmpty ? 0 : 1)
             }
         }
+        // `--videopackage-selftest <pasta>`: pacotes .tothvideo (migração, edição dentro, exportar, importar de fora, ocultar da faixa, velocidade num trecho).
+        if let i = args.firstIndex(of: "--videopackage-selftest"), args.count > i + 1 {
+            Task { @MainActor in
+                let fails = await VideoEditSelfTest.package(dir: URL(fileURLWithPath: args[i + 1]))
+                print(fails.isEmpty ? "VIDEOPACKAGE-SELFTEST: OK" : "VIDEOPACKAGE-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                exit(fails.isEmpty ? 0 : 1)
+            }
+        }
         // `--videooverlay-selftest <pasta>`: anotações com início e fim sobre o vídeo (modo Anotar, seguir, exportar, reabrir).
         if let i = args.firstIndex(of: "--videooverlay-selftest"), args.count > i + 1 {
             Task { @MainActor in

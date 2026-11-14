@@ -186,24 +186,44 @@ final class VideoEditorModel: ObservableObject {
 
     /// Velocidades oferecidas no menu.
     static let speeds: [Double] = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4]
-    /// A velocidade do clipe marcado (o primeiro inteiro dentro do trecho, em qualquer linha ativa); `nil` sem clipe.
+    /// A velocidade do que está marcado (o primeiro clipe que começa dentro do trecho, em qualquer linha ativa); sem
+    /// trecho marcado, a do clipe na posição de reprodução (ou 1).
     var selectedRate: Double? {
-        guard let sel = selection else { return nil }
-        for l in enabled.subtracting(locked) { if let c = timeline.clips(l).first(where: { $0.at >= sel.start - 1e-6 && $0.end <= sel.end + 1e-6 }) { return c.rate } }
-        return nil
+        let lanes = enabled.subtracting(locked)
+        if let sel = selection {
+            for l in lanes { if let c = timeline.clips(l).first(where: { $0.at >= sel.start - 1e-6 && $0.at < sel.end - 1e-6 }) { return c.rate } }
+            return nil
+        }
+        for l in lanes { if let c = timeline.clip(at: playhead, in: l) { return c.rate } }
+        return timeline.tracks.isEmpty ? nil : 1
     }
-    /// Muda a velocidade dos clipes inteiros dentro do trecho marcado, em todas as linhas não protegidas (mesmo as suprimidas,
-    /// para o som acompanhar a imagem se voltarem a entrar). O trecho marcado passa a cobrir o clipe na nova duração.
+    /// Muda a velocidade do trecho marcado (os clipes partem-se nas pontas do trecho, para a velocidade valer só ali) ou,
+    /// sem trecho marcado, do vídeo todo. Vale em todas as linhas não protegidas (mesmo as suprimidas, para o som acompanhar a
+    /// imagem se voltarem a entrar). O trecho marcado passa a cobrir o mesmo conteúdo na nova duração.
     func setSpeed(_ rate: Double) async {
-        guard let sel = selection else { return }
+        let tracks = Set(timeline.tracks).subtracting(locked)
         let before = snapshot()
         var next = timeline
-        guard next.setRate(rate, in: sel, tracks: Set(timeline.tracks).subtracting(locked)) else { message = L("Marque um clipe inteiro (clique nele) para lhe mudar a velocidade."); return }
+        let sel = selection ?? TimeSpan(start: 0, end: timeline.duration)
+        if selection != nil {
+            _ = next.split(at: sel.start, tracks: tracks)
+            _ = next.split(at: sel.end, tracks: tracks)
+        }
+        // quantos clipes (na linha de referência) ficam dentro do trecho: para voltar a marcar o mesmo conteúdo depois
+        let ref = timeline.tracks.first { tracks.contains($0) && !next.clips($0).filter { $0.at >= sel.start - 1e-6 && $0.end <= sel.end + 1e-6 }.isEmpty }
+        let count = ref.map { next.clips($0).filter { $0.at >= sel.start - 1e-6 && $0.end <= sel.end + 1e-6 }.count } ?? 0
+        guard count > 0, next.setRate(rate, in: sel, tracks: tracks) else {
+            if (selectedRate ?? rate) == rate { return }
+            message = L("Não dá para mudar a velocidade desse trecho: é curto demais."); return
+        }
         timeline = next
         let lanesSel = selectionLanes
-        if let c = next.lanes.flatMap(\.clips).first(where: { abs($0.at - sel.start) < 1e-6 }) { selection = TimeSpan(start: c.at, end: c.end); selectionLanes = lanesSel }
+        if selection != nil, let ref {
+            let inside = Array(next.clips(ref).filter { $0.at >= sel.start - 1e-6 }.prefix(count))
+            if let last = inside.last { selection = TimeSpan(start: sel.start, end: last.end); selectionLanes = lanesSel }
+        }
         previewLabel = nil
-        await commit(before, at: sel.start)
+        await commit(before, at: min(playhead, next.duration))
     }
 
     /// Importa um ficheiro de áudio (MP3, M4A, WAV, AAC, AIFF…) para a linha «Música», a começar na posição de reprodução
@@ -469,13 +489,17 @@ final class VideoEditorModel: ObservableObject {
     /// Com um só áudio (vídeos antigos), a linha chama-se «Áudio».
     private(set) var singleAudio = false
 
-    /// Onde se guarda a edição (ao lado do vídeo): o ficheiro dos cortes e os trechos invertidos. Ao reabrir, continua lá.
-    var editFolder: URL { url.appendingPathExtension("edicao") }
+    /// Onde se guarda a edição: dentro do pacote `.tothvideo`; num vídeo solto, numa pasta `.edicao` ao lado. Ao reabrir, continua lá.
+    var editFolder: URL { VideoFiles.editFolder(for: url) }
     private var editFile: URL { editFolder.appendingPathComponent("edicao.json") }
+    /// O ficheiro de vídeo em si (dentro do pacote, ou o próprio).
+    let mediaURL: URL
 
+    /// `url`: um pacote `.tothvideo` ou um vídeo solto.
     init(url: URL) {
         self.url = url
-        asset = AVURLAsset(url: url)
+        mediaURL = VideoFiles.mediaURL(url) ?? url
+        asset = AVURLAsset(url: mediaURL)
     }
 
     func tearDown() {
@@ -493,7 +517,7 @@ final class VideoEditorModel: ObservableObject {
         loaded = true
         let d = (try? await asset.load(.duration).seconds) ?? 0
         let duration = d.isFinite ? d : 0
-        assets[0] = asset; media[0] = url; mediaLength[0] = duration
+        assets[0] = asset; media[0] = mediaURL; mediaLength[0] = duration
         var lanes: [EditTrack] = []
         if let v = try? await asset.loadTracks(withMediaType: .video).first {
             lanes.append(.video); tracks[TrackKey(media: 0, lane: .video)] = v
@@ -847,8 +871,8 @@ final class VideoEditorModel: ObservableObject {
                              volumes: laneVolume.isEmpty ? nil : Dictionary(uniqueKeysWithValues: laneVolume.map { ($0.key.rawValue, $0.value) }),
                              fades: laneFade.isEmpty ? nil : Dictionary(uniqueKeysWithValues: laneFade.map { ($0.key.rawValue, $0.value) }))
             try? JSONEncoder().encode(f).write(to: editFile, options: .atomic)
-        } else if overlayEditor == nil { try? FileManager.default.removeItem(at: editFolder) }   // (com o editor das anotações aberto, o pacote fica)
-        else { try? FileManager.default.removeItem(at: editFile) }
+        } else if overlayEditor == nil && !VideoFiles.isPackage(url) { try? FileManager.default.removeItem(at: editFolder) }   // (pasta .edicao de um vídeo solto; com o editor das anotações aberto fica)
+        else { try? FileManager.default.removeItem(at: editFile) }   // (num pacote, só o ficheiro da edição: o vídeo vive lá dentro)
     }
 
     /// Volta a ler a edição guardada (se houver e for deste vídeo).
@@ -909,16 +933,14 @@ final class VideoEditorModel: ObservableObject {
 
     // MARK: Guardar o vídeo editado
 
-    /// Escreve o vídeo já editado num ficheiro novo (`…_editado.mp4`, na pasta das capturas) e devolve-o.
+    /// Escreve o vídeo já editado num pacote novo (`…_editado.tothvideo`, na pasta das capturas) e devolve-o.
     func exportEdited() async throws -> URL {
         working = L("A guardar o vídeo…"); defer { working = nil }
         let (comp, mix, vc) = try await finalComposition()
         let base = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_editado", with: "")
-        var out = CaptureStore.folder.appendingPathComponent("\(base)_editado.mp4")
-        var n = 2
-        while FileManager.default.fileExists(atPath: out.path) { out = CaptureStore.folder.appendingPathComponent("\(base)_editado_\(n).mp4"); n += 1 }
-        try await VideoExporter.export(composition: comp, videoComposition: vc, audioMix: mix, to: out)
-        return out
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("Toth-editado-\(UUID().uuidString).mp4")
+        try await VideoExporter.export(composition: comp, videoComposition: vc, audioMix: mix, to: tmp)
+        return try VideoFiles.makePackage(from: tmp, move: true, name: "\(base)_editado")
     }
 
     /// A composição final (cortes, tamanho, rotação, volumes, velocidade e anotações), como vai para o ficheiro.

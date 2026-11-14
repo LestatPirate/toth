@@ -281,6 +281,8 @@ private struct LibraryStrip: View {
                         ThumbnailView(item: item, revision: state.revision, selected: state.isCurrent(item.url))
                             .onTapGesture { state.selectInStrip(item.url) }
                             .contextMenu {
+                                Button(L("Ocultar da faixa")) { state.setHiddenFromStrip(item.url, true) }
+                                    .help(L("Sai desta faixa, mas fica na biblioteca («Abrir Biblioteca» volta a mostrá-la)"))
                                 Button(L("Mostrar no Finder")) { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
                                 Button(L("Mover para o Lixo"), role: .destructive) { state.trash(item.url) }
                             }

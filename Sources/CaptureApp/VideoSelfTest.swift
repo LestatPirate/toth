@@ -340,7 +340,7 @@ enum VideoE2ETest {
         await editor.reverseSelection()
         let reversed = editor.timeline.clips(.video).contains { $0.media != 0 }
         var exportedInfo = "sem exportação"
-        if let out = try? await editor.exportEdited() {
+        if let pkg = try? await editor.exportEdited(), let out = VideoFiles.mediaURL(pkg) {
             let a = AVURLAsset(url: out)
             let ed = (try? await a.load(.duration).seconds) ?? 0
             let na = (try? await a.loadTracks(withMediaType: .audio).count) ?? 0
@@ -496,6 +496,82 @@ enum VideoEditSelfTest {
     }
 
     /// Volume e fade por linha, velocidade, áudio importado, memória ao reabrir, GIF, só áudio e miniaturas.
+    /// Pacotes `.tothvideo`: migração dos vídeos soltos, edição dentro do pacote, exportação, miniatura, importação de
+    /// fora da biblioteca, ocultar da faixa, velocidade num trecho e Lixo.
+    static func package(dir: URL) async -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        let fm = FileManager.default
+        try? fm.removeItem(at: dir)
+        let lib = dir.appendingPathComponent("biblioteca")
+        try? fm.createDirectory(at: lib, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = lib
+        // 1) formato antigo: vídeo solto + pasta .edicao ao lado → pacote com tudo dentro
+        let loose = lib.appendingPathComponent("Toth_2026-01-01_10.00.00.mp4")
+        do { try await makeSource(at: loose) } catch { return ["não criou o vídeo de origem: \(error)"] }
+        let sidecar = loose.appendingPathExtension("edicao")
+        try? fm.createDirectory(at: sidecar, withIntermediateDirectories: true)
+        try? Data("{}".utf8).write(to: sidecar.appendingPathComponent("edicao.json"))
+        try? Data("x".utf8).write(to: sidecar.appendingPathComponent("importado-1-music.m4a"))
+        let n = VideoFiles.migrateLoose(in: lib)
+        let pkg = lib.appendingPathComponent("Toth_2026-01-01_10.00.00.tothvideo")
+        check(n == 1 && fm.fileExists(atPath: pkg.appendingPathComponent("video.mp4").path), "o vídeo solto passou a pacote com video.mp4 dentro")
+        check(fm.fileExists(atPath: pkg.appendingPathComponent("edicao.json").path) && fm.fileExists(atPath: pkg.appendingPathComponent("importado-1-music.m4a").path), "a edição foi para dentro do pacote")
+        check(!fm.fileExists(atPath: loose.path) && !fm.fileExists(atPath: sidecar.path), "o ficheiro solto e a pasta .edicao desapareceram")
+        check(VideoFiles.isVideo(pkg) && VideoFiles.mediaURL(pkg)?.lastPathComponent == "video.mp4" && VideoFiles.editFolder(for: pkg) == pkg, "o pacote é um vídeo, com o media e a edição lá dentro")
+        check(VideoFiles.migrateLoose(in: lib) == 0, "voltar a migrar não faz nada")
+        // 2) abrir o pacote no editor, editar: a edição grava-se dentro do pacote
+        let model = VideoEditorModel(url: pkg)
+        await model.load()
+        check(model.duration >= 5.9, "o pacote abre com a duração do vídeo (\(model.duration))")
+        let d0 = model.duration
+        // 3) velocidade só num trecho (1…3 s a 2×): os clipes partem-se nas pontas; o trecho passa a cobrir o mesmo conteúdo
+        model.selectionLanes = [.video]; model.selection = TimeSpan(start: 1, end: 3)
+        await model.setSpeed(2)
+        let rates = model.timeline.clips(.video).map(\.rate)
+        check(rates == [1, 2, 1] && abs(model.duration - (d0 - 1)) < 1e-6, "2× só no trecho 1…3 s: clipes 1×/2×/1× e um segundo a menos (\(rates), \(model.duration))")
+        check(model.selection == TimeSpan(start: 1, end: 2), "o trecho marcado passa a 1…2 s (\(String(describing: model.selection)))")
+        model.selection = nil
+        // sem trecho marcado: o vídeo todo
+        await model.setSpeed(0.5)
+        check(model.timeline.clips(.video).map(\.rate) == [0.5, 0.5, 0.5] && abs(model.duration - d0 * 2) < 1e-6, "sem trecho, a velocidade vale para o vídeo todo (\(model.duration))")
+        check(model.selectedRate == 0.5, "a velocidade mostrada é a do clipe na posição de reprodução")
+        await model.undo(); await model.undo()
+        check(abs(model.duration - d0) < 1e-6, "desfazer repõe")
+        check(fm.fileExists(atPath: pkg.appendingPathComponent("video.mp4").path), "sem edição, o pacote (e o vídeo) continuam lá")
+        await model.setSpeed(2)
+        check(fm.fileExists(atPath: pkg.appendingPathComponent("edicao.json").path) && !fm.fileExists(atPath: pkg.appendingPathExtension("edicao").path), "a edição fica em edicao.json dentro do pacote, sem pasta ao lado")
+        // 4) exportar dá um pacote novo na biblioteca
+        do {
+            let out = try await model.exportEdited()
+            check(VideoFiles.isPackage(out) && out.deletingPathExtension().lastPathComponent == "Toth_2026-01-01_10.00.00_editado" && VideoFiles.mediaURL(out) != nil, "o vídeo editado é um pacote novo (\(out.lastPathComponent))")
+            if let m = VideoFiles.mediaURL(out) { let d = try await AVURLAsset(url: m).load(.duration).seconds; check(abs(d - d0 / 2) < 0.3, "o exportado dura metade (\(d))") }
+        } catch { fails.append("exportar falhou: \(error)") }
+        // 5) miniatura e biblioteca
+        check(Thumbnails.load(pkg) != nil, "o pacote tem miniatura")
+        let state = AppState.shared
+        state.refreshLibrary()
+        check(state.library.contains { $0.url.lastPathComponent == pkg.lastPathComponent && $0.isVideo }, "o pacote aparece na biblioteca como vídeo")
+        // 6) abrir um vídeo de fora: importa uma cópia (o original fica)
+        let outside = dir.appendingPathComponent("de-fora.mov")
+        do { try await makeSource(at: outside) } catch { return fails + ["não criou o vídeo de fora: \(error)"] }
+        state.open(urls: [outside])
+        let imported = lib.appendingPathComponent("de-fora.tothvideo")
+        check(fm.fileExists(atPath: imported.appendingPathComponent("video.mov").path) && fm.fileExists(atPath: outside.path), "abrir de fora importa uma cópia como pacote e deixa o original")
+        check(state.videoURL?.path == imported.path, "o pacote importado fica aberto (\(String(describing: state.videoURL)))")
+        // 7) ocultar da faixa: sai da faixa, fica na biblioteca, persiste; mostrar volta a pôr
+        state.setHiddenFromStrip(pkg, true)
+        check(!state.stripItems.contains { $0.url.lastPathComponent == pkg.lastPathComponent } && state.library.contains { $0.url.lastPathComponent == pkg.lastPathComponent }, "oculto da faixa mas na biblioteca")
+        check((UserDefaults.standard.stringArray(forKey: "stripHidden") ?? []).contains(pkg.lastPathComponent), "fica guardado")
+        state.setHiddenFromStrip(pkg, false)
+        check(state.stripItems.contains { $0.url.lastPathComponent == pkg.lastPathComponent }, "mostrar na faixa outra vez")
+        // 8) Lixo: o pacote todo vai, e a marca de oculto limpa-se
+        state.setHiddenFromStrip(imported, true)
+        state.trash(imported)
+        check(!fm.fileExists(atPath: imported.path) && !state.isHiddenFromStrip(imported), "o pacote foi para o Lixo e deixou de estar marcado como oculto")
+        return fails
+    }
+
     static func audio(dir: URL) async -> [String] {
         var fails: [String] = []
         func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
@@ -628,7 +704,7 @@ enum VideoEditSelfTest {
         try? await Task.sleep(nanoseconds: 800_000_000)
         check(model.player.currentItem?.videoComposition?.customVideoCompositorClass == OverlayCompositor.self, "a reprodução usa o compositor das anotações")
         // 4) exportar: o ficheiro leva as anotações nos seus tempos
-        guard let out = try? await model.exportEdited() else { return fails + ["exportar falhou"] }
+        guard let pkg = try? await model.exportEdited(), let out = VideoFiles.mediaURL(pkg) else { return fails + ["exportar falhou"] }
         let d = await decodeAsset(AVURLAsset(url: out))
         check(red(d, near: 0.5) < 120 && blue(d, near: 0.5) < 30, "antes de 1 s o centro é o vídeo (R=\(red(d, near: 0.5)))")
         check(red(d, near: 2) > 200 && blue(d, near: 2) < 40, "aos 2 s o centro é vermelho (R=\(red(d, near: 2)) B=\(blue(d, near: 2)))")
@@ -747,8 +823,9 @@ enum VideoEditSelfTest {
 
             // 8) cortar e juntar depois de inverter, e guardar: um só áudio no ficheiro, com tudo misturado
             select(3, 5); await model.cut(join: true)
-            let out = try await model.exportEdited()
-            check(out.lastPathComponent == "origem_editado.mp4", "nome do exportado: \(out.lastPathComponent)")
+            let outPkg = try await model.exportEdited()
+            check(outPkg.lastPathComponent == "origem_editado.tothvideo", "nome do exportado: \(outPkg.lastPathComponent)")
+            guard let out = VideoFiles.mediaURL(outPkg) else { return fails + ["o pacote exportado não tem vídeo"] }
             let ex = await decodeAsset(AVURLAsset(url: out))
             let dur = (try? await AVURLAsset(url: out).load(.duration).seconds) ?? 0
             check(abs(dur - 4) < 0.15, "exportado: duração \(dur) s, esperava ≈ 4")
@@ -759,7 +836,7 @@ enum VideoEditSelfTest {
             check(abs(blue(ex, near: 1.5) - 80) < 25 && abs(blue(ex, near: 3.5) - 200) < 25, "exportado: cores \(blue(ex, near: 1.5)) \(blue(ex, near: 3.5))")
             check(g(ex.mixed, 3.2, 3.8, sysFreq(5)) > 0.003 && g(ex.mixed, 3.2, 3.8, micFreq(5)) > 0.003, "exportado: a mistura devia ter o sistema e o microfone")
             let out2 = try await model.exportEdited()
-            check(out2.lastPathComponent == "origem_editado_2.mp4", "um segundo exportado não podia substituir o primeiro")
+            check(out2.lastPathComponent == "origem_editado_2.tothvideo", "um segundo exportado não podia substituir o primeiro")
             await model.undo()
             await model.undo()
             check(!model.timeline.isEdited, "desfazer tudo devia repor o original")
@@ -787,7 +864,7 @@ enum VideoEditSelfTest {
             model.outputKeepAspect = false
             await model.setOutputSize(height: 60)
             check(model.outputSize == CGSize(width: 160, height: 60), "sem proporção devia dar 160×60 (\(String(describing: model.outputSize)))")
-            let small = try await model.exportEdited()
+            let small = VideoFiles.mediaURL(try await model.exportEdited())!
             if let vt = try? await AVURLAsset(url: small).loadTracks(withMediaType: .video).first, let n = try? await vt.load(.naturalSize) {
                 check(n == CGSize(width: 160, height: 60), "o ficheiro guardado devia ter 160×60 (\(n))")
             } else { fails.append("sem vídeo no ficheiro redimensionado") }
@@ -803,7 +880,7 @@ enum VideoEditSelfTest {
             model.outputKeepAspect = true; await model.setOutputSize(width: 160)
             await model.setOutputRotation(90)
             check(model.canvasSize == CGSize(width: 90, height: 160), "rodado 90°, a saída devia ser 90×160 (\(model.canvasSize))")
-            let turned = try await model.exportEdited()
+            let turned = VideoFiles.mediaURL(try await model.exportEdited())!
             if let vt = try? await AVURLAsset(url: turned).loadTracks(withMediaType: .video).first, let n = try? await vt.load(.naturalSize) {
                 check(n == CGSize(width: 90, height: 160), "o ficheiro rodado devia ter 90×160 (\(n))")
             }

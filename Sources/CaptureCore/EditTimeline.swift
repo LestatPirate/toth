@@ -114,7 +114,7 @@ public struct EditTimeline: Codable, Equatable, Sendable {
 
     /// Alguma linha foi editada (já não é um só clipe original inteiro em 0)?
     public var isEdited: Bool {
-        lanes.contains { l in !(l.clips.count == 1 && l.clips[0].media == 0 && l.clips[0].at == 0 && abs(l.clips[0].src.start) < 1e-9 && abs(l.clips[0].src.end - sourceDuration) < 1e-6) }
+        lanes.contains { l in !(l.clips.count == 1 && l.clips[0].media == 0 && l.clips[0].at == 0 && abs(l.clips[0].src.start) < 1e-9 && abs(l.clips[0].src.end - sourceDuration) < 1e-6 && abs(l.clips[0].rate - 1) < 1e-9) }
     }
 
     private func laneIndex(_ t: EditTrack) -> Int? { lanes.firstIndex { $0.track == t } }

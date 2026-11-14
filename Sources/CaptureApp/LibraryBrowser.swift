@@ -88,7 +88,10 @@ private struct BrowserCell: View {
         let isCurrent = state.isCurrent(item.url)
         VStack(spacing: 6) {
             ThumbnailView(item: item, revision: state.revision, selected: isCurrent, width: 200, height: 130)
-            Text(title).font(.system(size: 11)).lineLimit(1)
+            HStack(spacing: 4) {
+                Text(title).font(.system(size: 11)).lineLimit(1)
+                if state.isHiddenFromStrip(item.url) { Image(systemName: "eye.slash").font(.system(size: 9)).foregroundStyle(.secondary).help(L("Oculta da faixa de baixo")) }
+            }
             if CaptureContainer.isFolderCapture(item.url) {
                 Text(L("formato antigo (pasta)")).font(.system(size: 9)).foregroundStyle(.secondary)
             }
@@ -98,6 +101,8 @@ private struct BrowserCell: View {
         .onTapGesture { state.openFromBrowser(item.url) }
         .contextMenu {
             Button(L("Abrir")) { state.openFromBrowser(item.url) }
+            if state.isHiddenFromStrip(item.url) { Button(L("Mostrar na faixa de baixo")) { state.setHiddenFromStrip(item.url, false) } }
+            else { Button(L("Ocultar da faixa de baixo")) { state.setHiddenFromStrip(item.url, true) } }
             Button(L("Mostrar no Finder")) { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
             Button(L("Mover para o Lixo"), role: .destructive) { state.trash(item.url) }
         }

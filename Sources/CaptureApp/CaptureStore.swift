@@ -54,7 +54,7 @@ enum CaptureStore {
         let items = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
         return items.filter { u in
             let ext = u.pathExtension.lowercased()
-            return ext == "capture" || ext == "edicao" || VideoFiles.isVideo(u) || u.lastPathComponent == stampsSubfolder
+            return ext == "capture" || ext == "edicao" || ext == VideoFiles.packageExtension || VideoFiles.isVideo(u) || u.lastPathComponent == stampsSubfolder
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
@@ -125,6 +125,8 @@ enum CaptureStore {
             moveStampFiles(from: legacyStampsFolder, to: stampsFolder)
             _ = removeIfEmpty(legacyStampsFolder.deletingLastPathComponent())   // «Toth/» em Application Support, se ficou vazia
         }
+        // Até à 0.6.1 os vídeos eram ficheiros soltos com a edição numa pasta `.edicao` ao lado: passam a pacotes `.tothvideo`.
+        VideoFiles.migrateLoose(in: folder)
     }
 
     /// Muda a pasta das capturas para `newFolder`, movendo para lá tudo o que é do Toth (capturas, vídeos, edições,

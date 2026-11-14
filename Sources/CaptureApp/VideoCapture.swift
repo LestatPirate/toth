@@ -261,15 +261,10 @@ final class VideoCaptureSession {
         if a.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(MicrophonePermission.settingsURL) }
     }
 
-    /// Move o ficheiro temporário para a pasta das capturas, com um nome único (`Toth_aaaa-mm-dd_hh.mm.ss.mp4`).
+    /// Move o ficheiro temporário para a pasta das capturas, num pacote com nome único (`Toth_aaaa-mm-dd_hh.mm.ss.tothvideo`).
     static func moveToLibrary(_ tmp: URL) throws -> URL {
         let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd_HH.mm.ss"
-        let stamp = fmt.string(from: Date())
-        var url = CaptureStore.folder.appendingPathComponent("Toth_\(stamp).mp4")
-        var n = 2
-        while FileManager.default.fileExists(atPath: url.path) { url = CaptureStore.folder.appendingPathComponent("Toth_\(stamp)_\(n).mp4"); n += 1 }
-        try FileManager.default.moveItem(at: tmp, to: url)
-        return url
+        return try VideoFiles.makePackage(from: tmp, move: true, name: "Toth_\(fmt.string(from: Date()))")
     }
 
     /// Ponto de entrada: grava a região `rect` (pontos, canto superior esquerdo de `screen`).

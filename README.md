@@ -79,6 +79,10 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 | **Atalhos e menus** | Uma **tecla por ferramenta** (menu Ferramentas), **⌘E** exporta com o último formato e pasta, **⌘⇧C** copia a imagem final, **⌘⇧F** ajusta a tela, **⌘⇧R** muda o nome, **⌘↩**/Esc terminam ou cancelam a edição, **⌫** apaga. Tudo visível nos menus. |
 | **Nome da captura** | Clique no nome na barra de baixo para o mudar; fica no pacote e é o nome do ficheiro exportado. |
 | **Pesquisa na biblioteca** | Por nome, texto das anotações ou **texto da imagem** (OCR local, em segundo plano, guardado em cada pacote), e por data. |
+| **Vídeos em pacote** | Cada vídeo é um só item `.tothvideo` no Finder, com o MP4, a edição e as anotações lá dentro (os antigos `.mp4` + `.edicao` passam sozinhos). **Guardar como…** tira o MP4 para fora. |
+| **Velocidade em qualquer trecho** | Marque um trecho e escolha 0,25× a 4×: só ele muda; sem nada marcado, o vídeo todo. O som mantém o tom. |
+| **Faixa de baixo** | Botão direito → **Ocultar da faixa**: sai dali e fica na biblioteca (volta pelo botão direito em «Abrir Biblioteca»). |
+| **Abrir com o Toth** | Imagens, vídeos, `.capture` e `.tothvideo` abrem-se pelo *Abrir com* do Finder ou arrastando para o Dock; o que vem de fora importa-se como cópia. |
 | **Recortar pela borda** | Apagar uma faixa junto a uma borda **recorta** a área: o apagado nunca a faz crescer, e selecionar para lá da imagem fica cortado pela área. |
 | **Pasta das capturas** | Por omissão `~/Pictures/TothCapture`; alterável nas Preferências, com capturas, vídeos e carimbos (subpasta «Carimbos») movidos para o novo sítio. |
 
@@ -219,6 +223,10 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 | **Shortcuts and menus** | One **key per tool** (Tools menu), **⌘E** exports with the last format and folder, **⌘⇧C** copies the final image, **⌘⇧F** fits the canvas, **⌘⇧R** renames, **⌘↩**/Esc finish or cancel editing, **⌫** deletes. All visible in the menus. |
 | **Capture name** | Click the name in the bottom bar to change it; it is stored in the package and used as the exported file name. |
 | **Library search** | By name, annotation text or **image text** (local OCR, in the background, stored in each package), and by date. |
+| **Videos as packages** | Each video is one `.tothvideo` item in the Finder, with the MP4, the edit and the annotations inside (old `.mp4` + `.edicao` pairs convert by themselves). **Save as…** takes the MP4 out. |
+| **Speed on any span** | Mark a span and pick 0.25× to 4×: only that span changes; with nothing marked, the whole video. The sound keeps its pitch. |
+| **Bottom strip** | Right-click → **Hide from strip**: it leaves the strip and stays in the library (bring it back with a right-click in “Open Library”). |
+| **Open with Toth** | Images, videos, `.capture` and `.tothvideo` open through the Finder's *Open with* or by dragging onto the Dock; outside files are imported as copies. |
 | **Crop by the edge** | Erasing a band along an edge **crops** the area: an erased region never makes it grow, and selecting beyond the image is clipped to the area. |
 | **Captures folder** | `~/Pictures/TothCapture` by default; changeable in Preferences, with captures, videos and stamps (“Carimbos” subfolder) moved to the new place. |
 

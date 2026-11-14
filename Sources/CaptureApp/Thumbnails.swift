@@ -15,7 +15,7 @@ enum Thumbnails {
 
     /// Lê o preview guardado na captura (arquivo ou pasta); se não existir (captura antiga), gera-o a partir do original.
     static func load(_ package: URL) -> NSImage? {
-        if VideoFiles.isVideo(package) { return videoFrame(package) }
+        if VideoFiles.isVideo(package) { return VideoFiles.mediaURL(package).flatMap(videoFrame) }
         if let d = CaptureContainer.readEntry(CapturePackage.previewFile, at: package), let img = NSImage(data: d) { return img }
         guard let original = CaptureContainer.readEntry(CapturePackage.originalFile, at: package),
               let data = previewPNG(fromPNG: original) else { return nil }

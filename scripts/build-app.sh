@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${VERSION:-0.6.1}"
-BUILD="${BUILD:-52}"
+BUILD="${BUILD:-53}"
 BUNDLE_ID="${BUNDLE_ID:-io.github.lestatpirate.toth}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"   # vazio: escolhe-se mais abaixo (identidade local, senão ad hoc)
 APP="dist/Toth.app"
@@ -71,6 +71,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
         <key>public.mime-type</key><string>application/x-toth-capture</string>
       </dict>
     </dict>
+    <dict>
+      <key>UTTypeIdentifier</key><string>${BUNDLE_ID}.video</string>
+      <key>UTTypeDescription</key><string>Vídeo do Toth</string>
+      <key>UTTypeConformsTo</key><array><string>com.apple.package</string><string>public.composite-content</string></array>
+      <key>UTTypeIconFile</key><string>Toth.icns</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>tothvideo</string></array>
+      </dict>
+    </dict>
   </array>
   <key>CFBundleDocumentTypes</key>
   <array>
@@ -80,6 +90,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>LSHandlerRank</key><string>Owner</string>
       <key>LSItemContentTypes</key><array><string>${BUNDLE_ID}.capture</string></array>
       <key>CFBundleTypeIconFile</key><string>Toth</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Vídeo do Toth</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Owner</string>
+      <key>LSTypeIsPackage</key><true/>
+      <key>LSItemContentTypes</key><array><string>${BUNDLE_ID}.video</string></array>
+      <key>CFBundleTypeIconFile</key><string>Toth</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Vídeo</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.mpeg-4</string><string>com.apple.quicktime-movie</string><string>com.apple.m4v-video</string><string>public.movie</string>
+      </array>
     </dict>
     <dict>
       <key>CFBundleTypeName</key><string>Imagem</string>
