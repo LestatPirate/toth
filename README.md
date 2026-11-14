@@ -45,7 +45,7 @@
 
 <table>
 <tr>
-<td width="25%" valign="top"><h4>📸 Capturar</h4>Região com o ecrã <b>congelado</b>, <b>janela</b> (com ou sem sombra, mesmo tapada), <b>página inteira por rolagem</b> e ecrã completo. Atalho global.</td>
+<td width="25%" valign="top"><h4>📸 Capturar</h4>Região com o ecrã <b>congelado</b>, <b>janela</b> (ao tamanho exato, mesmo tapada), <b>página inteira por rolagem</b> e ecrã completo. Atalho global.</td>
 <td width="25%" valign="top"><h4>✏️ Anotar</h4>Setas, texto, balões, etapas, carimbos, pixelização, desfoque e <b>reparo</b>. <b>Selecionar área</b> (varinha), alinhar, agrupar, rodar. <b>Sempre reeditável</b>.</td>
 <td width="25%" valign="top"><h4>🎥 Gravar</h4>Área ou janela em MP4, com <b>áudio do sistema</b> e <b>microfone à escolha</b>, cada um na sua faixa. Pausar e retomar.</td>
 <td width="25%" valign="top"><h4>✂️ Editar vídeo</h4>Cortes ao quadro, <b>anotações com início e fim</b>, música, narração, velocidade. Guarda em <b>MP4, GIF ou só áudio</b>.</td>
@@ -139,7 +139,7 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 </details>
 
 ### O essencial
-- **Captura** de região (com o ecrã congelado), de **janela** (com ou sem sombra), de **página inteira por rolagem** e do ecrã completo; atalho global configurável (**⌃⇧4**).
+- **Captura** de região (com o ecrã congelado), de **janela** (ao tamanho exato, mesmo tapada), de **página inteira por rolagem** e do ecrã completo; atalho global configurável (**⌃⇧4**).
 - **Anotação não destrutiva**: setas, linhas, texto, balões, formas, etapas numeradas, carimbos, marcador, pixelização, desfoque e reparo; **selecionar área**, **rodar**, **alinhar** e **agrupar**; camadas, copiar e colar, desfazer e refazer. Tudo num ficheiro `.capture` reeditável.
 - **Tela** que se ajusta ao conteúdo, e **mover, redimensionar e rodar a própria captura** sem alterar a imagem original.
 - **Gravação** de área ou janela com áudio do sistema e microfone; **editor de vídeo** com cortes, anotações com tempo, música, narração, velocidade; MP4, GIF ou áudio.
@@ -285,7 +285,7 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 </details>
 
 ### The essentials
-- **Capture** a region (with a frozen screen), a **window** (with or without shadow), a **whole page by scrolling**, or the full screen; configurable global shortcut (**⌃⇧4**).
+- **Capture** a region (with a frozen screen), a **window** (at its exact size, even when covered), a **whole page by scrolling**, or the full screen; configurable global shortcut (**⌃⇧4**).
 - **Non-destructive annotation**: arrows, lines, text, callouts, shapes, numbered steps, stamps, highlighter, pixelate, blur and repair; **select area**, **rotate**, **align** and **group**; layers, copy and paste, undo and redo. Everything lives in a `.capture` file you can edit again.
 - A **canvas** that fits the content, and **move, resize and rotate the capture itself** without altering the original image.
 - **Recording** of an area or a window with system audio and microphone; a **video editor** with cuts, timed annotations, music, narration, speed; MP4, GIF or audio.

@@ -18,7 +18,7 @@ final class RegionSelector {
     var onScroll: ((NSScreen, CGRect, CGImage) -> Void)?
     /// Chamado quando se escolhe gravar vídeo: ecrã e área (pontos, canto superior esquerdo do ecrã).
     var onVideo: ((NSScreen, CGRect) -> Void)?
-    /// Chamado quando se escolhe uma janela (modo «Janela»): a janela e se a captura leva a sombra.
+    /// Chamado quando se escolhe uma janela (modo «Janela»): a janela (a sombra fica sempre de fora: tamanho exato).
     var onWindow: ((WindowInfo, Bool) -> Void)?
     /// Chamado quando se escolhe gravar uma janela em vídeo.
     var onWindowVideo: ((NSScreen, WindowInfo) -> Void)?
@@ -258,15 +258,13 @@ private final class SelectionView: NSView {
     private var smartButton: IconButton!
     private var textButton: IconButton!
 
-    // Modo «Janela»: a janela sob o rato fica em destaque; um clique captura-a (só ela, mesmo tapada), com ou sem sombra.
+    // Modo «Janela»: a janela sob o rato fica em destaque; um clique captura-a (só ela, mesmo tapada), sem sombra, ao tamanho exato.
     var windows: [WindowInfo] = []
     private(set) var windowMode = false
     private var hoverWindow: WindowInfo?
-    private var shadowOn = (UserDefaults.standard.object(forKey: "windowCaptureShadow") as? Bool) ?? true
     private let modeBar = IconBar()
     private var areaModeButton: IconButton!
     private var windowModeButton: IconButton!
-    private var shadowButton: IconButton!
     private var windowVideoButton: IconButton!
     private var tracking: NSTrackingArea?
 
@@ -296,14 +294,13 @@ private final class SelectionView: NSView {
         // barra do modo (sempre visível, no topo): área · janela · sombra · gravar a janela
         areaModeButton = IconButton(symbol: "rectangle.dashed", tooltip: L("Área: arraste para escolher (Espaço alterna)"), target: self, action: #selector(areaModeClicked))
         windowModeButton = IconButton(symbol: "macwindow", tooltip: L("Janela: clique numa janela para a capturar só a ela (Espaço alterna)"), target: self, action: #selector(windowModeClicked))
-        shadowButton = IconButton(symbol: "square.on.square.dashed", tooltip: L("Incluir a sombra da janela"), target: self, action: #selector(shadowClicked))
         windowVideoButton = IconButton(symbol: "video.fill", tooltip: L("Gravar a janela sob o rato em vídeo (MP4)"), target: self, action: #selector(windowVideoClicked))
         smartButton = IconButton(symbol: "viewfinder.rectangular", tooltip: L("Quadro automático: o painel, botão ou janela sob o rato fica marcado; Enter ou um clique captura-o"), target: self, action: #selector(smartClicked))
         cleanButton = IconButton(symbol: "rectangle.dashed.badge.record", tooltip: L("Fundo limpo: a captura sai sem papel de parede nem ícones do ambiente de trabalho"), target: self, action: #selector(cleanClicked))
         addSubview(modeBar)
         rebuildModeBar()
         // a dica de cada botão desenha-se nesta vista (as dicas do sistema ficam por baixo desta janela e não se veem)
-        for b in [cancelButton, scrollButton, videoButton, textButton, confirmButton, areaModeButton, windowModeButton, shadowButton, windowVideoButton, smartButton, cleanButton] as [IconButton] {
+        for b in [cancelButton, scrollButton, videoButton, textButton, confirmButton, areaModeButton, windowModeButton, windowVideoButton, smartButton, cleanButton] as [IconButton] {
             b.onHover = { [weak self, weak b] on in self?.hint = on ? b : nil }
         }
     }
@@ -348,14 +345,12 @@ private final class SelectionView: NSView {
     private func rebuildModeBar() {
         areaModeButton.prominent = !windowMode
         windowModeButton.prominent = windowMode
-        shadowButton.tint = shadowOn ? nil : .secondaryLabelColor
-        shadowButton.toolTip = shadowOn ? L("Sombra da janela: incluída") : L("Sombra da janela: sem sombra")
         smartButton.tint = smartOn ? nil : .secondaryLabelColor
         cleanButton.tint = cleanOn ? .systemGreen : .secondaryLabelColor
         cleanButton.isEnabled = cleanImage != nil
         cleanButton.toolTip = cleanImage == nil ? L("Fundo limpo: não disponível nesta captura") : (cleanOn ? L("Fundo limpo: ligado (sem papel de parede nem ícones)") : L("Fundo limpo: desligado"))
         var items: [NSView] = [areaModeButton, windowModeButton]
-        if windowMode { items += [IconBar.separator(), shadowButton, windowVideoButton] }
+        if windowMode { items += [IconBar.separator(), windowVideoButton] }
         else { items += [IconBar.separator(), smartButton, cleanButton] }
         modeBar.setItems(items)
         modeBar.setFrameOrigin(CGPoint(x: (bounds.width - modeBar.frame.width) / 2, y: 14))
@@ -402,7 +397,6 @@ private final class SelectionView: NSView {
     }
     @objc private func areaModeClicked() { setWindowMode(false); onModeChange?(false) }
     @objc private func windowModeClicked() { setWindowMode(true); onModeChange?(true) }
-    @objc private func shadowClicked() { shadowOn.toggle(); UserDefaults.standard.set(shadowOn, forKey: "windowCaptureShadow"); rebuildModeBar() }
     @objc private func windowVideoClicked() { if let w = hoverWindow { onWindowVideo?(w) } }
 
     private func window(at p: CGPoint) -> WindowInfo? { windows.first { $0.frame.contains(p) } }   // da frente para trás
@@ -440,7 +434,7 @@ private final class SelectionView: NSView {
         return nil
     }
     func debugHover(_ p: CGPoint) { hoverWindow = window(at: p); needsDisplay = true }
-    func debugClickWindow() { if let w = hoverWindow { onWindow?(w, shadowOn) } }
+    func debugClickWindow() { if let w = hoverWindow { onWindow?(w, false) } }
 
     // MARK: Seleção
 
@@ -502,7 +496,7 @@ private final class SelectionView: NSView {
         window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
         if windowMode {
-            if let w = window(at: p) { hoverWindow = w; onWindow?(w, shadowOn) }
+            if let w = window(at: p) { hoverWindow = w; onWindow?(w, false) }
             return
         }
         pressed(at: p)
