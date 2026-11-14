@@ -195,6 +195,20 @@ final class RegionSelector {
         view.setClean(false)
         got = nil; view.confirm()
         if let g = got, let px = SelfTests.pixel(g, 10, 10) { check(px.r > 250 && px.g > 250, "sem Fundo limpo o recorte vem da imagem normal (\(px))") }
+        // 5) dica do botão: desenha-se na vista ao passar o rato (as do sistema não aparecem nesta janela) e não entra na captura
+        view.debugSelect(CGRect(x: 120, y: 80, width: 400, height: 300))
+        view.debugHover(button: 3)   // Fundo limpo
+        check(view.debugHint?.hasPrefix("Fundo limpo") == true, "a dica do botão é a do Fundo limpo (\(String(describing: view.debugHint)))")
+        guard let rep2 = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return fails + ["sem render da dica"] }
+        view.cacheDisplay(in: view.bounds, to: rep2)
+        // por baixo da barra do topo (y ≈ 14+bar+8…) há um balão escuro
+        var dark = 0
+        for y in 60..<110 { for x in 400..<600 { if let c = rep2.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.brightnessComponent < 0.25 { dark += 1 } } }
+        check(dark > 800, "o balão da dica desenha-se por baixo da barra (\(dark) píxeis escuros)")
+        got = nil; view.confirm()
+        if let g = got, let px = SelfTests.pixel(g, 400, 10) { check(px.r > 250 && px.g > 250, "a dica não sai na captura") }
+        view.debugHover(button: 99)
+        check(view.debugHint == nil, "sem rato em cima, sem dica")
         window.orderOut(nil)
         return fails
     }
@@ -288,8 +302,37 @@ private final class SelectionView: NSView {
         cleanButton = IconButton(symbol: "rectangle.dashed.badge.record", tooltip: L("Fundo limpo: a captura sai sem papel de parede nem ícones do ambiente de trabalho"), target: self, action: #selector(cleanClicked))
         addSubview(modeBar)
         rebuildModeBar()
+        // a dica de cada botão desenha-se nesta vista (as dicas do sistema ficam por baixo desta janela e não se veem)
+        for b in [cancelButton, scrollButton, videoButton, textButton, confirmButton, areaModeButton, windowModeButton, shadowButton, windowVideoButton, smartButton, cleanButton] as [IconButton] {
+            b.onHover = { [weak self, weak b] on in self?.hint = on ? b : nil }
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    /// O botão com o rato em cima (a dica dele desenha-se por baixo da barra).
+    private var hint: IconButton? { didSet { if hint !== oldValue { needsDisplay = true } } }
+    var debugHint: String? { hint?.toolTip }
+    func debugHover(button index: Int) { let all: [IconButton] = [areaModeButton, windowModeButton, smartButton, cleanButton, cancelButton, scrollButton, videoButton, textButton, confirmButton]; hint = all.indices.contains(index) ? all[index] : nil }
+
+    /// Dica do botão sob o rato: um balão escuro por baixo (ou por cima) da barra onde ele está.
+    private func drawHint(_ ctx: CGContext) {
+        guard let b = hint, let text = b.toolTip, !text.isEmpty, let bar = b.superview, !bar.isHidden else { return }
+        let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 12)]
+        let maxW: CGFloat = 360
+        let bounded = (text as NSString).boundingRect(with: NSSize(width: maxW, height: 200), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs)
+        let barFrame = convert(bar.bounds, from: bar)
+        let buttonFrame = convert(b.bounds, from: b)
+        var pill = CGRect(x: buttonFrame.midX - bounded.width / 2 - 9, y: barFrame.maxY + 8, width: bounded.width + 18, height: bounded.height + 12)
+        pill.origin.x = max(8, min(bounds.width - pill.width - 8, pill.minX))
+        if pill.maxY > bounds.height - 8 { pill.origin.y = barFrame.minY - pill.height - 8 }
+        ctx.setFillColor(NSColor.black.withAlphaComponent(0.82).cgColor)
+        ctx.addPath(CGPath(roundedRect: pill, cornerWidth: 7, cornerHeight: 7, transform: nil)); ctx.fillPath()
+        // seta pequena a apontar para o botão
+        let tipX = max(pill.minX + 10, min(pill.maxX - 10, buttonFrame.midX))
+        let up = pill.minY > barFrame.maxY
+        ctx.move(to: CGPoint(x: tipX - 6, y: up ? pill.minY : pill.maxY)); ctx.addLine(to: CGPoint(x: tipX, y: up ? pill.minY - 6 : pill.maxY + 6)); ctx.addLine(to: CGPoint(x: tipX + 6, y: up ? pill.minY : pill.maxY)); ctx.closePath(); ctx.fillPath()
+        (text as NSString).draw(in: CGRect(x: pill.minX + 9, y: pill.minY + 6, width: bounded.width + 1, height: bounded.height + 1), withAttributes: attrs)
+    }
 
     override func layout() { super.layout(); modeBar.setFrameOrigin(CGPoint(x: (bounds.width - modeBar.frame.width) / 2, y: 14)) }
 
@@ -556,7 +599,7 @@ private final class SelectionView: NSView {
             ctx.addRect(bounds)
             if let w = hoverWindow { ctx.addRect(w.frame.intersection(bounds)) }
             ctx.fillPath(using: .evenOdd)
-            guard let w = hoverWindow else { return }
+            guard let w = hoverWindow else { drawHint(ctx); return }
             let r = w.frame.intersection(bounds)
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor); ctx.setLineWidth(3)
             ctx.addPath(CGPath(roundedRect: r.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 8, cornerHeight: 8, transform: nil)); ctx.strokePath()
@@ -569,6 +612,7 @@ private final class SelectionView: NSView {
             ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.9).cgColor)
             ctx.addPath(CGPath(roundedRect: pill, cornerWidth: 5, cornerHeight: 5, transform: nil)); ctx.fillPath()
             label.draw(in: CGRect(x: pill.minX + 7, y: pill.minY + 3, width: pill.width - 10, height: size.height), withAttributes: attrs)
+            drawHint(ctx)
             return
         }
         // escurece fora da seleção
@@ -577,7 +621,7 @@ private final class SelectionView: NSView {
         if let sel = selection { ctx.addRect(sel) }
         ctx.fillPath(using: .evenOdd)
 
-        guard let sel = selection else { drawHoverFrame(ctx); return }
+        guard let sel = selection else { drawHoverFrame(ctx); drawHint(ctx); return }
         ctx.setStrokeColor(NSColor.white.cgColor); ctx.setLineWidth(1)
         ctx.stroke(sel.insetBy(dx: 0.5, dy: 0.5))
         if case .idle = mode {
@@ -597,6 +641,7 @@ private final class SelectionView: NSView {
         ctx.addPath(CGPath(roundedRect: pill, cornerWidth: 4, cornerHeight: 4, transform: nil)); ctx.fillPath()
         label.draw(at: CGPoint(x: pill.minX + 6, y: pill.minY + 2), withAttributes: attrs)
         drawLoupe(ctx)
+        drawHint(ctx)
     }
 
     /// O quadro automático: contorno tracejado da cor de destaque, com o tamanho e a dica «Enter».

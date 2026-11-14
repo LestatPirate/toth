@@ -12,6 +12,9 @@ final class IconButton: NSButton {
     var tint: NSColor? { didSet { applyTint() } }
     /// Realce permanente (por exemplo, o botão principal).
     var prominent = false { didSet { needsDisplay = true } }
+    /// Avisa quando o rato entra/sai (para quem desenha a dica à mão: nas janelas de captura, acima do nível do ecrã,
+    /// as dicas do sistema não aparecem).
+    var onHover: ((Bool) -> Void)?
 
     init(symbol: String, tooltip: String, tint: NSColor? = nil, size: CGFloat = 34, target: AnyObject?, action: Selector?) {
         super.init(frame: NSRect(x: 0, y: 0, width: size, height: size))
@@ -46,8 +49,8 @@ final class IconButton: NSButton {
         let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
         addTrackingArea(t); tracking = t
     }
-    override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true; onHover?(true) }
+    override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true; onHover?(false) }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }   // clicável mesmo com a janela inativa
 
     override func draw(_ dirtyRect: NSRect) {

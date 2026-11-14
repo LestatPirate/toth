@@ -61,16 +61,23 @@ final class TextCaptureWindow: NSObject, NSTextViewDelegate {
             preview.wantsLayer = true; preview.layer?.cornerRadius = 6; preview.layer?.borderWidth = 1; preview.layer?.borderColor = NSColor.separatorColor.cgColor
             content.addSubview(preview)
         }
+        // (o NSTextView nasce com a largura do scroll: sem isto o contentor de texto fica com 0 de largura e não se vê nem edita nada)
         let scroll = NSScrollView(frame: NSRect(x: 12, y: 52, width: content.bounds.width - 24, height: content.bounds.height - 52 - 96))
         scroll.autoresizingMask = [.width, .height]
         scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
+        let inner = scroll.contentView.bounds
+        textView.frame = NSRect(x: 0, y: 0, width: inner.width, height: inner.height)
         textView.isRichText = false; textView.font = NSFont.systemFont(ofSize: 13); textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.minSize = NSSize(width: 0, height: 0); textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isEditable = true; textView.isSelectable = true; textView.allowsUndo = true
+        textView.textContainerInset = NSSize(width: 6, height: 8)
+        textView.minSize = NSSize(width: 0, height: inner.height); textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true; textView.isHorizontallyResizable = false; textView.autoresizingMask = [.width]
+        textView.textContainer?.containerSize = NSSize(width: inner.width, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.delegate = self
         scroll.documentView = textView
         content.addSubview(scroll)
+        window.initialFirstResponder = textView
 
         singleLine.target = self; singleLine.action = #selector(toggleSingleLine)
         singleLine.frame = NSRect(x: 12, y: 16, width: 140, height: 22); singleLine.autoresizingMask = [.maxXMargin, .maxYMargin]
@@ -122,5 +129,10 @@ final class TextCaptureWindow: NSObject, NSTextViewDelegate {
         if !t.isEmpty { status.stringValue = L("Copiado (%d letras)", t.count); status.textColor = .secondaryLabelColor }
     }
     @objc private func copyClicked() { copyText() }
+
+    // para testes
+    var textViewSize: NSSize { textView.frame.size }
+    var isEditable: Bool { textView.isEditable }
+    func typeForTests(_ s: String) { textView.insertText(s, replacementRange: NSRange(location: textView.string.utf16.count, length: 0)); copyText() }
     @objc private func closeClicked() { window.close() }
 }
