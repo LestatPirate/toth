@@ -617,6 +617,19 @@ final class EditorModel: ObservableObject {
         get { UserDefaults.standard.bool(forKey: "repairClones") }
         set { UserDefaults.standard.set(newValue, forKey: "repairClones"); objectWillChange.send() }
     }
+    /// Linhas e setas novas nascem curvas? (padrão por ferramenta). Com um objeto selecionado, é o estado dele.
+    func curvedDefault(for tool: Tool) -> Bool { ToolDefaults.shared.value("curved", for: tool, default: 0) > 0.5 }
+    var currentCurved: Bool { if let s = selected?.shape, s.isLineLike { return s.isCurved }; return curvedDefault(for: tool) }
+    /// Liga/desliga a curva: nos objetos selecionados (linhas e setas) e como padrão da ferramenta.
+    func setCurved(_ on: Bool) {
+        let target = selected.flatMap { Tool.forShape($0.shape) } ?? tool
+        if target == .line || target == .arrow { ToolDefaults.shared.setValue(on ? 1 : 0, "curved", for: target) }
+        objectWillChange.send()
+        let lines = selectedAll.filter { $0.shape.isLineLike && $0.shape.isCurved != on }
+        guard !lines.isEmpty else { return }
+        perform { d in for var a in lines { a.shape = a.shape.withCurved(on); d.update(a) } }
+    }
+
     var currentRepairClones: Bool { if case .clone = selected?.shape { return true }; if case .patch = selected?.shape { return false }; return repairClones }
     func setRepairClones(_ on: Bool) {
         repairClones = on

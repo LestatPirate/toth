@@ -141,6 +141,7 @@ struct PropertiesPanel: View {
 
     private var isHighlight: Bool { if case .highlight = model.selected?.shape { return true }; return model.selected == nil && model.tool == .highlight }
     private var isStamp: Bool { if case .stamp = model.selected?.shape { return true }; return model.selected == nil && model.tool == .stamp }
+    private var isLineLike: Bool { if let s = model.selected?.shape { return s.isLineLike }; return model.selected == nil && (model.tool == .line || model.tool == .arrow) }
     private var isRepair: Bool { if model.selected?.shape.isRepair == true { return true }; return model.selected == nil && model.tool == .repair }
     private var stampSize: Binding<Double> { Binding(get: { model.defaultStampSize }, set: { model.defaultStampSize = $0 }) }
     private var repairClones: Binding<Bool> { Binding(get: { model.currentRepairClones }, set: { model.setRepairClones($0) }) }
@@ -456,6 +457,10 @@ struct PropertiesPanel: View {
                         }
                         slider(L("Espessura"), value: width, range: 1...24, format: "%.0f")
                             .disabled(supportsBox && !model.currentStyle.lineVisible)
+                        if isLineLike {
+                            row(L("Curva")) { Toggle("", isOn: Binding(get: { model.currentCurved }, set: { model.setCurved($0) })).labelsHidden() }
+                                .help(L("Linha ou seta curva: arraste a alça do meio para a dobrar"))
+                        }
                     }
                 }
                 if model.tool == .area && model.selected == nil { selectAreaSection }

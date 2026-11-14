@@ -461,6 +461,15 @@ enum Renderer {
         case let .line(p, q):
             ctx.move(to: CGPoint(x: p.x, y: p.y)); ctx.addLine(to: CGPoint(x: q.x, y: q.y)); ctx.strokePath()
 
+        case let .curve(p, q, c):
+            ctx.move(to: CGPoint(x: p.x, y: p.y)); ctx.addQuadCurve(to: CGPoint(x: q.x, y: q.y), control: CGPoint(x: c.x, y: c.y)); ctx.strokePath()
+
+        case let .curvedArrow(p, q, c):
+            // a haste é o arco até perto da ponta; a ponta é um triângulo tangente ao arco (num só caminho, para a sombra e a opacidade não se somarem)
+            let parts = curvedArrowPath(from: CGPoint(x: p.x, y: p.y), to: CGPoint(x: q.x, y: q.y), control: CGPoint(x: c.x, y: c.y), lineWidth: a.style.lineWidth)
+            ctx.addPath(parts.shaft); ctx.fillPath()   // (haste e ponta em dois preenchimentos: juntos, o sentido dos contornos abria um buraco)
+            ctx.addPath(parts.head); ctx.fillPath()
+
         case let .zigzag(p, q):
             ctx.setLineJoin(.miter)
             ctx.addPath(zigzagPath(from: CGPoint(x: p.x, y: p.y), to: CGPoint(x: q.x, y: q.y), lineWidth: a.style.lineWidth)); ctx.strokePath()
@@ -546,6 +555,24 @@ enum Renderer {
 }
 
 extension Renderer {
+    /// Seta curva: contorno preenchido da haste (o arco com a espessura da linha, pontas redondas) mais a ponta tangente.
+    static func curvedArrowPath(from p: CGPoint, to q: CGPoint, control c: CGPoint, lineWidth lw: Double) -> (shaft: CGPath, head: CGPath) {
+        let head = CGFloat(max(14, lw * 4))
+        // tangente no fim: de c para q
+        let angle = atan2(q.y - c.y, q.x - c.x)
+        func wing(_ d: CGFloat) -> CGPoint { CGPoint(x: q.x - cos(angle + d) * head, y: q.y - sin(angle + d) * head) }
+        let neck = CGPoint(x: q.x - cos(angle) * head * 0.5, y: q.y - sin(angle) * head * 0.5)
+        let headPath = CGMutablePath()
+        headPath.move(to: q); headPath.addLine(to: wing(-.pi / 7)); headPath.addLine(to: wing(.pi / 7)); headPath.closeSubpath()
+        let length = hypot(q.x - p.x, q.y - p.y)
+        if length <= head * 0.5 { return (CGMutablePath(), headPath) }
+        // a haste: o arco de p até ao pescoço (o controlo mantém-se: o arco só encurta no fim)
+        let shaft = CGMutablePath()
+        shaft.move(to: p)
+        shaft.addQuadCurve(to: neck, control: c)
+        return (shaft.copy(strokingWithWidth: CGFloat(lw), lineCap: .round, lineJoin: .round, miterLimit: 10), headPath)
+    }
+
     /// Linha em ziguezague entre dois pontos: dentes com amplitude e passo proporcionais à espessura.
     static func zigzagPath(from p: CGPoint, to q: CGPoint, lineWidth lw: Double) -> CGPath {
         let path = CGMutablePath()

@@ -2184,6 +2184,93 @@ extension SelfTests {
         return fails
     }
 
+    /// «Texto» na captura: reconhece uma área sintética, abre a janela, copia, «só uma linha», edição à mão.
+    @MainActor static func textCaptureSelfTest() -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        // junção pura
+        check(TextCaptureWindow.join(["  Olá ", "", "mundo"], singleLine: false) == "Olá\nmundo" && TextCaptureWindow.join(["Olá", "mundo  todo"], singleLine: true) == "Olá mundo todo", "juntar linhas / uma só linha")
+        // uma área com duas linhas de texto
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 220, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 700, height: 220).fill()
+        ("Pedido 48213 aprovado" as NSString).draw(at: NSPoint(x: 40, y: 140), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 36), .foregroundColor: NSColor.black])
+        ("Entrega em 10 dias" as NSString).draw(at: NSPoint(x: 40, y: 60), withAttributes: [.font: NSFont.systemFont(ofSize: 32), .foregroundColor: NSColor.darkGray])
+        NSGraphicsContext.restoreGraphicsState()
+        let img = rep.cgImage!
+        let lines = ((try? TextRecognizer.recognize(img, origin: Point(x: 0, y: 0))) ?? []).map(\.text)
+        check(lines.count == 2 && lines[0].contains("48213") && lines[1].lowercased().contains("entrega"), "reconheceu as duas linhas (\(lines))")
+        NSPasteboard.general.clearContents()
+        TextCaptureWindow.present(lines: lines, image: img)
+        guard let w = TextCaptureWindow.current else { return fails + ["sem janela"] }
+        w.setSingleLine(false)
+        check(w.text.contains("\n") && NSPasteboard.general.string(forType: .string) == w.text, "o texto fica em duas linhas e já copiado (\(String(describing: NSPasteboard.general.string(forType: .string))))")
+        w.setSingleLine(true)
+        check(!w.text.contains("\n") && w.text.contains("aprovado Entrega") && NSPasteboard.general.string(forType: .string) == w.text, "«Só uma linha» junta e copia de novo (\(w.text))")
+        check(UserDefaults.standard.bool(forKey: "textCaptureSingleLine"), "a opção fica guardada")
+        w.setSingleLine(false)
+        check(w.window.isVisible && w.window.title == L("Texto da captura"), "a janela está visível")
+        w.window.close()
+        TextCaptureWindow.present(lines: [], image: img)
+        check(TextCaptureWindow.current?.text.isEmpty == true, "sem texto a janela abre vazia, com aviso")
+        TextCaptureWindow.current?.window.close()
+        return fails
+    }
+
+    /// Linhas e setas curvas: criação com a ferramenta, 3 alças, dobrar pela alça do meio, toque, reta ↔ curva, desenho.
+    @MainActor static func curvesSelfTest(dir: URL) -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CaptureStore.overrideFolder = dir
+        let state = AppState.shared
+        if let e = state.createBlankImage(width: 600, height: 400, backgroundHex: "#FFFFFF", transparent: false) { return ["não criou a imagem: \(e)"] }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        guard let m = state.model, let canvas = CanvasView.current else { return ["sem editor"] }
+        m.zoomFit(); RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        func rgb(_ x: Int, _ y: Int) -> (Int, Int, Int, Int)? {
+            guard let png = m.exportPNG(), let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil), let p = pixel(img, x, y) else { return nil }
+            return (p.r, p.g, p.b, p.a)
+        }
+        func isRed(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.0 > 200 && $0.1 < 80 && $0.2 < 80 } ?? false }
+        func isWhite(_ p: (Int, Int, Int, Int)?) -> Bool { p.map { $0.0 > 235 && $0.1 > 235 && $0.2 > 235 } ?? false }
+        // 1) linha reta, depois «Curva» no painel: passa a curva com o controlo por omissão; a reta entre as pontas deixa de ter tinta
+        m.tool = .line; m.setCurved(false)
+        var st = m.currentStyle; st.colorHex = "#FF0000"; st.lineWidth = 6; m.setStyle(st)
+        canvas.debugMouse(at: Point(x: 100, y: 200), dragTo: Point(x: 500, y: 200))
+        guard let id = m.selection else { return fails + ["não criou a linha"] }
+        check(isRed(rgb(300, 200)), "a linha reta passa pelo meio")
+        m.setCurved(true)
+        if case let .curve(a, b, c) = m.selected?.shape {
+            check(a == Point(x: 100, y: 200) && b == Point(x: 500, y: 200) && abs(c.x - 300) < 1 && abs(c.y - 300) < 1, "a curva nasce com o controlo ao lado (\(c))")
+        } else { fails.append("«Curva» devia dar uma linha curva (\(String(describing: m.selected?.shape)))") }
+        check(m.selected?.shape.handles.count == 3, "a curva tem 3 alças")
+        check(isWhite(rgb(300, 200)) && isRed(rgb(300, 250)), "a curva passa pelo vértice (300,250), não pelo meio da reta (\(String(describing: rgb(300, 250))))")
+        check(m.selected?.shape.hits(Point(x: 300, y: 250), tolerance: 4) == true && m.selected?.shape.hits(Point(x: 300, y: 200), tolerance: 4) == false, "o toque segue a curva")
+        // 2) arrastar a alça do meio dobra a curva para cima
+        guard let ctrl = m.selected?.shape.handles[2] else { return fails + ["sem alça do meio"] }
+        canvas.debugMouse(at: ctrl, dragTo: Point(x: 300, y: 100))
+        if case let .curve(_, _, c) = m.selected?.shape { check(abs(c.x - 300) < 2 && abs(c.y - 100) < 2, "a alça do meio move o controlo (\(c))") } else { fails.append("deixou de ser curva") }
+        check(isRed(rgb(300, 150)) && isWhite(rgb(300, 250)), "a curva dobrou para cima")
+        m.undo()
+        check(isRed(rgb(300, 250)), "desfazer repõe a dobra")
+        // 3) «Curva» desligada: volta a reta; o padrão da ferramenta fica guardado
+        m.setCurved(false)
+        if case .line = m.selected?.shape {} else { fails.append("devia voltar a reta") }
+        m.selection = nil; m.tool = .arrow; m.setCurved(true)
+        var ast = m.currentStyle; ast.colorHex = "#FF0000"; ast.lineWidth = 6; m.setStyle(ast)
+        check(m.curvedDefault(for: .arrow) && !m.curvedDefault(for: .line), "o padrão «curva» é por ferramenta")
+        m.selection = nil
+        canvas.debugMouse(at: Point(x: 100, y: 300), dragTo: Point(x: 500, y: 300))
+        if case .curvedArrow = m.selected?.shape {} else { fails.append("a seta nova devia nascer curva (\(String(describing: m.selected?.shape)))") }
+        check(isRed(rgb(300, 350)) || isRed(rgb(300, 352)), "a seta curva desenha-se pelo arco")
+        check(isRed(rgb(492, 300)) || isRed(rgb(488, 300)), "a ponta da seta está no fim")
+        check(L(m.selected!.shape.kindName) == L("Seta curva"), "chama-se Seta curva")
+        m.setCurved(false); m.tool = .select
+        m.delete(id)
+        return fails
+    }
+
     @MainActor static func ocrSelfTest(dir: URL) -> [String] {
         var fails: [String] = []
         func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }

@@ -60,8 +60,8 @@ extension Tool {
     /// A ferramenta que cria este tipo de elemento (para que editar um elemento selecionado atualize o padrão dessa ferramenta).
     static func forShape(_ shape: CaptureCore.Shape) -> Tool? {
         switch shape {
-        case .arrow: .arrow
-        case .line: .line
+        case .arrow, .curvedArrow: .arrow
+        case .line, .curve: .line
         case .rect: .rect
         case .ellipse: .ellipse
         case .text, .textBox: .text

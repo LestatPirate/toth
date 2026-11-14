@@ -152,6 +152,10 @@ public enum Shape: Codable, Equatable, Sendable {
     case fill(origin: Point, width: Double, height: Double, mask: String? = nil)
     /// Linha em ziguezague (a «linha de corte» do Cortar faixa; desenha-se com a cor e a espessura do estilo).
     case zigzag(from: Point, to: Point)
+    /// Linha curva (arco quadrático): `control` é a alça do meio, que se arrasta para a dobrar.
+    case curve(from: Point, to: Point, control: Point)
+    /// Seta curva: como `curve`, com a ponta no fim (tangente à curva).
+    case curvedArrow(from: Point, to: Point, control: Point)
     /// Reparo por clonagem: a região é coberta com o que está por baixo noutro sítio (`source` = canto superior esquerdo da origem).
     case clone(origin: Point, width: Double, height: Double, source: Point)
 }

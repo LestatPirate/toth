@@ -44,6 +44,40 @@ enum ScreenCapturer {
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
+    /// O mesmo instantâneo sem o ambiente de trabalho (papel de parede e ícones): essas janelas ficam de fora e o que
+    /// sobra assenta numa cor lisa neutra. `nil` se não for possível (sem permissão, ecrã não encontrado…).
+    static func cleanSnapshot(of screen: NSScreen) async -> CGImage? {
+        let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        guard let all = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+              let noDesk = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true),
+              let display = all.displays.first(where: { $0.displayID == displayID }) else { return nil }
+        let keep = Set(noDesk.windows.map(\.windowID))
+        let me = ProcessInfo.processInfo.processIdentifier
+        let excluded = all.windows.filter { !keep.contains($0.windowID) || $0.owningApplication?.processID == me }
+        let config = SCStreamConfiguration()
+        config.width = Int((screen.frame.width * screen.backingScaleFactor).rounded())
+        config.height = Int((screen.frame.height * screen.backingScaleFactor).rounded())
+        config.showsCursor = false
+        config.capturesAudio = false
+        config.captureResolution = .best
+        config.shouldBeOpaque = false   // onde não há janelas fica transparente: pinta-se com a cor lisa
+        let filter = SCContentFilter(display: display, excludingWindows: excluded)
+        guard let img = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else { return nil }
+        return flatten(img, on: cleanBackground)
+    }
+
+    /// Cor do fundo limpo (um cinzento claro neutro).
+    static let cleanBackground = CGColor(srgbRed: 0.91, green: 0.91, blue: 0.92, alpha: 1)
+
+    /// A imagem sobre uma cor lisa (o que era transparente fica dessa cor).
+    static func flatten(_ img: CGImage, on color: CGColor) -> CGImage {
+        guard let ctx = CGContext(data: nil, width: img.width, height: img.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return img }
+        ctx.setFillColor(color); ctx.fill(CGRect(x: 0, y: 0, width: img.width, height: img.height))
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
+        return ctx.makeImage() ?? img
+    }
+
     /// As janelas normais (de outras apps) visíveis em `screen`, da frente para trás, com o retângulo em coordenadas da vista
     /// do seletor desse ecrã. Ficam de fora as do próprio Toth, as do sistema (barra de menus, Dock) e as minúsculas.
     static func windows(on screen: NSScreen) async -> [WindowInfo] {

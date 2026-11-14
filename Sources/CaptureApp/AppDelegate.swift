@@ -157,6 +157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let type = (try? f.resourceValues(forKeys: [.contentTypeKey]).contentType?.identifier) ?? "?"
             print("ASSOC-CHECK: \(f.lastPathComponent) | tipo=\(type) | abre com=\(app)"); exit(0)
         }
+        if let i = args.firstIndex(of: "--curves-selftest"), args.count > i + 1 {
+            let dir = URL(fileURLWithPath: args[i + 1]); later("CURVES-SELFTEST") { SelfTests.curvesSelfTest(dir: dir) }
+        }
         if let i = args.firstIndex(of: "--features-selftest"), args.count > i + 1 {
             let dir = URL(fileURLWithPath: args[i + 1]); later("FEATURES-SELFTEST") { SelfTests.featuresSelfTest(dir: dir) }
         }
@@ -332,6 +335,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // `--clean-check`: tira o instantâneo «limpo» do ecrã principal e só imprime a cor de alguns píxeis (nada é gravado).
+        if args.contains("--clean-check") {
+            Task { @MainActor in
+                guard await Permissions.ensure(), let screen = NSScreen.main else { print("CLEAN-CHECK: sem permissão/ecrã"); exit(1) }
+                guard let img = await ScreenCapturer.cleanSnapshot(of: screen) else { print("CLEAN-CHECK: sem instantâneo limpo"); exit(1) }
+                var grey = 0, total = 0
+                for y in stride(from: 0, to: img.height, by: 61) { for x in stride(from: 0, to: img.width, by: 61) {
+                    total += 1
+                    if let p = SelfTests.pixel(img, x, y), abs(p.r - 232) <= 3, abs(p.g - 232) <= 3, abs(p.b - 235) <= 4 { grey += 1 }
+                } }
+                print("CLEAN-CHECK: \(img.width)x\(img.height), \(grey) de \(total) amostras com a cor do fundo limpo"); exit(0)
+            }
+        }
+        // `--selector-selftest`: quadro automático, bordas, lupa, «Texto» e «Fundo limpo» do seletor (imagem sintética).
+        if args.contains("--selector-selftest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let fails = RegionSelector.selfTest()
+                print(fails.isEmpty ? "SELECTOR-SELFTEST: OK" : "SELECTOR-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                exit(fails.isEmpty ? 0 : 1)
+            }
+        }
+        // `--textcapture-selftest`: reconhecer o texto de uma área sintética e mostrá-lo na janela «Texto da captura».
+        if args.contains("--textcapture-selftest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let fails = SelfTests.textCaptureSelfTest()
+                print(fails.isEmpty ? "TEXTCAPTURE-SELFTEST: OK" : "TEXTCAPTURE-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                exit(fails.isEmpty ? 0 : 1)
+            }
+        }
         // `--render-selector <saida.png>`: desenha o seletor de região (imagem sintética) fora do ecrã.
         if let i = CommandLine.arguments.firstIndex(of: "--render-selector"), CommandLine.arguments.count > i + 1, let screen = NSScreen.main {
             let size = CGSize(width: 1000, height: 640)
@@ -628,12 +660,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 var snapshots: [(screen: NSScreen, image: CGImage)] = []
                 var windows: [[WindowInfo]] = []
+                var clean: [CGImage?] = []
+                let synthetic = CommandLine.arguments.contains("--capture-hold")
                 for screen in NSScreen.screens {
                     // `--capture-hold` usa uma imagem sintética em vez do ecrã real (testes visuais sem expor o ecrã).
-                    let image = CommandLine.arguments.contains("--capture-hold") ? Self.syntheticSnapshot(for: screen) : try await ScreenCapturer.snapshot(of: screen)
-                    snapshots.append((screen, image))
-                    windows.append(CommandLine.arguments.contains("--capture-hold") ? Self.syntheticWindows(for: screen) : await ScreenCapturer.windows(on: screen))
+                    // O instantâneo normal e o «limpo» (sem ambiente de trabalho) tiram-se ao mesmo tempo, para serem do mesmo instante.
+                    async let normal: CGImage = synthetic ? Self.syntheticSnapshot(for: screen) : try await ScreenCapturer.snapshot(of: screen)
+                    async let cleaned: CGImage? = synthetic ? ScreenCapturer.flatten(Self.syntheticSnapshot(for: screen), on: ScreenCapturer.cleanBackground) : await ScreenCapturer.cleanSnapshot(of: screen)
+                    snapshots.append((screen, try await normal))
+                    clean.append(await cleaned)
+                    windows.append(synthetic ? Self.syntheticWindows(for: screen) : await ScreenCapturer.windows(on: screen))
                 }
+                selector.onText = { image in TextCaptureWindow.show(image) }
                 selector.onVideo = { screen, rect in
                     Task { @MainActor in
                         guard let url = await VideoCaptureSession.record(screen: screen, rect: rect) else { return }
@@ -661,7 +699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self?.finish { image }
                     }
                 }
-                selector.begin(snapshots: snapshots, screenWindows: windows, windowMode: windowMode) { [weak self] image in
+                selector.begin(snapshots: snapshots, screenWindows: windows, windowMode: windowMode, cleanSnapshots: clean) { [weak self] image in
                     guard let image else { return }   // cancelado
                     self?.finish { image }
                 }

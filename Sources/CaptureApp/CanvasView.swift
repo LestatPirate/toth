@@ -819,7 +819,8 @@ final class CanvasView: NSView {
         let o = Point(x: min(a.x, b.x), y: min(a.y, b.y))
         let w = abs(a.x - b.x), h = abs(a.y - b.y)
         switch tool {
-        case .line: return .line(from: a, to: b)
+        case .line: return model.curvedDefault(for: .line) ? .curve(from: a, to: b, control: CaptureCore.Shape.defaultControl(a, b)) : .line(from: a, to: b)
+        case .arrow: return model.curvedDefault(for: .arrow) ? .curvedArrow(from: a, to: b, control: CaptureCore.Shape.defaultControl(a, b)) : .arrow(from: a, to: b)
         case .rect: return .rect(origin: o, width: w, height: h)
         case .ellipse: return .ellipse(origin: o, width: w, height: h)
         case .highlight: return .highlight(origin: o, width: w, height: h)
