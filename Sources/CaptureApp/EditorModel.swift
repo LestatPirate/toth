@@ -818,7 +818,8 @@ final class EditorModel: ObservableObject {
             $0.nextStepNumber = nil
         }
         selection = id
-        finishedDrawing()
+        // as etapas põem-se em sequência (como no Snagit): a ferramenta fica ativa até Esc ou outra ferramenta
+        onCreated?(id)
     }
 
     /// Raio com que nascem as etapas novas: o último usado (guardado entre sessões).

@@ -647,11 +647,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quantas vezes a captura de região foi pedida (usado no autoteste do atalho).
     private(set) var captureRequests = 0
 
-    @objc func captureRegion() { beginCapture(windowMode: false) }
+    @objc func captureRegion() { beginCapture() }
     /// «Capturar janela»: o seletor abre já no modo «Janela» (clicar numa janela captura só essa janela).
-    @objc func captureWindow() { beginCapture(windowMode: true) }
+    /// (Já não há modo «Janela»: a janela sob o rato é sugerida sempre; fica para quem tenha o menu antigo.)
+    @objc func captureWindow() { beginCapture() }
 
-    func beginCapture(windowMode: Bool) {
+    func beginCapture() {
         captureRequests += 1
         guard !selector.isActive else { return }
         Task { @MainActor in
@@ -699,7 +700,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self?.finish { image }
                     }
                 }
-                selector.begin(snapshots: snapshots, screenWindows: windows, windowMode: windowMode, cleanSnapshots: clean) { [weak self] image in
+                selector.begin(snapshots: snapshots, screenWindows: windows, cleanSnapshots: clean) { [weak self] image in
                     guard let image else { return }   // cancelado
                     self?.finish { image }
                 }

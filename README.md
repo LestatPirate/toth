@@ -83,10 +83,12 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 | **Velocidade em qualquer trecho** | Marque um trecho e escolha 0,25× a 4×: só ele muda; sem nada marcado, o vídeo todo. O som mantém o tom. |
 | **Faixa de baixo** | Botão direito → **Ocultar da faixa**: sai dali e fica na biblioteca (volta pelo botão direito em «Abrir Biblioteca»). |
 | **Abrir com o Toth** | Imagens, vídeos, `.capture` e `.tothvideo` abrem-se pelo *Abrir com* do Finder ou arrastando para o Dock; o que vem de fora importa-se como cópia. |
-| **Seletor mais esperto** | **Quadro automático** (o painel, botão ou janela sob o rato marca-se; Enter captura), redimensionar por **qualquer ponto das bordas**, **lupa** com os píxeis e coordenadas enquanto arrasta. |
+| **Seletor mais esperto** | **Sugestão automática** sempre ativa: o painel, botão ou campo sob o rato, ou a janela inteira (capturada só ela, mesmo tapada); **Enter** aceita, arrastar ignora. Redimensionar por **qualquer ponto das bordas** e **lupa** com os píxeis enquanto arrasta. |
 | **Texto na captura** | Botão de texto na barra do seletor: reconhece o texto da área (local) e abre uma janela com ele já copiado, editável, com **Só uma linha**. Sem passar pelo editor. |
 | **Fundo limpo** | Botão na barra do topo: a captura sai sem papel de parede nem ícones do ambiente de trabalho. |
 | **Linhas e setas curvas** | **Curva** na secção Linha: a alça do meio dobra; a ponta da seta segue o arco. |
+| **Etapas em sequência** | Cada clique acrescenta a etapa seguinte; Esc ou outra ferramenta terminam. |
+| **Reparo junto ao topo** | Corrigido: um Reparo perto do topo da imagem não apagava nada (a edição do Texto da imagem dependia dele). |
 | **Recortar pela borda** | Apagar uma faixa junto a uma borda **recorta** a área: o apagado nunca a faz crescer, e selecionar para lá da imagem fica cortado pela área. |
 | **Pasta das capturas** | Por omissão `~/Pictures/TothCapture`; alterável nas Preferências, com capturas, vídeos e carimbos (subpasta «Carimbos») movidos para o novo sítio. |
 
@@ -231,10 +233,12 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 | **Speed on any span** | Mark a span and pick 0.25× to 4×: only that span changes; with nothing marked, the whole video. The sound keeps its pitch. |
 | **Bottom strip** | Right-click → **Hide from strip**: it leaves the strip and stays in the library (bring it back with a right-click in “Open Library”). |
 | **Open with Toth** | Images, videos, `.capture` and `.tothvideo` open through the Finder's *Open with* or by dragging onto the Dock; outside files are imported as copies. |
-| **Smarter selector** | **Smart frame** (the panel, button or window under the pointer is outlined; Enter captures it), resize from **any point of the edges**, a **loupe** with pixels and coordinates while dragging. |
+| **Smarter selector** | **Automatic suggestion**, always on: the panel, button or field under the pointer, or the whole window (captured on its own, even when covered); **Enter** accepts, dragging ignores it. Resize from **any point of the edges** and a **loupe** with the pixels while dragging. |
 | **Text in the capture** | Text button in the selector bar: recognizes the text of the area (locally) and opens a window with it already copied, editable, with **Single line**. No editor involved. |
 | **Clean background** | Button in the top bar: the capture comes out without the wallpaper or desktop icons. |
 | **Curved lines and arrows** | **Curved** in the Line section: the middle handle bends; the arrow head follows the arc. |
+| **Steps in sequence** | Each click adds the next step; Esc or another tool ends. |
+| **Repair near the top edge** | Fixed: a Repair close to the top of the image did not erase anything (the OCR edit relied on it). |
 | **Crop by the edge** | Erasing a band along an edge **crops** the area: an erased region never makes it grow, and selecting beyond the image is clipped to the area. |
 | **Captures folder** | `~/Pictures/TothCapture` by default; changeable in Preferences, with captures, videos and stamps (“Carimbos” subfolder) moved to the new place. |
 

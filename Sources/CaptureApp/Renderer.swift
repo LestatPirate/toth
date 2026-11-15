@@ -308,8 +308,9 @@ enum Renderer {
                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         sctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
         let hx = Int(hole.minX.rounded()), hy = Int(hole.minY.rounded()), hw = Int(hole.width.rounded()), hh = Int(hole.height.rounded())
-        // o buffer do CGContext tem a origem em baixo: a linha y da imagem é a linha h-1-y do buffer
-        Inpaint.fill(&px, width: w, height: h, hole: (hx, h - hy - hh, hw, hh), mask: mask.flatMap { $0.count == hw * hh ? $0 : nil })
+        // (a 1.ª fila em memória do bitmap é a de cima, como `hole`: nada a virar. Com `h - hy - hh` o buraco ficava em espelho e
+        // só coincidia quando a região estava centrada na margem; junto ao topo o Reparo não apagava nada.)
+        Inpaint.fill(&px, width: w, height: h, hole: (hx, hy, hw, hh), mask: mask.flatMap { $0.count == hw * hh ? $0 : nil })
         guard let dctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let out = dctx.makeImage() else { return nil }
         return out.cropping(to: CGRect(x: hx, y: hy, width: hw, height: hh))
@@ -466,9 +467,8 @@ enum Renderer {
 
         case let .curvedArrow(p, q, c):
             // a haste é o arco até perto da ponta; a ponta é um triângulo tangente ao arco (num só caminho, para a sombra e a opacidade não se somarem)
-            let parts = curvedArrowPath(from: CGPoint(x: p.x, y: p.y), to: CGPoint(x: q.x, y: q.y), control: CGPoint(x: c.x, y: c.y), lineWidth: a.style.lineWidth)
-            ctx.addPath(parts.shaft); ctx.fillPath()   // (haste e ponta em dois preenchimentos: juntos, o sentido dos contornos abria um buraco)
-            ctx.addPath(parts.head); ctx.fillPath()
+            ctx.addPath(curvedArrowPath(from: CGPoint(x: p.x, y: p.y), to: CGPoint(x: q.x, y: q.y), control: CGPoint(x: c.x, y: c.y), lineWidth: a.style.lineWidth))
+            ctx.fillPath()
 
         case let .zigzag(p, q):
             ctx.setLineJoin(.miter)
@@ -555,22 +555,55 @@ enum Renderer {
 }
 
 extension Renderer {
-    /// Seta curva: contorno preenchido da haste (o arco com a espessura da linha, pontas redondas) mais a ponta tangente.
-    static func curvedArrowPath(from p: CGPoint, to q: CGPoint, control c: CGPoint, lineWidth lw: Double) -> (shaft: CGPath, head: CGPath) {
+    /// Seta curva: um só contorno fechado, como na seta reta (haste com extremo redondo + ponta), para não haver emenda
+    /// visível entre a haste e a ponta. A haste é o arco `p → pescoço` com a espessura da linha (lados a `±hw` da normal).
+    static func curvedArrowPath(from p: CGPoint, to q: CGPoint, control c: CGPoint, lineWidth lw: Double) -> CGPath {
         let head = CGFloat(max(14, lw * 4))
-        // tangente no fim: de c para q
-        let angle = atan2(q.y - c.y, q.x - c.x)
-        func wing(_ d: CGFloat) -> CGPoint { CGPoint(x: q.x - cos(angle + d) * head, y: q.y - sin(angle + d) * head) }
-        let neck = CGPoint(x: q.x - cos(angle) * head * 0.5, y: q.y - sin(angle) * head * 0.5)
-        let headPath = CGMutablePath()
-        headPath.move(to: q); headPath.addLine(to: wing(-.pi / 7)); headPath.addLine(to: wing(.pi / 7)); headPath.closeSubpath()
-        let length = hypot(q.x - p.x, q.y - p.y)
-        if length <= head * 0.5 { return (CGMutablePath(), headPath) }
-        // a haste: o arco de p até ao pescoço (o controlo mantém-se: o arco só encurta no fim)
-        let shaft = CGMutablePath()
-        shaft.move(to: p)
-        shaft.addQuadCurve(to: neck, control: c)
-        return (shaft.copy(strokingWithWidth: CGFloat(lw), lineCap: .round, lineJoin: .round, miterLimit: 10), headPath)
+        let hw = CGFloat(lw) / 2
+        let endAngle = atan2(q.y - c.y, q.x - c.x)   // tangente no fim
+        func wing(_ d: CGFloat) -> CGPoint { CGPoint(x: q.x - cos(endAngle + d) * head, y: q.y - sin(endAngle + d) * head) }
+        let wingPlus = wing(-.pi / 7), wingMinus = wing(.pi / 7)
+        let path = CGMutablePath()
+        // pontos do arco e comprimento acumulado
+        let n = 48
+        var pts: [CGPoint] = [], acc: [CGFloat] = [0]
+        for i in 0...n {
+            let t = CGFloat(i) / CGFloat(n), u = 1 - t
+            pts.append(CGPoint(x: u * u * p.x + 2 * u * t * c.x + t * t * q.x, y: u * u * p.y + 2 * u * t * c.y + t * t * q.y))
+            if i > 0 { acc.append(acc[i - 1] + hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)) }
+        }
+        let length = acc[n]
+        if length <= head * 0.5 {   // seta muito curta: só a ponta
+            path.move(to: q); path.addLine(to: wingPlus); path.addLine(to: wingMinus); path.closeSubpath()
+            return path
+        }
+        // a haste vai até ao pescoço (a `head/2` do fim, medido ao longo do arco)
+        let neckLen = length - head * 0.5
+        var last = n
+        while last > 0 && acc[last] > neckLen { last -= 1 }
+        var shaft = Array(pts[0...last])
+        if last < n {   // ponto exato do pescoço por interpolação
+            let f = (neckLen - acc[last]) / max(1e-6, acc[last + 1] - acc[last])
+            shaft.append(CGPoint(x: pts[last].x + (pts[last + 1].x - pts[last].x) * f, y: pts[last].y + (pts[last + 1].y - pts[last].y) * f))
+        }
+        func normal(_ i: Int) -> CGPoint {   // normal unitária no ponto i da haste (tangente por diferenças)
+            let a = shaft[max(0, i - 1)], b = shaft[min(shaft.count - 1, i + 1)]
+            let dx = b.x - a.x, dy = b.y - a.y, len = max(1e-6, hypot(dx, dy))
+            return CGPoint(x: -dy / len, y: dx / len)
+        }
+        // lado +n de p até ao pescoço, ponta, lado −n de volta, extremo redondo
+        let n0 = normal(0)
+        path.move(to: CGPoint(x: shaft[0].x + n0.x * hw, y: shaft[0].y + n0.y * hw))
+        for i in 1..<shaft.count { let nn = normal(i); path.addLine(to: CGPoint(x: shaft[i].x + nn.x * hw, y: shaft[i].y + nn.y * hw)) }
+        path.addLine(to: wingPlus); path.addLine(to: q); path.addLine(to: wingMinus)
+        for i in stride(from: shaft.count - 1, through: 0, by: -1) { let nn = normal(i); path.addLine(to: CGPoint(x: shaft[i].x - nn.x * hw, y: shaft[i].y - nn.y * hw)) }
+        let startAngle = atan2(shaft[min(1, shaft.count - 1)].y - shaft[0].y, shaft[min(1, shaft.count - 1)].x - shaft[0].x)
+        for k in 1...10 {
+            let t = startAngle - .pi / 2 - CGFloat(k) * .pi / 10
+            path.addLine(to: CGPoint(x: p.x + cos(t) * hw, y: p.y + sin(t) * hw))
+        }
+        path.closeSubpath()
+        return path
     }
 
     /// Linha em ziguezague entre dois pontos: dentes com amplitude e passo proporcionais à espessura.

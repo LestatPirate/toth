@@ -897,7 +897,12 @@ enum SelfTests {
         m.tool = .step; m.selection = nil
         canvas.debugMouse(at: inA, option: true)
         check(count() == n2 + 1 && m.selected?.shape.stepNumber != nil, "⌥+clique devia criar a etapa por cima do objeto")
-        check(m.tool == .select, "depois da etapa volta a Mover")
+        check(m.tool == .step, "depois da etapa a ferramenta continua ativa (etapas em sequência)")
+        canvas.debugMouse(at: Point(x: inA.x + 120, y: inA.y + 120))
+        check(count() == n2 + 2 && m.selected?.shape.stepNumber == 2, "o clique seguinte acrescenta a etapa 2 sem voltar a escolher a ferramenta")
+        m.escape()
+        check(m.tool == .select, "Esc termina a sequência e volta a Mover")
+        m.undo()
         // ferramenta presa: continua ativa
         m.tool = .step; m.toolLocked = true; m.selection = nil
         canvas.debugMouse(at: Point(x: 700, y: 60))
@@ -2347,6 +2352,16 @@ extension SelfTests {
             } }
             check(blueInk > 40, "o texto reescrito aparece em azul no mesmo sítio (\(blueInk) píxeis)")
         } else { fails.append("sem exportação") }
+        // escondendo a caixa de texto, o original tem de ter desaparecido (o Reparo apaga-o de verdade)
+        m.setVisible(tid, false)
+        if let png = m.exportPNG(), let src = CGImageSourceCreateWithData(png as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) {
+            var blueInk = 0
+            for x in stride(from: Int(b1.rect.minX), to: Int(b1.rect.maxX), by: 2) { for y in stride(from: Int(b1.rect.minY), to: Int(b1.rect.maxY), by: 2) {
+                if let p = pixel(img, x, y), p.b > 150, p.r < 120 { blueInk += 1 }
+            } }
+            check(blueInk < 5, "sem a caixa, o texto original está apagado pelo Reparo (\(blueInk) píxeis azuis)")
+        }
+        m.undo()
         m.undo()
         check(m.doc.annotations.count == n0, "desfazer tira os dois objetos de uma vez")
         m.tool = .select

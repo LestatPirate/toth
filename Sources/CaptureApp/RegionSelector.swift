@@ -25,9 +25,9 @@ final class RegionSelector {
     /// Chamado quando se escolhe «Texto»: a área recortada, para reconhecer o texto (sem abrir o editor).
     var onText: ((CGImage) -> Void)?
 
-    /// `screenWindows`: as janelas de cada ecrã (modo «Janela»; vazio = só área). `windowMode`: começa logo no modo «Janela».
+    /// `screenWindows`: as janelas de cada ecrã (para a sugestão de janela; vazio = só elementos pelos píxeis).
     /// `cleanSnapshots`: por ecrã, o mesmo instante sem papel de parede nem ícones (para o «Fundo limpo»); `nil` = não há.
-    func begin(snapshots: [(screen: NSScreen, image: CGImage)], screenWindows: [[WindowInfo]] = [], windowMode: Bool = false, cleanSnapshots: [CGImage?] = [], completion: @escaping (CGImage?) -> Void) {
+    func begin(snapshots: [(screen: NSScreen, image: CGImage)], screenWindows: [[WindowInfo]] = [], cleanSnapshots: [CGImage?] = [], completion: @escaping (CGImage?) -> Void) {
         guard !isActive else { return }
         MainWindow.hideForCapture()   // antes de ativar o Toth: senão o editor passa por cima da app que se quer capturar
         self.completion = completion
@@ -43,8 +43,6 @@ final class RegionSelector {
             view.onVideo = { [weak self] rect in self?.endVideo(screen: screen, rect: rect) }
             view.onWindow = { [weak self] info, shadow in self?.endWindow(info, shadow: shadow) }
             view.onWindowVideo = { [weak self] info in self?.endWindowVideo(screen: screen, info: info) }
-            view.onModeChange = { [weak self, weak view] on in self?.views.forEach { if $0 !== view { $0.setWindowMode(on) } } }
-            if windowMode { view.setWindowMode(true) }
             // Só pode haver uma seleção de cada vez (em qualquer ecrã).
             view.onBeginSelecting = { [weak self, weak view] in self?.views.forEach { if $0 !== view { $0.clearSelection() } } }
             window.contentView = view
@@ -97,7 +95,7 @@ final class RegionSelector {
     }
 
     /// Para testes visuais: desenha o seletor (com uma área já escolhida) fora do ecrã e grava um PNG.
-    /// Com `windows`, desenha o modo «Janela» com a 1.ª janela sob o rato.
+    /// Com `windows`, desenha a sugestão de janela (a 1.ª janela sob o rato), sem área escolhida.
     static func renderForTests(image: CGImage, size: CGSize, selection: CGRect, windows: [WindowInfo] = [], to path: String) {
         let view = SelectionView(frame: CGRect(origin: .zero, size: size), image: image)
         let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -105,7 +103,7 @@ final class RegionSelector {
         window.contentView = view
         window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
         window.makeKeyAndOrderFront(nil)
-        if windows.isEmpty { view.debugSelect(selection) } else { view.windows = windows; view.setWindowMode(true); view.debugHover(windows[0].frame.origin.applying(.init(translationX: 20, y: 20))) }
+        if windows.isEmpty { view.debugSelect(selection) } else { view.windows = windows; view.debugHover(windows[0].frame.origin.applying(.init(translationX: 20, y: 20))) }
         RunLoop.current.run(until: Date().addingTimeInterval(0.4))
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
@@ -122,8 +120,8 @@ final class RegionSelector {
     func debugScroll() { views.first?.debugScrollClick() }
     /// Para testes: confirma a seleção atual como se se carregasse em Enter.
     func debugConfirm() { views.first?.confirm() }
-    /// Para testes: passa ao modo «Janela» e escolhe a janela sob o ponto (coordenadas da vista do 1.º ecrã).
-    func debugPickWindow(at p: CGPoint) { views.first?.setWindowMode(true); views.first?.debugHover(p); views.first?.debugClickWindow() }
+    /// Para testes: aceita a janela sugerida sob o ponto (coordenadas da vista do 1.º ecrã), como com Enter.
+    func debugPickWindow(at p: CGPoint) { views.first?.debugHover(p); views.first?.debugClickWindow() }
     /// Para testes: o quadro automático sob o ponto.
     func debugFrame(at p: CGPoint) -> CGRect? { views.first?.debugFrame(at: p) }
     /// Para testes: «Texto» como se se clicasse no botão.
@@ -158,6 +156,17 @@ final class RegionSelector {
         let text = view.debugFrame(at: CGPoint(x: 160, y: 128))
         check(text.map { abs($0.minX - 120) <= 2 && abs($0.maxX - 520) <= 2 } ?? false, "em cima do texto apanha o painel à volta (\(String(describing: text)))")
         check(view.debugFrame(at: CGPoint(x: 40, y: 40)) == nil, "no gradiente não há quadro")
+        // uma janela de outra app sobre o gradiente (sem elemento por baixo): a sugestão é a janela inteira, e Enter captura-a só a ela
+        view.windows = [WindowInfo(id: 7, frame: CGRect(x: 600, y: 80, width: 300, height: 200), title: "Doc", app: "Editor")]
+        var picked: WindowInfo?
+        view.onWindow = { w, _ in picked = w }
+        view.debugHover(CGPoint(x: 650, y: 120))
+        check(view.debugSuggestionIsWindow && view.debugFrameShown == CGRect(x: 600, y: 80, width: 300, height: 200), "sobre a janela sem elemento, a sugestão é a janela (\(String(describing: view.debugFrameShown)))")
+        view.debugEnter()
+        check(picked?.id == 7, "Enter na janela sugerida captura só essa janela")
+        view.debugHover(CGPoint(x: 40, y: 40))
+        check(view.debugFrameShown == nil && !view.debugSuggestionIsWindow, "fora de janelas e elementos não há sugestão")
+        view.windows = []
         // Enter com o quadro: captura-o
         var got: CGImage?
         view.onConfirm = { got = $0 }
@@ -197,7 +206,7 @@ final class RegionSelector {
         if let g = got, let px = SelfTests.pixel(g, 10, 10) { check(px.r > 250 && px.g > 250, "sem Fundo limpo o recorte vem da imagem normal (\(px))") }
         // 5) dica do botão: desenha-se na vista ao passar o rato (as do sistema não aparecem nesta janela) e não entra na captura
         view.debugSelect(CGRect(x: 120, y: 80, width: 400, height: 300))
-        view.debugHover(button: 3)   // Fundo limpo
+        view.debugHover(button: 0)   // Fundo limpo
         check(view.debugHint?.hasPrefix("Fundo limpo") == true, "a dica do botão é a do Fundo limpo (\(String(describing: view.debugHint)))")
         guard let rep2 = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return fails + ["sem render da dica"] }
         view.cacheDisplay(in: view.bounds, to: rep2)
@@ -236,11 +245,11 @@ private final class SelectionView: NSView {
     var onVideo: ((CGRect) -> Void)?
     var onWindow: ((WindowInfo, Bool) -> Void)?
     var onWindowVideo: ((WindowInfo) -> Void)?
-    var onModeChange: ((Bool) -> Void)?
     var onText: ((CGImage) -> Void)?
     var onCleanChange: ((Bool) -> Void)?
 
-    private enum Mode { case idle, drawing(anchor: CGPoint), moving(offset: CGSize), resizing(handle: Int, original: CGRect) }
+    private enum Mode { case idle, drawing(anchor: CGPoint), moving(offset: CGSize), resizing(handle: Int, original: CGRect)
+        var isIdle: Bool { if case .idle = self { return true }; return false } }
     private var mode: Mode = .idle
     private var selection: CGRect?
     /// «Fundo limpo»: o mesmo instante sem papel de parede nem ícones (`nil` = não está disponível).
@@ -248,23 +257,22 @@ private final class SelectionView: NSView {
     private(set) var cleanOn = (UserDefaults.standard.object(forKey: "captureCleanDesktop") as? Bool) ?? false
     /// A imagem em uso (normal ou limpa).
     private var currentImage: CGImage { cleanOn ? (cleanImage ?? image) : image }
-    /// Quadro automático: o retângulo do conteúdo sob o rato (painel, botão, janela), aceite com Enter ou um clique.
-    private var smartOn = (UserDefaults.standard.object(forKey: "captureSmartFrame") as? Bool) ?? true
+    /// Sugestão sob o rato (sempre ativa, como no Snagit): o elemento (painel, botão, campo) pelos píxeis, ou a janela
+    /// inteira quando o rato está nela sem elemento por baixo. Enter captura-a; um clique escolhe-a como área; arrastar ignora-a.
     private var hoverFrame: CGRect?
+    /// A sugestão é a janela inteira (`hoverWindow`): com Enter captura-se só essa janela, mesmo tapada.
+    private var hoverIsWindow = false
     private var detector: FrameDetector?
     /// Onde está o rato (para a lupa).
     private var cursor: CGPoint?
     private var cleanButton: IconButton!
-    private var smartButton: IconButton!
     private var textButton: IconButton!
 
-    // Modo «Janela»: a janela sob o rato fica em destaque; um clique captura-a (só ela, mesmo tapada), sem sombra, ao tamanho exato.
+    // As janelas de outras apps (da frente para trás): a que está sob o rato pode ser sugerida inteira (captura-se só ela, mesmo tapada, ao tamanho exato).
     var windows: [WindowInfo] = []
-    private(set) var windowMode = false
     private var hoverWindow: WindowInfo?
+    /// Barra do topo: gravar a janela sob o rato em vídeo · fundo limpo.
     private let modeBar = IconBar()
-    private var areaModeButton: IconButton!
-    private var windowModeButton: IconButton!
     private var windowVideoButton: IconButton!
     private var tracking: NSTrackingArea?
 
@@ -291,16 +299,13 @@ private final class SelectionView: NSView {
         bar.setItems([cancelButton, IconBar.separator(), scrollButton, videoButton, textButton, IconBar.separator(), confirmButton])
         bar.isHidden = true
         addSubview(bar)
-        // barra do modo (sempre visível, no topo): área · janela · sombra · gravar a janela
-        areaModeButton = IconButton(symbol: "rectangle.dashed", tooltip: L("Área: arraste para escolher (Espaço alterna)"), target: self, action: #selector(areaModeClicked))
-        windowModeButton = IconButton(symbol: "macwindow", tooltip: L("Janela: clique numa janela para a capturar só a ela (Espaço alterna)"), target: self, action: #selector(windowModeClicked))
+        // barra do topo (sempre visível): gravar a janela sob o rato · fundo limpo
         windowVideoButton = IconButton(symbol: "video.fill", tooltip: L("Gravar a janela sob o rato em vídeo (MP4)"), target: self, action: #selector(windowVideoClicked))
-        smartButton = IconButton(symbol: "viewfinder.rectangular", tooltip: L("Quadro automático: o painel, botão ou janela sob o rato fica marcado; Enter ou um clique captura-o"), target: self, action: #selector(smartClicked))
         cleanButton = IconButton(symbol: "rectangle.dashed.badge.record", tooltip: L("Fundo limpo: a captura sai sem papel de parede nem ícones do ambiente de trabalho"), target: self, action: #selector(cleanClicked))
         addSubview(modeBar)
         rebuildModeBar()
         // a dica de cada botão desenha-se nesta vista (as dicas do sistema ficam por baixo desta janela e não se veem)
-        for b in [cancelButton, scrollButton, videoButton, textButton, confirmButton, areaModeButton, windowModeButton, windowVideoButton, smartButton, cleanButton] as [IconButton] {
+        for b in [cancelButton, scrollButton, videoButton, textButton, confirmButton, windowVideoButton, cleanButton] as [IconButton] {
             b.onHover = { [weak self, weak b] on in self?.hint = on ? b : nil }
         }
     }
@@ -309,7 +314,7 @@ private final class SelectionView: NSView {
     /// O botão com o rato em cima (a dica dele desenha-se por baixo da barra).
     private var hint: IconButton? { didSet { if hint !== oldValue { needsDisplay = true } } }
     var debugHint: String? { hint?.toolTip }
-    func debugHover(button index: Int) { let all: [IconButton] = [areaModeButton, windowModeButton, smartButton, cleanButton, cancelButton, scrollButton, videoButton, textButton, confirmButton]; hint = all.indices.contains(index) ? all[index] : nil }
+    func debugHover(button index: Int) { let all: [IconButton] = [cleanButton, windowVideoButton, cancelButton, scrollButton, videoButton, textButton, confirmButton]; hint = all.indices.contains(index) ? all[index] : nil }
 
     /// Dica do botão sob o rato: um balão escuro por baixo (ou por cima) da barra onde ele está.
     private func drawHint(_ ctx: CGContext) {
@@ -340,19 +345,14 @@ private final class SelectionView: NSView {
         addTrackingArea(t); tracking = t
     }
 
-    // MARK: Modo «Janela»
+    // MARK: Barra do topo
 
     private func rebuildModeBar() {
-        areaModeButton.prominent = !windowMode
-        windowModeButton.prominent = windowMode
-        smartButton.tint = smartOn ? nil : .secondaryLabelColor
+        windowVideoButton.isEnabled = hoverWindow != nil
         cleanButton.tint = cleanOn ? .systemGreen : .secondaryLabelColor
         cleanButton.isEnabled = cleanImage != nil
         cleanButton.toolTip = cleanImage == nil ? L("Fundo limpo: não disponível nesta captura") : (cleanOn ? L("Fundo limpo: ligado (sem papel de parede nem ícones)") : L("Fundo limpo: desligado"))
-        var items: [NSView] = [areaModeButton, windowModeButton]
-        if windowMode { items += [IconBar.separator(), windowVideoButton] }
-        else { items += [IconBar.separator(), smartButton, cleanButton] }
-        modeBar.setItems(items)
+        modeBar.setItems([windowVideoButton, IconBar.separator(), cleanButton])
         modeBar.setFrameOrigin(CGPoint(x: (bounds.width - modeBar.frame.width) / 2, y: 14))
         modeBar.isHidden = false
     }
@@ -366,7 +366,6 @@ private final class SelectionView: NSView {
         rebuildModeBar(); needsDisplay = true
     }
     @objc private func cleanClicked() { setClean(!cleanOn); onCleanChange?(cleanOn) }
-    @objc private func smartClicked() { smartOn.toggle(); UserDefaults.standard.set(smartOn, forKey: "captureSmartFrame"); hoverFrame = nil; rebuildModeBar(); needsDisplay = true }
     @objc private func textClicked() { guard let c = crop() else { return }; onText?(c.image) }
     func debugTextClick() { textClicked() }
 
@@ -381,7 +380,7 @@ private final class SelectionView: NSView {
         return d.frame(at: p, within: limit)
     }
     func debugFrame(at p: CGPoint) -> CGRect? { frame(at: p) }
-    func debugHoverFrame(at p: CGPoint) { hoverFrame = frame(at: p); needsDisplay = true }
+    func debugHoverFrame(at p: CGPoint) { debugHover(p) }
     func debugEnter() { keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)!) }
     var debugSelection: CGRect? { selection }
     var debugLoupeRect: CGRect? { loupeRect }
@@ -389,14 +388,6 @@ private final class SelectionView: NSView {
     func debugBeginDrag(at a: CGPoint) { pressed(at: a) }
     func debugEndDrag() { released() }
 
-    func setWindowMode(_ on: Bool) {
-        guard on != windowMode else { return }
-        windowMode = on
-        if on { selection = nil; mode = .idle; layoutButtons() } else { hoverWindow = nil }
-        rebuildModeBar(); needsDisplay = true
-    }
-    @objc private func areaModeClicked() { setWindowMode(false); onModeChange?(false) }
-    @objc private func windowModeClicked() { setWindowMode(true); onModeChange?(true) }
     @objc private func windowVideoClicked() { if let w = hoverWindow { onWindowVideo?(w) } }
 
     private func window(at p: CGPoint) -> WindowInfo? { windows.first { $0.frame.contains(p) } }   // da frente para trás
@@ -404,22 +395,26 @@ private final class SelectionView: NSView {
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         cursor = p
-        if windowMode {
-            let w = modeBar.frame.contains(p) ? hoverWindow : window(at: p)
-            if w != hoverWindow { hoverWindow = w; needsDisplay = true }
-            return
-        }
         // o cursor diz o que um arrasto faria: alça, borda, mover, ou desenhar
         if let sel = selection, case .idle = mode {
             if let h = handle(at: p, in: sel) { ([0, 4].contains(h) ? NSCursor.crosshair : [2, 6].contains(h) ? NSCursor.crosshair : [1, 5].contains(h) ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).set() }
             else if sel.contains(p) { NSCursor.openHand.set() }
             else { NSCursor.crosshair.set() }
         } else { NSCursor.crosshair.set() }
-        // quadro automático: só sem seleção (depois de escolher uma área, deixa de incomodar)
-        if smartOn, selection == nil, case .idle = mode, !modeBar.frame.contains(p) {
-            let f = frame(at: p)
-            if f != hoverFrame { hoverFrame = f; needsDisplay = true }
-        } else if hoverFrame != nil { hoverFrame = nil; needsDisplay = true }
+        // sugestão: só sem área escolhida (depois de escolher uma, deixa de incomodar); sobre as barras mantém-se a última
+        if selection == nil, case .idle = mode, !modeBar.frame.contains(p), !(!bar.isHidden && bar.frame.contains(p)) {
+            updateSuggestion(at: p)
+        } else if selection != nil, hoverFrame != nil { hoverFrame = nil; hoverIsWindow = false; needsDisplay = true }
+    }
+
+    /// A sugestão sob o ponto: o elemento pelos píxeis (dentro da janela que lá está) ou, sem elemento, a janela inteira.
+    private func updateSuggestion(at p: CGPoint) {
+        let w = window(at: p)
+        if w != hoverWindow { hoverWindow = w; rebuildModeBar() }
+        let element = frame(at: p)
+        let next: CGRect? = element ?? w.map { $0.frame.intersection(bounds) }
+        let isWindow = element == nil && w != nil
+        if next != hoverFrame || isWindow != hoverIsWindow { hoverFrame = next; hoverIsWindow = isWindow; needsDisplay = true }
     }
 
     /// Alça (0…7) ou borda sob o ponto: as alças têm prioridade; depois, qualquer ponto a ≤ 6 pt de uma borda, ao longo dela toda.
@@ -433,8 +428,17 @@ private final class SelectionView: NSView {
         if alongY && abs(p.x - sel.minX) <= tol { return 7 }
         return nil
     }
-    func debugHover(_ p: CGPoint) { hoverWindow = window(at: p); needsDisplay = true }
-    func debugClickWindow() { if let w = hoverWindow { onWindow?(w, false) } }
+    func debugHover(_ p: CGPoint) { cursor = p; updateSuggestion(at: p) }
+    /// Aceita a sugestão (como Enter): a janela inteira captura-se só a ela; um elemento recorta-se do instantâneo.
+    func debugClickWindow() { acceptSuggestion() }
+    var debugSuggestionIsWindow: Bool { hoverIsWindow }
+    var debugFrameShown: CGRect? { hoverFrame }
+    private func acceptSuggestion() {
+        guard let f = hoverFrame else { return }
+        if hoverIsWindow, let w = hoverWindow { onWindow?(w, false); return }
+        selection = f; hoverFrame = nil; hoverIsWindow = false
+        confirm()
+    }
 
     // MARK: Seleção
 
@@ -494,12 +498,7 @@ private final class SelectionView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        let p = convert(event.locationInWindow, from: nil)
-        if windowMode {
-            if let w = window(at: p) { hoverWindow = w; onWindow?(w, false) }
-            return
-        }
-        pressed(at: p)
+        pressed(at: convert(event.locationInWindow, from: nil))
     }
 
     private func pressed(at p: CGPoint) {
@@ -518,10 +517,7 @@ private final class SelectionView: NSView {
         layoutButtons(); needsDisplay = true
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        guard !windowMode else { return }
-        dragTo(convert(event.locationInWindow, from: nil))
-    }
+    override func mouseDragged(with event: NSEvent) { dragTo(convert(event.locationInWindow, from: nil)) }
 
     private func dragTo(_ p: CGPoint) {
         cursor = p
@@ -545,21 +541,19 @@ private final class SelectionView: NSView {
 
     private func released() {
         if let s = selection, s.width < 4 || s.height < 4 {
-            // clique sem arrastar: escolhe o quadro automático, se o houver; senão, sem seleção
+            // clique sem arrastar: a sugestão passa a ser a área escolhida (com a barra para capturar, gravar, texto…); senão, sem seleção
             selection = hoverFrame
         }
-        if selection != nil { hoverFrame = nil }
+        if selection != nil { hoverFrame = nil; hoverIsWindow = false }
         mode = .idle
         layoutButtons(); needsDisplay = true
     }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 36, 76:   // Enter / Enter do teclado numérico: a área escolhida ou, sem ela, o quadro automático
-            if windowMode { debugClickWindow() }
-            else { if selection == nil, let f = hoverFrame { selection = f; hoverFrame = nil }; confirm() }
+        case 36, 76:   // Enter / Enter do teclado numérico: a área escolhida ou, sem ela, a sugestão (elemento ou janela)
+            if selection == nil { acceptSuggestion() } else { confirm() }
         case 53: onCancel?()            // Esc
-        case 49: setWindowMode(!windowMode); onModeChange?(windowMode)   // Espaço: área ↔ janela
         default: super.keyDown(with: event)
         }
     }
@@ -587,32 +581,11 @@ private final class SelectionView: NSView {
         ctx.draw(currentImage, in: bounds)
         ctx.restoreGState()
 
-        if windowMode {
-            // escurece tudo menos a janela sob o rato, com contorno e o nome da app
-            ctx.setFillColor(NSColor.black.withAlphaComponent(0.35).cgColor)
-            ctx.addRect(bounds)
-            if let w = hoverWindow { ctx.addRect(w.frame.intersection(bounds)) }
-            ctx.fillPath(using: .evenOdd)
-            guard let w = hoverWindow else { drawHint(ctx); return }
-            let r = w.frame.intersection(bounds)
-            ctx.setStrokeColor(NSColor.controlAccentColor.cgColor); ctx.setLineWidth(3)
-            ctx.addPath(CGPath(roundedRect: r.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 8, cornerHeight: 8, transform: nil)); ctx.strokePath()
-            let k = CGFloat(image.width) / bounds.width
-            let name = w.title.isEmpty ? w.app : "\(w.app) · \(w.title)"
-            let label = "\(name)  \(Int((w.frame.width * k).rounded())) × \(Int((w.frame.height * k).rounded()))" as NSString
-            let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 12, weight: .medium)]
-            let size = label.size(withAttributes: attrs)
-            let pill = CGRect(x: r.minX, y: max(2, r.minY - size.height - 10), width: min(size.width + 14, bounds.width - r.minX - 4), height: size.height + 6)
-            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.9).cgColor)
-            ctx.addPath(CGPath(roundedRect: pill, cornerWidth: 5, cornerHeight: 5, transform: nil)); ctx.fillPath()
-            label.draw(in: CGRect(x: pill.minX + 7, y: pill.minY + 3, width: pill.width - 10, height: size.height), withAttributes: attrs)
-            drawHint(ctx)
-            return
-        }
-        // escurece fora da seleção
+        // escurece fora da seleção (ou fora da sugestão, enquanto não há área escolhida)
+        let hole: CGRect? = selection ?? (mode.isIdle ? hoverFrame : nil)
         ctx.setFillColor(NSColor.black.withAlphaComponent(0.35).cgColor)
         ctx.addRect(bounds)
-        if let sel = selection { ctx.addRect(sel) }
+        if let hole { ctx.addRect(hole) }
         ctx.fillPath(using: .evenOdd)
 
         guard let sel = selection else { drawHoverFrame(ctx); drawHint(ctx); return }
@@ -638,16 +611,17 @@ private final class SelectionView: NSView {
         drawHint(ctx)
     }
 
-    /// O quadro automático: contorno tracejado da cor de destaque, com o tamanho e a dica «Enter».
+    /// A sugestão: contorno da cor de destaque (tracejado num elemento, cheio numa janela), com o nome da app, o tamanho e «Enter».
     private func drawHoverFrame(_ ctx: CGContext) {
         guard let f = hoverFrame, case .idle = mode else { return }
         ctx.saveGState()
-        ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.10).cgColor); ctx.fill(f)
-        ctx.setStrokeColor(NSColor.controlAccentColor.cgColor); ctx.setLineWidth(2); ctx.setLineDash(phase: 0, lengths: [6, 4])
-        ctx.stroke(f.insetBy(dx: 1, dy: 1))
+        ctx.setStrokeColor(NSColor.controlAccentColor.cgColor); ctx.setLineWidth(hoverIsWindow ? 3 : 2)
+        if hoverIsWindow { ctx.addPath(CGPath(roundedRect: f.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 8, cornerHeight: 8, transform: nil)); ctx.strokePath() }
+        else { ctx.setLineDash(phase: 0, lengths: [6, 4]); ctx.stroke(f.insetBy(dx: 1, dy: 1)) }
         ctx.restoreGState()
         let k = CGFloat(currentImage.width) / bounds.width
-        let label = "\(Int((f.width * k).rounded())) × \(Int((f.height * k).rounded()))  ·  Enter" as NSString
+        let name: String = hoverIsWindow ? (hoverWindow.map { ($0.title.isEmpty ? $0.app : "\($0.app) · \($0.title)") + "  " } ?? "") : ""
+        let label = "\(name)\(Int((f.width * k).rounded())) × \(Int((f.height * k).rounded()))  ·  Enter" as NSString
         let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)]
         let size = label.size(withAttributes: attrs)
         var pill = CGRect(x: f.minX, y: f.minY - size.height - 8, width: size.width + 12, height: size.height + 4)
@@ -784,7 +758,7 @@ private struct FrameDetector {
             }
         }
         // uma zona esburacada (texto) ou uma faixa de um gradiente tem poucos píxeis para a caixa: não serve
-        guard count * 100 >= box.w * box.h * 60 else { return nil }
+        guard count * 100 >= box.w * box.h * 80 else { return nil }
         return box
     }
 }
