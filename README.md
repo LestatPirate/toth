@@ -85,7 +85,8 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 | **Abrir com o Toth** | Imagens, vídeos, `.capture` e `.tothvideo` abrem-se pelo *Abrir com* do Finder ou arrastando para o Dock; o que vem de fora importa-se como cópia. |
 | **Seletor mais esperto** | **Sugestão automática** sempre ativa: o painel, botão ou campo sob o rato, ou a janela inteira (capturada só ela, mesmo tapada); **Enter** aceita, arrastar ignora. Redimensionar por **qualquer ponto das bordas** e **lupa** com os píxeis enquanto arrasta. |
 | **Texto na captura** | Botão de texto na barra do seletor: reconhece o texto da área (local) e abre uma janela com ele já copiado, editável, com **Só uma linha**. Sem passar pelo editor. |
-| **Fundo limpo** | Botão na barra do topo: a captura sai sem papel de parede nem ícones do ambiente de trabalho. |
+| **Fundo limpo** | Botão na barra da seleção: a captura sai sem papel de parede nem ícones do ambiente de trabalho. |
+| **Elementos pela Acessibilidade** | Com a permissão (Preferências), a sugestão é o elemento exato que a app declara; sem ela, é pelos píxeis. |
 | **Linhas e setas curvas** | **Curva** na secção Linha: a alça do meio dobra; a ponta da seta segue o arco. |
 | **Etapas em sequência** | Cada clique acrescenta a etapa seguinte; Esc ou outra ferramenta terminam. |
 | **Reparo junto ao topo** | Corrigido: um Reparo perto do topo da imagem não apagava nada (a edição do Texto da imagem dependia dele). |
@@ -235,7 +236,8 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 | **Open with Toth** | Images, videos, `.capture` and `.tothvideo` open through the Finder's *Open with* or by dragging onto the Dock; outside files are imported as copies. |
 | **Smarter selector** | **Automatic suggestion**, always on: the panel, button or field under the pointer, or the whole window (captured on its own, even when covered); **Enter** accepts, dragging ignores it. Resize from **any point of the edges** and a **loupe** with the pixels while dragging. |
 | **Text in the capture** | Text button in the selector bar: recognizes the text of the area (locally) and opens a window with it already copied, editable, with **Single line**. No editor involved. |
-| **Clean background** | Button in the top bar: the capture comes out without the wallpaper or desktop icons. |
+| **Clean background** | Button in the selection bar: the capture comes out without the wallpaper or desktop icons. |
+| **Elements through Accessibility** | With the permission (Preferences), the suggestion is the exact element the app declares; without it, pixels are used. |
 | **Curved lines and arrows** | **Curved** in the Line section: the middle handle bends; the arrow head follows the arc. |
 | **Steps in sequence** | Each click adds the next step; Esc or another tool ends. |
 | **Repair near the top edge** | Fixed: a Repair close to the top of the image did not erase anything (the OCR edit relied on it). |

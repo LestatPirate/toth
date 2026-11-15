@@ -11,6 +11,8 @@ struct WindowInfo: Equatable {
     let frame: CGRect
     let title: String
     let app: String
+    /// Processo da app (para perguntar à Acessibilidade pelos elementos dentro da janela); 0 = desconhecido.
+    var pid: pid_t = 0
 }
 
 enum ScreenCapturer {
@@ -98,7 +100,7 @@ enum ScreenCapturer {
             let local = CGRect(x: w.frame.minX - screen.frame.minX, y: w.frame.minY - top, width: w.frame.width, height: w.frame.height)
             let visible = local.intersection(CGRect(origin: .zero, size: screen.frame.size))
             guard !visible.isNull, visible.width >= 20, visible.height >= 20 else { continue }
-            out.append(WindowInfo(id: w.id, frame: local, title: w.title, app: w.app))
+            out.append(WindowInfo(id: w.id, frame: local, title: w.title, app: w.app, pid: w.pid))
         }
         return out
     }

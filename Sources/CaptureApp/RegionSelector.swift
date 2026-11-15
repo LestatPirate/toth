@@ -34,6 +34,7 @@ final class RegionSelector {
         for (i, (screen, image)) in snapshots.enumerated() {
             let window = SelectionWindow(screen: screen)
             let view = SelectionView(frame: CGRect(origin: .zero, size: screen.frame.size), image: image, cleanImage: cleanSnapshots.indices.contains(i) ? cleanSnapshots[i] : nil)
+            view.screen = screen
             view.windows = screenWindows.indices.contains(i) ? screenWindows[i] : []
             view.onConfirm = { [weak self] cropped in self?.end(cropped) }
             view.onText = { [weak self] cropped in self?.endText(cropped) }
@@ -210,10 +211,13 @@ final class RegionSelector {
         check(view.debugHint?.hasPrefix("Fundo limpo") == true, "a dica do botão é a do Fundo limpo (\(String(describing: view.debugHint)))")
         guard let rep2 = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return fails + ["sem render da dica"] }
         view.cacheDisplay(in: view.bounds, to: rep2)
-        // por baixo da barra do topo (y ≈ 14+bar+8…) há um balão escuro
+        // o balão escuro desenha-se onde a vista diz (por baixo da barra da seleção)
         var dark = 0
-        for y in 60..<110 { for x in 400..<600 { if let c = rep2.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.brightnessComponent < 0.25 { dark += 1 } } }
-        check(dark > 800, "o balão da dica desenha-se por baixo da barra (\(dark) píxeis escuros)")
+        if let pill = view.debugHintPill {
+            for y in Int(pill.minY + 4)..<Int(pill.maxY - 4) { for x in Int(pill.minX + 4)..<Int(pill.maxX - 4) { if let c = rep2.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.brightnessComponent < 0.25 { dark += 1 } } }
+            check(pill.minY > 380, "o balão fica junto à barra da seleção, por baixo dela (\(pill))")
+        }
+        check(dark > 800, "o balão da dica desenha-se (\(dark) píxeis escuros)")
         got = nil; view.confirm()
         if let g = got, let px = SelfTests.pixel(g, 400, 10) { check(px.r > 250 && px.g > 250, "a dica não sai na captura") }
         view.debugHover(button: 99)
@@ -270,10 +274,9 @@ private final class SelectionView: NSView {
 
     // As janelas de outras apps (da frente para trás): a que está sob o rato pode ser sugerida inteira (captura-se só ela, mesmo tapada, ao tamanho exato).
     var windows: [WindowInfo] = []
+    /// O ecrã desta vista (para converter pontos para as coordenadas globais da Acessibilidade); `nil` nos testes.
+    var screen: NSScreen?
     private var hoverWindow: WindowInfo?
-    /// Barra do topo: gravar a janela sob o rato em vídeo · fundo limpo.
-    private let modeBar = IconBar()
-    private var windowVideoButton: IconButton!
     private var tracking: NSTrackingArea?
 
     // Barra de ícones: cancelar · rolagem · vídeo · capturar
@@ -296,16 +299,13 @@ private final class SelectionView: NSView {
         textButton = IconButton(symbol: "text.viewfinder", tooltip: L("Texto: reconhece o texto desta área e copia-o (sem abrir o editor)"), target: self, action: #selector(textClicked))
         confirmButton = IconButton(symbol: "camera.fill", tooltip: L("Capturar (Enter)"), target: self, action: #selector(confirmClicked))
         confirmButton.prominent = true
-        bar.setItems([cancelButton, IconBar.separator(), scrollButton, videoButton, textButton, IconBar.separator(), confirmButton])
+        cleanButton = IconButton(symbol: "rectangle.dashed.badge.record", tooltip: L("Fundo limpo: a captura sai sem papel de parede nem ícones do ambiente de trabalho"), target: self, action: #selector(cleanClicked))
+        bar.setItems([cancelButton, IconBar.separator(), scrollButton, videoButton, textButton, cleanButton, IconBar.separator(), confirmButton])
         bar.isHidden = true
         addSubview(bar)
-        // barra do topo (sempre visível): gravar a janela sob o rato · fundo limpo
-        windowVideoButton = IconButton(symbol: "video.fill", tooltip: L("Gravar a janela sob o rato em vídeo (MP4)"), target: self, action: #selector(windowVideoClicked))
-        cleanButton = IconButton(symbol: "rectangle.dashed.badge.record", tooltip: L("Fundo limpo: a captura sai sem papel de parede nem ícones do ambiente de trabalho"), target: self, action: #selector(cleanClicked))
-        addSubview(modeBar)
-        rebuildModeBar()
+        refreshClean()
         // a dica de cada botão desenha-se nesta vista (as dicas do sistema ficam por baixo desta janela e não se veem)
-        for b in [cancelButton, scrollButton, videoButton, textButton, confirmButton, windowVideoButton, cleanButton] as [IconButton] {
+        for b in [cancelButton, scrollButton, videoButton, textButton, cleanButton, confirmButton] as [IconButton] {
             b.onHover = { [weak self, weak b] on in self?.hint = on ? b : nil }
         }
     }
@@ -314,29 +314,35 @@ private final class SelectionView: NSView {
     /// O botão com o rato em cima (a dica dele desenha-se por baixo da barra).
     private var hint: IconButton? { didSet { if hint !== oldValue { needsDisplay = true } } }
     var debugHint: String? { hint?.toolTip }
-    func debugHover(button index: Int) { let all: [IconButton] = [cleanButton, windowVideoButton, cancelButton, scrollButton, videoButton, textButton, confirmButton]; hint = all.indices.contains(index) ? all[index] : nil }
+    func debugHover(button index: Int) { let all: [IconButton] = [cleanButton, cancelButton, scrollButton, videoButton, textButton, confirmButton]; hint = all.indices.contains(index) ? all[index] : nil }
+    var debugHintPill: CGRect? { hintPill()?.pill }
 
-    /// Dica do botão sob o rato: um balão escuro por baixo (ou por cima) da barra onde ele está.
-    private func drawHint(_ ctx: CGContext) {
-        guard let b = hint, let text = b.toolTip, !text.isEmpty, let bar = b.superview, !bar.isHidden else { return }
-        let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 12)]
-        let maxW: CGFloat = 360
-        let bounded = (text as NSString).boundingRect(with: NSSize(width: maxW, height: 200), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs)
+    private static let hintAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 12)]
+    /// Onde fica o balão da dica do botão sob o rato (por baixo da barra, ou por cima se não couber).
+    private func hintPill() -> (pill: CGRect, text: NSString, textSize: CGSize, barFrame: CGRect, buttonFrame: CGRect)? {
+        guard let b = hint, let text = b.toolTip, !text.isEmpty, let bar = b.superview, !bar.isHidden else { return nil }
+        let bounded = (text as NSString).boundingRect(with: NSSize(width: 360, height: 200), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: Self.hintAttrs)
         let barFrame = convert(bar.bounds, from: bar)
         let buttonFrame = convert(b.bounds, from: b)
         var pill = CGRect(x: buttonFrame.midX - bounded.width / 2 - 9, y: barFrame.maxY + 8, width: bounded.width + 18, height: bounded.height + 12)
         pill.origin.x = max(8, min(bounds.width - pill.width - 8, pill.minX))
         if pill.maxY > bounds.height - 8 { pill.origin.y = barFrame.minY - pill.height - 8 }
+        return (pill, text as NSString, bounded.size, barFrame, buttonFrame)
+    }
+
+    /// Dica do botão sob o rato: um balão escuro por baixo (ou por cima) da barra onde ele está.
+    private func drawHint(_ ctx: CGContext) {
+        guard let h = hintPill() else { return }
+        let pill = h.pill, barFrame = h.barFrame, buttonFrame = h.buttonFrame, text = h.text, bounded = h.textSize, attrs = Self.hintAttrs
         ctx.setFillColor(NSColor.black.withAlphaComponent(0.82).cgColor)
         ctx.addPath(CGPath(roundedRect: pill, cornerWidth: 7, cornerHeight: 7, transform: nil)); ctx.fillPath()
         // seta pequena a apontar para o botão
         let tipX = max(pill.minX + 10, min(pill.maxX - 10, buttonFrame.midX))
         let up = pill.minY > barFrame.maxY
         ctx.move(to: CGPoint(x: tipX - 6, y: up ? pill.minY : pill.maxY)); ctx.addLine(to: CGPoint(x: tipX, y: up ? pill.minY - 6 : pill.maxY + 6)); ctx.addLine(to: CGPoint(x: tipX + 6, y: up ? pill.minY : pill.maxY)); ctx.closePath(); ctx.fillPath()
-        (text as NSString).draw(in: CGRect(x: pill.minX + 9, y: pill.minY + 6, width: bounded.width + 1, height: bounded.height + 1), withAttributes: attrs)
+        text.draw(in: CGRect(x: pill.minX + 9, y: pill.minY + 6, width: bounded.width + 1, height: bounded.height + 1), withAttributes: attrs)
     }
 
-    override func layout() { super.layout(); modeBar.setFrameOrigin(CGPoint(x: (bounds.width - modeBar.frame.width) / 2, y: 14)) }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -345,16 +351,12 @@ private final class SelectionView: NSView {
         addTrackingArea(t); tracking = t
     }
 
-    // MARK: Barra do topo
+    // MARK: Fundo limpo (botão na barra da seleção)
 
-    private func rebuildModeBar() {
-        windowVideoButton.isEnabled = hoverWindow != nil
+    private func refreshClean() {
         cleanButton.tint = cleanOn ? .systemGreen : .secondaryLabelColor
         cleanButton.isEnabled = cleanImage != nil
         cleanButton.toolTip = cleanImage == nil ? L("Fundo limpo: não disponível nesta captura") : (cleanOn ? L("Fundo limpo: ligado (sem papel de parede nem ícones)") : L("Fundo limpo: desligado"))
-        modeBar.setItems([windowVideoButton, IconBar.separator(), cleanButton])
-        modeBar.setFrameOrigin(CGPoint(x: (bounds.width - modeBar.frame.width) / 2, y: 14))
-        modeBar.isHidden = false
     }
 
     /// «Fundo limpo» ligado/desligado (em todos os ecrãs).
@@ -363,7 +365,7 @@ private final class SelectionView: NSView {
         cleanOn = on
         UserDefaults.standard.set(on, forKey: "captureCleanDesktop")
         detector = nil
-        rebuildModeBar(); needsDisplay = true
+        refreshClean(); needsDisplay = true
     }
     @objc private func cleanClicked() { setClean(!cleanOn); onCleanChange?(cleanOn) }
     @objc private func textClicked() { guard let c = crop() else { return }; onText?(c.image) }
@@ -371,12 +373,26 @@ private final class SelectionView: NSView {
 
     // MARK: Quadro automático
 
-    /// O retângulo do conteúdo sob `p` (em pontos): a zona de cor uniforme à volta (painel, botão, campo), limitada à janela
-    /// que lá está; em cima de texto ou ícones, a zona à volta deles. `nil` se for o fundo todo ou nada de jeito.
+    /// O retângulo do elemento sob `p` (em pontos da vista): primeiro pela **Acessibilidade** (o elemento exato que a app
+    /// declara: botão, campo, painel, imagem…), se houver permissão e a app responder; senão pelos **píxeis** (a zona de cor
+    /// uniforme à volta, limitada à janela que lá está). `nil` se for o fundo todo ou nada de jeito.
     private func frame(at p: CGPoint) -> CGRect? {
+        let w = window(at: p)
+        let limit = w?.frame.intersection(bounds) ?? bounds
+        if let w, w.pid > 0, let screen, AccessibilityFrames.isTrusted {
+            // coordenadas globais do CG: origem no canto superior esquerdo do ecrã principal
+            let main = NSScreen.screens.first ?? screen
+            let top = main.frame.maxY - screen.frame.maxY
+            let global = CGPoint(x: screen.frame.minX + p.x, y: top + p.y)
+            if let f = AccessibilityFrames.elementFrame(pid: w.pid, at: global) {
+                let local = CGRect(x: f.minX - screen.frame.minX, y: f.minY - top, width: f.width, height: f.height).intersection(limit)
+                // o elemento que é a janela toda não é «elemento»: fica para a sugestão de janela
+                if !local.isNull, local.width >= 8, local.height >= 8, local.width < limit.width - 2 || local.height < limit.height - 2 { return local.integral }
+                if !local.isNull, local.width >= limit.width - 2, local.height >= limit.height - 2 { return nil }
+            }
+        }
         if detector == nil { detector = FrameDetector(image: currentImage, pointSize: bounds.size) }
         guard let d = detector else { return nil }
-        let limit = window(at: p)?.frame.intersection(bounds) ?? bounds
         return d.frame(at: p, within: limit)
     }
     func debugFrame(at p: CGPoint) -> CGRect? { frame(at: p) }
@@ -388,7 +404,6 @@ private final class SelectionView: NSView {
     func debugBeginDrag(at a: CGPoint) { pressed(at: a) }
     func debugEndDrag() { released() }
 
-    @objc private func windowVideoClicked() { if let w = hoverWindow { onWindowVideo?(w) } }
 
     private func window(at p: CGPoint) -> WindowInfo? { windows.first { $0.frame.contains(p) } }   // da frente para trás
 
@@ -401,8 +416,8 @@ private final class SelectionView: NSView {
             else if sel.contains(p) { NSCursor.openHand.set() }
             else { NSCursor.crosshair.set() }
         } else { NSCursor.crosshair.set() }
-        // sugestão: só sem área escolhida (depois de escolher uma, deixa de incomodar); sobre as barras mantém-se a última
-        if selection == nil, case .idle = mode, !modeBar.frame.contains(p), !(!bar.isHidden && bar.frame.contains(p)) {
+        // sugestão: só sem área escolhida (depois de escolher uma, deixa de incomodar); sobre a barra mantém-se a última
+        if selection == nil, case .idle = mode, !(!bar.isHidden && bar.frame.contains(p)) {
             updateSuggestion(at: p)
         } else if selection != nil, hoverFrame != nil { hoverFrame = nil; hoverIsWindow = false; needsDisplay = true }
     }
@@ -410,7 +425,7 @@ private final class SelectionView: NSView {
     /// A sugestão sob o ponto: o elemento pelos píxeis (dentro da janela que lá está) ou, sem elemento, a janela inteira.
     private func updateSuggestion(at p: CGPoint) {
         let w = window(at: p)
-        if w != hoverWindow { hoverWindow = w; rebuildModeBar() }
+        if w != hoverWindow { hoverWindow = w }
         let element = frame(at: p)
         let next: CGRect? = element ?? w.map { $0.frame.intersection(bounds) }
         let isWindow = element == nil && w != nil

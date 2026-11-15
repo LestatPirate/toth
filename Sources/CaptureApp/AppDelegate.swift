@@ -335,6 +335,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // `--ax-check`: a permissão de Acessibilidade e o elemento sob o rato (janela da frente), só em texto.
+        if args.contains("--ax-check") {
+            Task { @MainActor in
+                let p = NSEvent.mouseLocation
+                let main = NSScreen.screens.first!
+                let global = CGPoint(x: p.x, y: main.frame.maxY - p.y)
+                let wins = NSScreen.screens.first { $0.frame.contains(p) }.map { s in Task { await ScreenCapturer.windows(on: s) } }
+                let list = await wins?.value ?? []
+                let screen = NSScreen.screens.first { $0.frame.contains(p) } ?? main
+                let local = CGPoint(x: p.x - screen.frame.minX, y: (main.frame.maxY - screen.frame.maxY) + (main.frame.maxY - p.y) - (main.frame.maxY - screen.frame.maxY))
+                let w = list.first { $0.frame.contains(local) }
+                // sem janela sob o rato na lista, pergunta à app da frente (diagnóstico)
+                let pid = w?.pid ?? (NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
+                print("AX-CHECK: permissão=\(AccessibilityFrames.isTrusted) rato=\(Int(global.x)),\(Int(global.y)) janela=\(w.map { "\($0.app) pid \($0.pid)" } ?? "nenhuma (app da frente pid \(pid))") elemento=\(AccessibilityFrames.describe(pid: pid, at: global)) retângulo=\(AccessibilityFrames.elementFrame(pid: pid, at: global).map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))×\(Int($0.height))" } ?? "-")")
+                exit(0)
+            }
+        }
         // `--clean-check`: tira o instantâneo «limpo» do ecrã principal e só imprime a cor de alguns píxeis (nada é gravado).
         if args.contains("--clean-check") {
             Task { @MainActor in

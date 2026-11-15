@@ -85,6 +85,19 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 8) {
+                Text(L("Elementos na captura")).font(.headline)
+                HStack(spacing: 10) {
+                    if AccessibilityFrames.isTrusted {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(L("Acessibilidade autorizada: o seletor sugere o elemento exato sob o rato (botões, campos, painéis).")).font(.callout)
+                    } else {
+                        Button(L("Autorizar a Acessibilidade…")) { AccessibilityFrames.requestAccess() }
+                        Text(L("Sem esta permissão, a sugestão é só pelos píxeis (menos exata). Depois de autorizar, reabra o Toth.")).font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+                Text(L("O Toth só usa a Acessibilidade para ler o retângulo do elemento sob o rato durante a captura; não lê conteúdos nem controla outras apps."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Divider()
                 Text(L("Atualizações")).font(.headline)
                 Toggle(L("Procurar atualizações automaticamente"), isOn: $updater.automatic)
                 HStack(spacing: 10) {
@@ -99,7 +112,7 @@ struct SettingsView: View {
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(22)
-        .frame(width: 520, height: 700, alignment: .topLeading)
+        .frame(width: 520, height: 790, alignment: .topLeading)
     }
 
     /// Escolhe a nova pasta e, depois de confirmar, move tudo para lá.
@@ -136,7 +149,7 @@ enum SettingsWindow {
 
     static func show() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 700), styleMask: [.titled, .closable],
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 790), styleMask: [.titled, .closable],
                              backing: .buffered, defer: false)
             w.title = L("Preferências")
             w.contentView = NSHostingView(rootView: SettingsView(settings: .shared))
