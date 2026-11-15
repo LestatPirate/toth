@@ -335,6 +335,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // `--render-repair <saida.png>`: lado a lado, três fundos (gradiente, textura ruidosa, riscas) com texto, antes e depois do Reparo.
+        if let i = args.firstIndex(of: "--render-repair"), args.count > i + 1 {
+            let w = 420, h = 160
+            func panel(_ kind: Int) -> [UInt8] {
+                var px = [UInt8](repeating: 255, count: w * h * 4); var seed: UInt32 = 3
+                for y in 0..<h { for x in 0..<w {
+                    let o = (y * w + x) * 4
+                    switch kind {
+                    case 0: px[o] = UInt8(60 + x * 150 / w); px[o + 1] = UInt8(90 + y * 120 / h); px[o + 2] = 200
+                    case 1: seed = seed &* 1664525 &+ 1013904223; let v = UInt8(120 + Int(seed >> 24) % 90); px[o] = v; px[o + 1] = v &- 20; px[o + 2] = v &- 40
+                    default: let on = ((x + y) / 10) % 2 == 0; px[o] = on ? 230 : 40; px[o + 1] = on ? 200 : 60; px[o + 2] = on ? 120 : 90
+                    }
+                } }
+                return px
+            }
+            let out = NSImage(size: NSSize(width: w * 3, height: h * 2), flipped: true) { r in
+                for k in 0..<3 {
+                    var px = panel(k)
+                    let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                    ctx.translateBy(x: 0, y: CGFloat(h)); ctx.scaleBy(x: 1, y: -1)
+                    NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+                    ("Fatura 48213 aprovada" as NSString).draw(at: NSPoint(x: 30, y: 56), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 30), .foregroundColor: NSColor.black])
+                    NSGraphicsContext.restoreGraphicsState()
+                    let before = ctx.makeImage()!
+                    NSImage(cgImage: before, size: NSSize(width: w, height: h)).draw(in: NSRect(x: w * k, y: 0, width: w, height: h))
+                    let hole = (x: 24, y: 50, w: 330, h: 48)
+                    if Inpaint.surroundingTexture(px, width: w, height: h, hole: hole) >= 4 { Inpaint.fillExemplar(&px, width: w, height: h, hole: hole) } else { Inpaint.fill(&px, width: w, height: h, hole: hole) }
+                    let after = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+                    NSImage(cgImage: after, size: NSSize(width: w, height: h)).draw(in: NSRect(x: w * k, y: h, width: w, height: h))
+                }
+                return true
+            }
+            try? NSBitmapImageRep(data: out.tiffRepresentation!)!.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: args[i + 1]))
+            print("RENDER-REPAIR: OK"); exit(0)
+        }
+        // `--inpaint-bench`: tempo do Reparo por difusão e por exemplos num buraco típico (texto 300×48 numa região 620×360 com textura).
+        if args.contains("--inpaint-bench") {
+            let w = 620, h = 360
+            var px = [UInt8](repeating: 255, count: w * h * 4)
+            var seed: UInt32 = 7
+            for i in 0..<(w * h) { seed = seed &* 1664525 &+ 1013904223; let v = UInt8(150 + Int(seed >> 24) % 80); let stripe: UInt8 = (i % w / 9) % 2 == 0 ? 20 : 0; px[i * 4] = v &- stripe; px[i * 4 + 1] = v; px[i * 4 + 2] = v &- stripe / 2 }
+            let hole = (x: 160, y: 156, w: 300, h: 48)
+            var a = px; let t0 = Date(); Inpaint.fill(&a, width: w, height: h, hole: hole); let t1 = Date()
+            var b = px; Inpaint.fillExemplar(&b, width: w, height: h, hole: hole); let t2 = Date()
+            print(String(format: "INPAINT-BENCH: difusão %.0f ms · exemplos %.0f ms · textura %.1f", t1.timeIntervalSince(t0) * 1000, t2.timeIntervalSince(t1) * 1000, Inpaint.surroundingTexture(px, width: w, height: h, hole: hole)))
+            exit(0)
+        }
         // `--ax-check`: a permissão de Acessibilidade e o elemento sob o rato (janela da frente), só em texto.
         if args.contains("--ax-check") {
             Task { @MainActor in

@@ -978,6 +978,34 @@ import Foundation
         #expect(px[r + 2] > 200 && px[r] < 60)   // perto da direita: azul
     }
 
+    /// Riscas verticais (textura): a difusão daria cinzento; o preenchimento por exemplos continua as riscas.
+    @Test func exemplarFillContinuesStripes() {
+        let w = 96, h = 64
+        var px = [UInt8](repeating: 255, count: w * h * 4)
+        for y in 0..<h { for x in 0..<w { let dark = (x / 4) % 2 == 0; let v: UInt8 = dark ? 30 : 230; px[(y * w + x) * 4] = v; px[(y * w + x) * 4 + 1] = v; px[(y * w + x) * 4 + 2] = v } }
+        var expected = px
+        for y in 20..<44 { for x in 36..<60 { for c in 0..<3 { px[(y * w + x) * 4 + c] = 128 } } }   // mancha cinzenta no meio
+        #expect(Inpaint.surroundingTexture(px, width: w, height: h, hole: (36, 20, 24, 24)) > 20)
+        Inpaint.fillExemplar(&px, width: w, height: h, hole: (36, 20, 24, 24))
+        // dentro do buraco, as colunas voltam a ser escuras/claras como as riscas (compara-se com a imagem original)
+        var err = 0, n = 0
+        for y in 22..<42 { for x in 38..<58 { err += abs(Int(px[(y * w + x) * 4]) - Int(expected[(y * w + x) * 4])); n += 1 } }
+        #expect(err / n < 40, "erro médio \(err / n)")
+        // e a difusão sozinha dá cinzento (para se ver que o exemplo acrescenta algo)
+        var diff = expected
+        for y in 20..<44 { for x in 36..<60 { for c in 0..<3 { diff[(y * w + x) * 4 + c] = 128 } } }
+        Inpaint.fill(&diff, width: w, height: h, hole: (36, 20, 24, 24))
+        var errDiff = 0
+        for y in 22..<42 { for x in 38..<58 { errDiff += abs(Int(diff[(y * w + x) * 4]) - Int(expected[(y * w + x) * 4])) } }
+        #expect(errDiff / n > err / n)
+        // fundo liso e gradiente têm pouca rugosidade: ficam para a difusão (que reproduz um gradiente sem o lavar)
+        let flat = [UInt8](repeating: 200, count: w * h * 4)
+        #expect(Inpaint.surroundingTexture(flat, width: w, height: h, hole: (36, 20, 24, 24)) < 1)
+        var grad = [UInt8](repeating: 255, count: w * h * 4)
+        for y in 0..<h { for x in 0..<w { grad[(y * w + x) * 4] = UInt8(x * 2); grad[(y * w + x) * 4 + 1] = UInt8(y * 3); grad[(y * w + x) * 4 + 2] = 100 } }
+        #expect(Inpaint.surroundingTexture(grad, width: w, height: h, hole: (36, 20, 24, 24)) < 4)
+    }
+
     @Test func largeHoleIsSolvedByLevels() {
         let w = 160, h = 120
         var px = halves(w, h, left: [10, 200, 10, 255], right: [10, 200, 10, 255])

@@ -110,6 +110,13 @@ enum Renderer {
         guard paddedDev.width * paddedDev.height <= 40_000_000 else { return }   // limite de memória (~160 MB)
         let padded = toDoc(paddedDev), region = toDoc(regionDev)
 
+        // (os efeitos recalculam-se a cada desenho: o Reparo por exemplos é caro, por isso o resultado fica em cache
+        // enquanto o objeto, o que está por baixo, a escala e a região forem os mesmos)
+        let cacheKey = effectCacheKey(a, below: below, doc: doc, base: base, region: regionDev, padded: paddedDev, scale: s)
+        if let cached = effectCache.get(cacheKey) {
+            blit(cached, a, region: toDoc(regionDev), maskImage: maskImage, pixelAligned: pixelAligned, scale: s, ctx)
+            return
+        }
         // 1) o que está por baixo, num bitmap só desta região, à resolução do destino
         let w = Int(paddedDev.width), h = Int(paddedDev.height)
         guard let tmp = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
@@ -154,8 +161,12 @@ enum Renderer {
             img = belowImage.cropping(to: from.intersection(CGRect(x: 0, y: 0, width: w, height: h)))
         }
         guard let img else { return }
+        effectCache.put(cacheKey, img)
+        blit(img, a, region: region, maskImage: maskImage, pixelAligned: pixelAligned, scale: s, ctx)
+    }
 
-        // 3) substitui a região (1:1 nos píxeis do destino; o recorte encosta aos mesmos píxeis, sem suavização)
+    /// 3) substitui a região (1:1 nos píxeis do destino; o recorte encosta aos mesmos píxeis, sem suavização)
+    private static func blit(_ img: CGImage, _ a: Annotation, region: CGRect, maskImage: CGImage?, pixelAligned: Bool, scale s: CGFloat, _ ctx: CGContext) {
         ctx.saveGState()
         ctx.setShouldAntialias(false)
         // (um terço de píxel para fora: as bordas caem exatamente nas fronteiras dos píxeis e o erro de vírgula flutuante
@@ -169,6 +180,32 @@ enum Renderer {
         ctx.interpolationQuality = .none
         drawImage(img, in: region.insetBy(dx: -grow, dy: -grow), ctx)
         ctx.restoreGState()
+    }
+
+    /// Chave da cache de um efeito: o objeto (forma, máscara, opacidade, rotação), o que está por baixo (ids, formas, estilos,
+    /// visibilidade), a imagem de fundo, a escala e a região em píxeis.
+    private static func effectCacheKey(_ a: Annotation, below: [Annotation], doc: CaptureDocument, base: CGImage, region: CGRect, padded: CGRect, scale: CGFloat) -> String {
+        var h = Hasher()
+        h.combine(a.id); h.combine("\(a.shape)"); h.combine(a.rotation); h.combine(a.style.opacity)
+        for b in below { h.combine(b.id); h.combine("\(b.shape)"); h.combine(b.visible); h.combine(b.rotation); h.combine("\(b.style)") }
+        h.combine(ObjectIdentifier(base)); h.combine(base.width); h.combine(base.height)
+        h.combine("\(doc.imageFrame.map { "\($0)" } ?? "")"); h.combine(doc.backgroundHex); h.combine(doc.transparentBackground)
+        h.combine("\(region)"); h.combine("\(padded)"); h.combine(Double(scale))
+        return String(h.finalize())
+    }
+
+    /// Cache pequena (LRU) dos efeitos já calculados, partilhada pela vista e pelas exportações.
+    private static let effectCache = EffectCache()
+    private final class EffectCache: @unchecked Sendable {
+        private var items: [String: (image: CGImage, tick: Int)] = [:]
+        private var tick = 0
+        private let lock = NSLock()
+        func get(_ k: String) -> CGImage? { lock.lock(); defer { lock.unlock() }; guard let v = items[k] else { return nil }; tick += 1; items[k] = (v.image, tick); return v.image }
+        func put(_ k: String, _ img: CGImage) {
+            lock.lock(); defer { lock.unlock() }
+            tick += 1; items[k] = (img, tick)
+            if items.count > 48, let oldest = items.min(by: { $0.value.tick < $1.value.tick }) { items.removeValue(forKey: oldest.key) }
+        }
     }
 
     /// PNG da área de trabalho (recorte e/ou espaço extra). A imagem original nunca é alterada.
@@ -310,7 +347,13 @@ enum Renderer {
         let hx = Int(hole.minX.rounded()), hy = Int(hole.minY.rounded()), hw = Int(hole.width.rounded()), hh = Int(hole.height.rounded())
         // (a 1.ª fila em memória do bitmap é a de cima, como `hole`: nada a virar. Com `h - hy - hh` o buraco ficava em espelho e
         // só coincidia quando a região estava centrada na margem; junto ao topo o Reparo não apagava nada.)
-        Inpaint.fill(&px, width: w, height: h, hole: (hx, hy, hw, hh), mask: mask.flatMap { $0.count == hw * hh ? $0 : nil })
+        let m = mask.flatMap { $0.count == hw * hh ? $0 : nil }
+        // fundo liso ou gradiente: difusão (limpa); com textura, padrões ou linhas: copiar pedaços parecidos (PatchMatch)
+        if Inpaint.surroundingTexture(px, width: w, height: h, hole: (hx, hy, hw, hh)) >= 4 {
+            Inpaint.fillExemplar(&px, width: w, height: h, hole: (hx, hy, hw, hh), mask: m)
+        } else {
+            Inpaint.fill(&px, width: w, height: h, hole: (hx, hy, hw, hh), mask: m)
+        }
         guard let dctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let out = dctx.makeImage() else { return nil }
         return out.cropping(to: CGRect(x: hx, y: hy, width: hw, height: hh))

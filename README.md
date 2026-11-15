@@ -89,7 +89,7 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 | **Elementos pela Acessibilidade** | Com a permissão (Preferências), a sugestão é o elemento exato que a app declara; sem ela, é pelos píxeis. |
 | **Linhas e setas curvas** | **Curva** na secção Linha: a alça do meio dobra; a ponta da seta segue o arco. |
 | **Etapas em sequência** | Cada clique acrescenta a etapa seguinte; Esc ou outra ferramenta terminam. |
-| **Reparo junto ao topo** | Corrigido: um Reparo perto do topo da imagem não apagava nada (a edição do Texto da imagem dependia dele). |
+| **Reparo melhor** | Em fundos com textura, padrões ou riscas, o Reparo copia pedaços parecidos da vizinhança (PatchMatch), em vez de esborratar; em fundos lisos e gradientes continua por difusão. Corrigido também o Reparo junto ao topo da imagem, que não apagava nada. Os efeitos ficam em cache: o editor deixa de os recalcular a cada redesenho. |
 | **Recortar pela borda** | Apagar uma faixa junto a uma borda **recorta** a área: o apagado nunca a faz crescer, e selecionar para lá da imagem fica cortado pela área. |
 | **Pasta das capturas** | Por omissão `~/Pictures/TothCapture`; alterável nas Preferências, com capturas, vídeos e carimbos (subpasta «Carimbos») movidos para o novo sítio. |
 
@@ -240,7 +240,7 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 | **Elements through Accessibility** | With the permission (Preferences), the suggestion is the exact element the app declares; without it, pixels are used. |
 | **Curved lines and arrows** | **Curved** in the Line section: the middle handle bends; the arrow head follows the arc. |
 | **Steps in sequence** | Each click adds the next step; Esc or another tool ends. |
-| **Repair near the top edge** | Fixed: a Repair close to the top of the image did not erase anything (the OCR edit relied on it). |
+| **Better Repair** | On textured, patterned or striped backgrounds, Repair copies similar patches from the surroundings (PatchMatch) instead of smearing; on flat backgrounds and gradients it still diffuses. Also fixed Repair near the top edge, which erased nothing. Effects are cached, so the editor no longer recomputes them on every redraw. |
 | **Crop by the edge** | Erasing a band along an edge **crops** the area: an erased region never makes it grow, and selecting beyond the image is clipped to the area. |
 | **Captures folder** | `~/Pictures/TothCapture` by default; changeable in Preferences, with captures, videos and stamps (“Carimbos” subfolder) moved to the new place. |
 
