@@ -300,7 +300,8 @@ private final class SelectionView: NSView {
         confirmButton = IconButton(symbol: "camera.fill", tooltip: L("Capturar (Enter)"), target: self, action: #selector(confirmClicked))
         confirmButton.prominent = true
         cleanButton = IconButton(symbol: "rectangle.dashed.badge.record", tooltip: L("Fundo limpo: a captura sai sem papel de parede nem ícones do ambiente de trabalho"), target: self, action: #selector(cleanClicked))
-        bar.setItems([cancelButton, IconBar.separator(), scrollButton, videoButton, textButton, cleanButton, IconBar.separator(), confirmButton])
+        // capturar à esquerda e cancelar à direita (pedido do utilizador: é a ordem dos diálogos ao contrário, mas a ação principal fica primeiro)
+        bar.setItems([confirmButton, IconBar.separator(), scrollButton, videoButton, textButton, cleanButton, IconBar.separator(), cancelButton])
         bar.isHidden = true
         addSubview(bar)
         refreshClean()
