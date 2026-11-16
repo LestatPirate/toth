@@ -594,8 +594,40 @@ final class EditorModel: ObservableObject {
     }
 
     /// Apaga a seleção (passa a cor de fundo, ou transparente).
+    /// Apagar uma seleção retangular que vai (quase) de lado a lado junto a uma borda é um recorte: a área fica sem essa
+    /// faixa, em vez de ficar lá um espaço vazio. Devolve a área que sobra, ou `nil` se a seleção não é uma faixa de borda.
+    /// A folga (1 % do lado, no mínimo 6 px) perdoa uma seleção que não chegou mesmo à borda.
+    func areaAfterErasing(_ b: Rect) -> Rect? {
+        let a = doc.area
+        let tx = max(6, a.width * 0.01), ty = max(6, a.height * 0.01)
+        let spansX = b.minX <= a.minX + tx && b.maxX >= a.maxX - tx
+        let spansY = b.minY <= a.minY + ty && b.maxY >= a.maxY - ty
+        if spansX && spansY { return nil }                      // apagar tudo não é recortar
+        if spansX {
+            if b.minY <= a.minY + ty, a.maxY - b.maxY >= 8 { return Rect(x: a.minX, y: b.maxY, width: a.width, height: a.maxY - b.maxY) }
+            if b.maxY >= a.maxY - ty, b.minY - a.minY >= 8 { return Rect(x: a.minX, y: a.minY, width: a.width, height: b.minY - a.minY) }
+        }
+        if spansY {
+            if b.minX <= a.minX + tx, a.maxX - b.maxX >= 8 { return Rect(x: b.maxX, y: a.minY, width: a.maxX - b.maxX, height: a.height) }
+            if b.maxX >= a.maxX - tx, b.minX - a.minX >= 8 { return Rect(x: a.minX, y: a.minY, width: b.minX - a.minX, height: a.height) }
+        }
+        return nil
+    }
+
     func eraseSelection() {
         guard let m = areaSelection, !m.isEmpty else { return }
+        if m.isFullRect, let keep = areaAfterErasing(m.rect) {
+            // faixa de borda: recorta a sério (o que fica de fora desaparece de vez) e a área encolhe sempre, mesmo com
+            // a tela automática desligada
+            perform { d in
+                d.discardOutside(keep)
+                if !d.autoExpand { d.workArea = keep == d.imageRect ? nil : WorkArea(keep) }
+            }
+            areaSelection = nil
+            if let s = selection, !doc.annotations.contains(where: { $0.id == s }) { selection = nil }
+            extraSelection = extraSelection.filter { id in doc.annotations.contains { $0.id == id } }
+            return
+        }
         let maskName = maskAsset(m)
         perform { $0.add(.erase(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), mask: maskName)) }
         areaSelection = nil

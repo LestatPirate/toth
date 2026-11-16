@@ -2128,6 +2128,27 @@ extension SelfTests {
         check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe tudo (\(m.doc.area), \(m.doc.annotations.count) de \(n0))")
         m.tool = .select
 
+        // 2c) Apagar uma faixa junto à borda, com um objeto a alargar a área para lá da imagem: a faixa desaparece (a área
+        //     encolhe), mesmo que a seleção não chegue mesmo às bordas e mesmo com a tela automática desligada
+        for (label, inset, auto) in [("exata", 0.0, true), ("com folga", 3.0, true), ("tela manual", 3.0, false)] {
+            m.tool = .stamp; m.defaultStampSize = 40
+            m.addStamp(at: Point(x: 640, y: 100))                    // alarga a área para a direita
+            if !auto { m.setAutoExpand(false) }
+            let before = m.doc.area
+            m.tool = .area
+            m.selectArea(AreaMask.rect(Rect(x: before.minX + inset, y: 320, width: before.width - 2 * inset, height: before.maxY - 320 - inset)))
+            m.eraseSelection()
+            check(m.doc.area == Rect(x: before.minX, y: before.minY, width: before.width, height: 320 - before.minY), "apagar a faixa de baixo (\(label)) encolhe a área até ao corte (\(m.doc.area) de \(before))")
+            check(isGreen(rgb(300, 150)) && rgb(300, 319).map { $0.0 > 200 && $0.1 > 200 } ?? false, "o que fica acima do corte não muda (\(label))")
+            m.fitAreaToContent()
+            check(m.doc.area.maxY == 320, "ajustar ao conteúdo não traz a faixa de volta (\(label): \(m.doc.area))")
+            m.undo(); m.undo()
+            if !auto { m.undo() }
+            m.undo()
+            check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe tudo (\(label): \(m.doc.area), \(m.doc.annotations.count))")
+        }
+        m.tool = .select
+
         // 3) Nome da captura: fica no documento e reabre com ele; vazio volta à data
         let dateTitle = m.displayTitle
         m.setTitle("  Fatura de outubro ")
