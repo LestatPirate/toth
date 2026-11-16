@@ -51,6 +51,7 @@ final class EditorModel: ObservableObject {
     @Published var tool: Tool = .arrow {
         didSet {
             if tool == .canvas && oldValue != .canvas { canvasEntryDepth = undoStack.count }
+            if oldValue == .canvas && tool != .canvas { confirmCanvas() }
             if tool == .ocr && oldValue != .ocr { recognizeText() }
             if tool != .ocr && oldValue == .ocr { selectedBlocks = [] }
         }
@@ -416,6 +417,15 @@ final class EditorModel: ObservableObject {
             if zig { var z = d.add(seam, style: seamStyle); z.group = group; d.update(z) }
         }
         selection = imageID
+        // achata tudo numa só imagem: o resultado do corte (com a linha de corte e as anotações que havia) passa a ser
+        // uma imagem única, sem peças soltas. No mesmo ponto de undo do corte: desfazer repõe tudo como estava.
+        if let flat = exportPNG(), let flatName = try? assets.add(png: flat) {
+            let area = doc.area
+            mutate { imageID = $0.flatten(to: flatName, in: area).id }
+            extraSelection = []
+            selection = imageID
+            commit()
+        }
         finishedDrawing()
         return true
     }
@@ -721,7 +731,25 @@ final class EditorModel: ObservableObject {
     /// Desfaz tudo o que foi feito nesta visita à Tela e volta a Mover.
     func cancelCanvas() {
         while undoStack.count > canvasEntryDepth, canUndo { undo() }
+        canvasCancelled = true
         tool = .select
+        canvasCancelled = false
+    }
+    private var canvasCancelled = false
+
+    /// Ao sair da Tela a confirmar (outra ferramenta, clique fora, ⌘↩): o que ficou fora da área desaparece de vez
+    /// (`CaptureDocument.discardOutside`), em vez de ficar escondido e voltar quando a área cresce. Só se algo mudou
+    /// nesta visita; fica num ponto de undo próprio.
+    private func confirmCanvas() {
+        guard !canvasCancelled, undoStack.count > canvasEntryDepth else { return }
+        var cropped = doc
+        cropped.discardOutside(doc.area)
+        guard cropped != doc else { return }
+        checkpoint()
+        mutate { $0 = cropped }
+        if let s = selection, !doc.annotations.contains(where: { $0.id == s }) { selection = nil }
+        extraSelection = extraSelection.filter { id in doc.annotations.contains { $0.id == id } }
+        save()
     }
 
     /// Setas: desloca os elementos selecionados (1 px; com ⇧, 10 px).

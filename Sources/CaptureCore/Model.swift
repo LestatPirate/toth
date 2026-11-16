@@ -330,6 +330,52 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         _ = setArea(roundedOut: contentBounds, if: nil)
     }
 
+    /// Recorte a sério: o que fica fora de `keep` desaparece de vez, em vez de ficar escondido à espera de a área voltar
+    /// a crescer. Os objetos todos de fora são removidos; a parte da imagem de base que sobra de cada lado é coberta por
+    /// uma faixa «Apagado» por baixo de tudo (vai de lado a lado junto à borda, por isso `contentBounds` deixa de a contar
+    /// e «ajustar ao conteúdo» já não a traz de volta). Um objeto que atravesse a borda fica inteiro: continua a ser um
+    /// objeto que se vê, se move e se apaga. O original (a imagem de base) não é alterado: desfazer repõe tudo.
+    public mutating func discardOutside(_ keep: Rect) {
+        annotations.removeAll { a in
+            if case .erase = a.shape { return false }
+            return !a.worldBounds.intersects(keep)
+        }
+        var ext = imageRect.union(keep)
+        for a in annotations { ext = ext.union(a.worldBounds) }
+        ext = ext.insetBy(dx: -2, dy: -2)
+        let img = imageRect
+        var bands: [Rect] = []
+        if img.minY < keep.minY - 0.5 { bands.append(Rect(x: ext.minX, y: ext.minY, width: ext.width, height: keep.minY - ext.minY)) }
+        if img.maxY > keep.maxY + 0.5 { bands.append(Rect(x: ext.minX, y: keep.maxY, width: ext.width, height: ext.maxY - keep.maxY)) }
+        if img.minX < keep.minX - 0.5 { bands.append(Rect(x: ext.minX, y: ext.minY, width: keep.minX - ext.minX, height: ext.height)) }
+        if img.maxX > keep.maxX + 0.5 { bands.append(Rect(x: keep.maxX, y: ext.minY, width: ext.maxX - keep.maxX, height: ext.height)) }
+        guard !bands.isEmpty else { return }
+        // apagados antigos (retângulos simples) que cabem numa faixa nova já não fazem falta
+        annotations.removeAll { a in
+            guard case let .erase(_, _, _, mask) = a.shape, mask == nil else { return false }
+            let b = a.worldBounds
+            return bands.contains { $0.minX <= b.minX && $0.minY <= b.minY && $0.maxX >= b.maxX && $0.maxY >= b.maxY }
+        }
+        var z = (annotations.map(\.z).min() ?? 0) - 1
+        for b in bands {
+            annotations.append(Annotation(z: z, shape: .erase(origin: Point(x: b.x, y: b.y), width: b.width, height: b.height)))
+            z -= 1
+        }
+    }
+
+    /// Achata tudo numa só imagem: tira todos os objetos e põe `asset` (a imagem final já desenhada) a ocupar `area`.
+    /// A imagem de base fica tapada por baixo (um «Apagado» na área, mais o recorte do que sobra à volta), para não
+    /// aparecer através de zonas transparentes nem voltar com a área. Devolve a imagem nova.
+    @discardableResult
+    public mutating func flatten(to asset: String, in area: Rect) -> Annotation {
+        annotations.removeAll()
+        annotations.append(Annotation(z: 0, shape: .erase(origin: Point(x: area.x, y: area.y), width: area.width, height: area.height)))
+        let image = Annotation(z: 1, shape: .image(origin: Point(x: area.x, y: area.y), width: area.width, height: area.height, asset: asset), style: Style(lineVisible: false))
+        annotations.append(image)
+        discardOutside(area)
+        return image
+    }
+
     /// Caixa do conteúdo: imagem + objetos visíveis, menos as faixas apagadas junto às bordas.
     public var contentBounds: Rect {
         var union = imageRect

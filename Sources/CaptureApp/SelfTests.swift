@@ -2072,28 +2072,61 @@ extension SelfTests {
         canvas.debugMouse(at: Point(x: 300, y: 200), dragTo: Point(x: 310, y: 300))
         check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 300), "cortar a faixa azul encolhe a área para 600×300 (\(m.doc.area))")
         check(isYellow(rgb(300, 250)) && isGreen(rgb(300, 150)) && isRed(rgb(300, 50)), "o amarelo subiu para o lugar do azul (\(String(describing: rgb(300, 250))))")
-        check(m.doc.annotations.count == n0 + 3, "cortar cria apagado + imagem + ziguezague (\(m.doc.annotations.count - n0))")
-        check(m.doc.annotations.contains { if case .zigzag = $0.shape { return $0.style.colorHex == "#FF00FF" } else { return false } }, "a linha de corte é um ziguezague com a cor da ferramenta")
-        check(m.tool == .cutout && m.selected?.shape.imageAsset != nil, "depois de cortar a ferramenta continua ativa, com a parte movida selecionada")
+        // o resultado fica achatado numa só imagem (sem peças soltas); por baixo só ficam «Apagados» a tapar a base
+        func flat() -> Bool {
+            let rest = m.doc.annotations.filter { if case .erase = $0.shape { return false } else { return true } }
+            return rest.count == 1 && rest[0].shape.imageAsset != nil && rest[0].shape.bounds == m.doc.area
+        }
+        check(flat(), "cortar achata tudo numa só imagem do tamanho da área (\(m.doc.annotations.map { $0.shape.kindName }))")
+        check(m.tool == .cutout && m.selected?.shape.imageAsset != nil, "depois de cortar a ferramenta continua ativa, com a imagem selecionada")
+        m.fitAreaToContent()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 300), "ajustar ao conteúdo não traz de volta o que foi cortado (\(m.doc.area))")
+        m.undo()
         var seamSeen = false
         for y in 190...210 where !seamSeen { for x in 280...320 where !seamSeen { if let p = rgb(x, y), p.0 > 200, p.2 > 200, p.1 < 80 { seamSeen = true } } }
         check(seamSeen, "a linha de corte vê-se junto ao corte")
         m.undo()
-        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe a área e tira os três objetos")
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe a área e os objetos de antes do corte, num só passo")
 
         // 2) Cortar faixa vertical sem ziguezague (x 400…500): o preto encosta ao x 400 e a área fica 500×400
         m.tool = .cutout; m.cutoutZigzag = false
         canvas.debugMouse(at: Point(x: 400, y: 50), dragTo: Point(x: 500, y: 60))
         check(m.doc.area == Rect(x: 0, y: 0, width: 500, height: 400), "cortar a faixa vertical encolhe a área para 500×400 (\(m.doc.area))")
         check(isBlack(rgb(450, 50)) && isRed(rgb(350, 50)), "o preto encostou ao x 400 (\(String(describing: rgb(450, 50))))")
-        check(m.doc.annotations.count == n0 + 2, "sem ziguezague são só dois objetos")
+        check(flat(), "o corte vertical também fica numa só imagem")
         // uma faixa que toque na borda não corta (seria recortar pela borda, não juntar)
         m.tool = .cutout
+        let afterCut = m.doc
         canvas.debugMouse(at: Point(x: 100, y: -20), dragTo: Point(x: 100, y: 50))
-        check(m.doc.annotations.count == n0 + 2, "uma faixa que toca na borda não corta")
+        check(m.doc == afterCut, "uma faixa que toca na borda não corta")
         m.undo()
         m.cutoutZigzag = true
         check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "desfazer repõe (\(m.doc.area))")
+
+        // 2b) Tela: encolher a área e confirmar tira de vez o que ficou de fora (não volta com «ajustar ao conteúdo»)
+        m.tool = .stamp; m.defaultStampSize = 40
+        m.addStamp(at: Point(x: 550, y: 50))
+        let outsideID = m.selection
+        m.addStamp(at: Point(x: 100, y: 50))
+        let insideID = m.selection
+        m.tool = .canvas
+        m.checkpoint(); m.setAreaLive(Rect(x: 0, y: 0, width: 300, height: 400)); m.commit()
+        m.cancelCanvas()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.contains { $0.id == outsideID }, "Esc na Tela cancela: nada é recortado (\(m.doc.area))")
+        m.tool = .canvas
+        m.checkpoint(); m.setAreaLive(Rect(x: 0, y: 0, width: 300, height: 400)); m.commit()
+        m.tool = .select                                       // confirma
+        check(m.doc.area == Rect(x: 0, y: 0, width: 300, height: 400), "a área fica como se escolheu (\(m.doc.area))")
+        check(!m.doc.annotations.contains { $0.id == outsideID } && m.doc.annotations.contains { $0.id == insideID }, "o objeto de fora desaparece; o de dentro fica")
+        m.fitAreaToContent()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 300, height: 400), "ajustar ao conteúdo não traz de volta o que foi recortado (\(m.doc.area))")
+        m.setAutoExpand(true)
+        check(m.doc.area == Rect(x: 0, y: 0, width: 300, height: 400), "nem a tela automática (\(m.doc.area))")
+        m.undo(); m.undo(); m.undo()                             // tela automática, ajustar, recorte
+        check(m.doc.annotations.contains { $0.id == outsideID }, "desfazer o recorte devolve o objeto de fora")
+        m.undo(); m.undo(); m.undo()                             // área, os dois carimbos
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe tudo (\(m.doc.area), \(m.doc.annotations.count) de \(n0))")
+        m.tool = .select
 
         // 3) Nome da captura: fica no documento e reabre com ele; vazio volta à data
         let dateTitle = m.displayTitle

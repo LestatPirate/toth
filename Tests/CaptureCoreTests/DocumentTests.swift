@@ -1122,3 +1122,38 @@ import Foundation
         #expect(a.combined(with: b, .replace) == b)
     }
 }
+
+@Test func discardOutsideRemovesWhatIsLeftOutForGood() throws {
+    var doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+    let outside = doc.add(.rect(origin: Point(x: 500, y: 50), width: 60, height: 40))
+    let inside = doc.add(.rect(origin: Point(x: 50, y: 50), width: 60, height: 40))
+    let crossing = doc.add(.rect(origin: Point(x: 280, y: 300), width: 60, height: 40))
+    let keep = Rect(x: 0, y: 0, width: 300, height: 400)
+    doc.discardOutside(keep)
+    #expect(!doc.annotations.contains { $0.id == outside.id })
+    #expect(doc.annotations.contains { $0.id == inside.id } && doc.annotations.contains { $0.id == crossing.id })
+    let erases = doc.annotations.filter { if case .erase = $0.shape { return true } else { return false } }
+    #expect(erases.count == 1 && erases[0].z < inside.z)                 // a faixa fica por baixo de tudo
+    #expect(erases[0].worldBounds.minX == 300 && erases[0].worldBounds.maxX >= 600)
+    // «ajustar ao conteúdo» só cresce até ao objeto que atravessa a borda, nunca até à imagem recortada
+    doc.fitAreaToContent()
+    // (a caixa do objeto conta com a espessura do traço, daí a folga)
+    #expect(doc.area.minX == 0 && doc.area.maxX >= 340 && doc.area.maxX <= 348 && doc.area.height == 400)
+    // sem nada a atravessar, fica exatamente o que se guardou; repetir não acumula faixas
+    _ = doc.remove(id: crossing.id)
+    doc.discardOutside(keep)
+    doc.fitAreaToContent()
+    #expect(doc.area == keep)
+    #expect(doc.annotations.filter { if case .erase = $0.shape { return true } else { return false } }.count == 1)
+}
+
+@Test func flattenLeavesOneImageOverTheHiddenBase() throws {
+    var doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+    _ = doc.add(.rect(origin: Point(x: 50, y: 50), width: 60, height: 40))
+    let area = Rect(x: 0, y: 0, width: 600, height: 300)
+    let image = doc.flatten(to: "flat.png", in: area)
+    let rest = doc.annotations.filter { if case .erase = $0.shape { return false } else { return true } }
+    #expect(rest.count == 1 && rest[0].id == image.id && rest[0].shape.bounds == area)
+    doc.fitAreaToContent()
+    #expect(doc.area == area)
+}
