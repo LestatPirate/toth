@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toth — Captura e gravação de ecrã para Mac, gratuita e livre (alternativa ao Snagit)</title>
+<meta name="description" content="Toth: app gratuita e de código aberto para macOS que captura, anota, grava e edita o ecrã numa só app. Alternativa livre ao Snagit, CleanShot X e Shottr. Sem conta, sem nuvem, sem telemetria.">
+<link rel="canonical" href="https://lestatpirate.github.io/toth/pt/">
+<link rel="alternate" hreflang="en" href="https://lestatpirate.github.io/toth/">
+<link rel="alternate" hreflang="pt" href="https://lestatpirate.github.io/toth/pt/">
+<link rel="alternate" hreflang="x-default" href="https://lestatpirate.github.io/toth/">
+<link rel="icon" href="../brand/TothLogo.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://lestatpirate.github.io/toth/pt/">
+<meta property="og:title" content="Toth — uma app em vez de quatro">
+<meta property="og:description" content="Captura, anota, grava e edita o ecrã no Mac, tudo local e gratuito (MIT).">
+<meta property="og:image" content="https://lestatpirate.github.io/toth/images/toth-editor-pt.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Toth","operatingSystem":"macOS 15+","applicationCategory":"MultimediaApplication","softwareVersion":"0.6.2","url":"https://lestatpirate.github.io/toth/pt/","downloadUrl":"https://github.com/LestatPirate/toth/releases/download/v0.6.2/Toth-0.6.2.zip","license":"https://opensource.org/license/mit","author":{"@type":"Person","name":"Alex Felizardo"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
+</script>
+<style>
+:root{
+  --bg:#0f1115;--bg2:#161a22;--card:#1b2029;--line:#2a3140;--text:#e8ebf1;--muted:#9aa3b5;
+  --accent:#4f8cff;--accent2:#2fd3a3;--warn:#f6b73c;--paypal:#0070BA;--maxw:1120px;
+}
+@media (prefers-color-scheme: light){
+  :root{--bg:#f6f7fb;--bg2:#ffffff;--card:#ffffff;--line:#e3e7ef;--text:#15181f;--muted:#5d6678;}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px}
+header.top{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;gap:14px;height:58px}
+header.top img{width:30px;height:30px;border-radius:7px}
+header.top .brand{font-weight:700;letter-spacing:.18em}
+header.top nav{margin-left:auto;display:flex;gap:18px;align-items:center;font-size:14px}
+header.top nav a{color:var(--text);opacity:.85}
+.lang{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.lang a{color:var(--text);padding:5px 12px;font-size:13px;opacity:.7}
+.lang a:hover{text-decoration:none;opacity:1}
+.lang a.on{background:var(--accent);color:#fff;opacity:1}
+.alt .card h3{margin-top:0}
+.alt .card p+p{margin-top:10px}
+.alt .card p strong{color:var(--text)}
+@media (max-width:720px){header.top nav a.nl{display:none}}
+.hero{padding:72px 0 36px;text-align:center}
+.hero img.logo{width:112px;height:112px;border-radius:26px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.hero h1{font-size:clamp(34px,6vw,60px);letter-spacing:.22em;margin:22px 0 8px}
+.hero .tag{font-size:clamp(20px,3vw,28px);font-weight:600;margin:0}
+.hero .sub{color:var(--muted);font-size:18px;margin:10px auto 26px;max-width:640px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:12px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--text)}
+.btn:hover{text-decoration:none;filter:brightness(1.08)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.paypal{background:var(--paypal);border-color:var(--paypal);color:#fff}
+.hero .note{color:var(--muted);font-size:13px;margin-top:12px}
+.shot{display:block;max-width:100%;border-radius:14px;border:1px solid var(--line);box-shadow:0 24px 60px rgba(0,0,0,.35);margin:36px auto 0}
+section{padding:64px 0}
+section h2{font-size:clamp(26px,4vw,38px);margin:0 0 10px;text-align:center}
+section p.lead{text-align:center;color:var(--muted);max-width:720px;margin:0 auto 36px;font-size:17px}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+.card .ic{font-size:28px;line-height:1}
+.card h3{margin:12px 0 6px;font-size:18px}
+.card p{margin:0;color:var(--muted);font-size:15px}
+.one{background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+table.cmp{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+table.cmp th,table.cmp td{padding:14px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.cmp th{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+table.cmp tr:last-child td{border-bottom:0}
+table.cmp td.ok{text-align:center;font-size:20px;color:var(--accent2);white-space:nowrap}
+table.cmp td.apps{color:var(--muted);font-size:14px}
+table.cmp td strong{font-weight:600}
+.uniq{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.uniq .card{display:flex;gap:14px}
+.uniq .n{flex:0 0 36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;display:grid;place-items:center;font-weight:700}
+.uniq h3{margin:0 0 4px;font-size:17px}
+.two{display:grid;gap:28px;grid-template-columns:1fr 1fr;align-items:center}
+@media (max-width:860px){.two{grid-template-columns:1fr}}
+.two img{width:100%;border-radius:12px;border:1px solid var(--line);box-shadow:0 14px 40px rgba(0,0,0,.3)}
+.two ul{margin:0;padding-left:20px;color:var(--muted)}
+.two li{margin:6px 0}
+.two li strong{color:var(--text)}
+.new .card h3{font-size:16px}
+.steps{counter-reset:s;display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.steps .card{position:relative;padding-top:26px}
+.steps .card::before{counter-increment:s;content:counter(s);position:absolute;top:-14px;left:18px;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+code{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px}
+.support{text-align:center;background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:34px 24px;max-width:720px;margin:0 auto}
+.support h2{margin-bottom:6px}
+.support p{color:var(--muted);margin:0 0 18px}
+footer{border-top:1px solid var(--line);padding:30px 0 50px;color:var(--muted);font-size:14px;text-align:center}
+footer a{color:var(--muted);text-decoration:underline}
+.sm{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <img src="../brand/TothLogo.png" alt="">
+    <span class="brand">TOTH</span>
+    <nav>
+      <a class="nl" href="#uma">Uma app</a>
+      <a class="nl" href="#funcoes">Funcionalidades</a>
+      <a class="nl" href="#novo">Novidades</a>
+      <a class="nl" href="#alternativas">Alternativas</a>
+      <a class="nl" href="#instalar">Instalar</a>
+      <a href="https://github.com/LestatPirate/toth">GitHub</a>
+      <span class="lang"><a href="./" class="on" hreflang="pt" onclick="keep('pt')">PT</a><a href="../" class="" hreflang="en" onclick="keep('en')">EN</a></span>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="hero wrap">
+  <img class="logo" src="../brand/TothLogo.png" alt="Toth">
+  <h1>T O T H</h1>
+  <p class="tag">Captura. Anota. Grava. Edita.</p>
+  <p class="sub">
+    Uma só app para o Mac que faz o trabalho de quatro, inteiramente no seu computador. Sem conta, sem nuvem, sem telemetria. Software livre (MIT).
+    
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/LestatPirate/toth/releases/download/v0.6.2/Toth-0.6.2.zip">⬇︎ Descarregar para macOS</a>
+    <a class="btn" href="https://github.com/LestatPirate/toth">Código no GitHub</a>
+    <a class="btn paypal" href="https://paypal.me/lestat013">♥ Apoiar no PayPal</a>
+  </div>
+  <p class="note">macOS 15 ou superior · Apple Silicon e Intel · versão 0.6.2 · <a href="https://github.com/LestatPirate/toth/releases">todas as versões</a></p>
+  <img class="shot" src="../images/toth-editor-pt.png" alt="Editor de imagem do Toth">
+</div>
+
+<section class="one" id="uma">
+  <div class="wrap">
+    <h2>🧩 Uma app em vez de quatro</h2>
+    <p class="lead">
+      Capturar, anotar, gravar e editar vídeo costumam viver em apps diferentes, cada uma com a sua licença e a sua nuvem. O Toth junta as quatro tarefas numa só, e o que sai de uma entra diretamente na seguinte.
+      
+    </p>
+    <table class="cmp">
+      <thead><tr>
+        <th>Tarefa</th>
+        <th>Normalmente precisa de…</th>
+        <th style="text-align:center">Toth</th>
+      </tr></thead>
+      <tbody>
+        <tr><td><strong>📸 Capturar</strong></td><td class="apps">uma app de capturas (região, janela, página por rolagem) — Shottr, CleanShot X, Snagit…</td><td class="ok">✓</td></tr>
+        <tr><td><strong>✏️ Anotar</strong></td><td class="apps">um editor de anotações (setas, texto, etapas, pixelização, reparo) — Skitch, Monosnap…</td><td class="ok">✓</td></tr>
+        <tr><td><strong>🎥 Gravar</strong></td><td class="apps">um gravador de ecrã (área ou janela, áudio do sistema, microfone) — QuickTime, Kap, Loom…</td><td class="ok">✓</td></tr>
+        <tr><td><strong>✂️ Editar vídeo</strong></td><td class="apps">um editor de vídeo (cortes, anotações com tempo, música, narração, GIF) — iMovie, ScreenFlow…</td><td class="ok">✓</td></tr>
+        <tr><td><strong>🔒 Privacidade</strong></td><td class="apps">confiar que nada sai do computador</td><td class="ok">100 % local</td></tr>
+        <tr><td><strong>💶 Preço</strong></td><td class="apps">três ou quatro licenças</td><td class="ok">Gratuito · MIT</td></tr>
+      </tbody>
+    </table>
+    <p class="sm" style="text-align:center;margin-top:14px">
+      O Toth cobre o essencial de cada tarefa; não tem legendas automáticas, efeitos nem transições, e não partilha online (por decisão de projeto). Todas as marcas pertencem aos respetivos donos; o Toth não é afiliado nem recomendado por essas empresas.
+      
+    </p>
+  </div>
+</section>
+
+<section id="funcoes">
+  <div class="wrap">
+    <h2>O que só o Toth junta</h2>
+    <p class="lead">Não é uma lista de ferramentas: é a forma como se ligam.</p>
+    <div class="uniq">
+      <div class="card"><div class="n">1</div><div><h3>Captura → anotação → vídeo, sem mudar de app</h3><p>A mesma barra de ferramentas anota uma imagem e um vídeo. Uma seta sobre um fotograma tem início e fim e pode seguir o que se move.</p></div></div>
+      <div class="card"><div class="n">2</div><div><h3>Nada é destrutivo</h3><p>Pixelização, desfoque, reparo, recortes, cortes de vídeo: camadas que muda ou tira amanhã. O original nunca é alterado; tudo reabre como deixou.</p></div></div>
+      <div class="card"><div class="n">3</div><div><h3>Texto da imagem: copiar e editar</h3><p>Reconhece o texto de qualquer captura no Mac, sem rede. ⌘C copia; um duplo clique torna-o editável no mesmo estilo: tamanho, cor, negrito e a fonte mais parecida, com o original apagado por baixo.</p></div></div>
+      <div class="card"><div class="n">4</div><div><h3>Reparo e seleção a sério</h3><p>Preencher apaga um elemento a partir do que o rodeia; Clonar cobre-o com outra zona. A varinha seleciona por cor, e a área levanta-se, duplica-se, apaga-se ou preenche-se. Pintar muda a cor de uma zona com um clique, e Cortar faixa tira uma faixa do meio e junta as duas partes.</p></div></div>
+      <div class="card"><div class="n">5</div><div><h3>A tela segue o conteúdo</h3><p>Arraste uma seta para fora da imagem e a área cresce; volte com ela e encolhe. Mova, rode e redimensione a própria captura sem a estragar.</p></div></div>
+      <div class="card"><div class="n">6</div><div><h3>Nitidez de píxel</h3><p>Captura e gravação à resolução nativa, zoom 1:1 em píxeis do ecrã, H.264 com débito alto. O que vê é o que fica.</p></div></div>
+      <div class="card"><div class="n">7</div><div><h3>Privacidade verificável</h3><p>O único pedido de rede é a procura de atualizações (desligável), verificada por SHA-256 e assinatura. O código é aberto.</p></div></div>
+    </div>
+
+    <div class="grid" style="margin-top:40px">
+      <div class="card"><div class="ic">📸</div><h3>Capturar</h3><p>Região com o ecrã congelado e sugestão automática do elemento ou da janela (ao tamanho exato, mesmo tapada), página inteira por rolagem, ecrã completo, texto do ecrã (OCR) e fundo limpo. Atalho global ⌃⇧4.</p></div>
+      <div class="card"><div class="ic">✏️</div><h3>Anotar</h3><p>Setas e linhas (retas ou curvas), texto, balões, formas, etapas numeradas, carimbos, marcador, pixelização, desfoque, reparo, Pintar, Cortar faixa e texto da imagem. Estilos rápidos por ferramenta, selecionar área, rodar, alinhar, agrupar, camadas.</p></div>
+      <div class="card"><div class="ic">🎥</div><h3>Gravar</h3><p>Área ou janela em MP4 (H.264 + AAC), áudio do sistema e microfone à escolha em faixas separadas, pausar e retomar.</p></div>
+      <div class="card"><div class="ic">✂️</div><h3>Editar vídeo</h3><p>Cortes ao quadro, blocos que se arrastam, anotações com início e fim, música, narração, volume e fade, velocidade por trecho. MP4, GIF ou só áudio.</p></div>
+          <div class="card"><div class="ic">🗂️</div><h3>Organizar</h3><p>Biblioteca com pesquisa por nome, data, texto das anotações e texto dentro da imagem (OCR local). Capturas com nome, pasta à sua escolha, exportação com ⌘E.</p></div>
+    </div>
+
+    <div class="two" style="margin-top:40px">
+      <img src="../images/toth-video-editor.png" alt="Editor de vídeo do Toth">
+      <div>
+        <h3 style="margin-top:0;font-size:22px">O editor de vídeo</h3>
+        <ul>
+          <li><strong>Três linhas</strong> (vídeo, áudio do sistema, microfone) mais música, narração e anotações.</li>
+          <li><strong>Anotações com tempo:</strong> setas, texto, pixelização… com início e fim, que podem seguir uma zona em movimento.</li>
+          <li><strong>Não destrutivo:</strong> o vídeo original não muda; desfazer, refazer, e a edição volta ao reabrir.</li>
+          <li><strong>Saída:</strong> MP4 completo, GIF animado ou só o áudio (M4A).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="one new" id="novo">
+  <div class="wrap">
+    <h2>Novidades da versão 0.6.2</h2>
+    <p class="lead">Um seletor que sugere o que capturar, texto do ecrã sem abrir o editor, fundo limpo, vídeos num só ficheiro e um Reparo que respeita texturas.</p>
+    <div class="grid">
+        <div class="card"><h3>Seletor que adivinha</h3><p>Ao capturar, o Toth sugere o botão, painel ou campo sob o rato, ou a janela inteira. Enter aceita; arrastar ignora. Lupa de píxeis e ajuste por qualquer ponto das bordas.</p></div>
+        <div class="card"><h3>Texto do ecrã num gesto</h3><p>Marque uma área e carregue no botão de texto: o texto é reconhecido no Mac, fica logo copiado e abre numa janela editável, com «Só uma linha».</p></div>
+        <div class="card"><h3>Fundo limpo</h3><p>Um botão e a captura sai sem papel de parede nem ícones do ambiente de trabalho.</p></div>
+        <div class="card"><h3>Vídeo num só ficheiro, velocidade por trecho</h3><p>Cada vídeo é um item <code>.tothvideo</code> com a edição lá dentro. Marque um trecho e escolha 0,25× a 4×; o som mantém o tom.</p></div>
+        <div class="card"><h3>Curvas, etapas seguidas e Reparo melhor</h3><p>Linhas e setas curvas, etapas numeradas clique a clique, e um Reparo que reconstrói texturas e padrões em vez de esborratar.</p></div>
+        <div class="card"><h3>Abrir com o Toth</h3><p>Imagens e vídeos abrem pelo «Abrir com» do Finder ou arrastando para o Dock. Na faixa de baixo, oculte o que não quer ver sem o tirar da biblioteca.</p></div>
+    </div>
+    <p class="sm" style="text-align:center;margin-top:18px"><a href="https://github.com/LestatPirate/toth/releases">Todas as versões e notas</a> · <a href="https://github.com/LestatPirate/toth/blob/main/docs/GUIA.md">Guia completo</a></p>
+  </div>
+</section>
+
+<section class="alt" id="alternativas">
+  <div class="wrap">
+    <h2>Uma alternativa gratuita ao Snagit, CleanShot X e Shottr</h2>
+    <p class="lead">Se procura uma app de capturas para Mac sem licença, sem conta e sem nuvem, o Toth cobre o essencial destas três. E dizemos também quando a outra é a escolha certa.</p>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(290px,1fr))">
+      <div class="card"><h3>Toth ou Snagit</h3><p><strong>O que o Toth também faz:</strong> captura de região, janela e página por rolagem, etapas numeradas, texto reconhecido e editável, Cortar faixa, estilos rápidos, gravação de ecrã e cortes de vídeo. Gratuito e de código aberto.</p><p><strong>Fique com o Snagit se</strong> precisa de Windows, de modelos e guias passo a passo prontos, ou de partilhar diretamente para serviços online e em equipa.</p></div>
+      <div class="card"><h3>Toth ou CleanShot X</h3><p><strong>O que o Toth também faz:</strong> captura com o ecrã congelado, janela mesmo tapada, rolagem, fundo limpo sem ícones, texto do ecrã (OCR), gravação em MP4 ou GIF. Tem ainda um editor de vídeo com anotações com tempo.</p><p><strong>Fique com o CleanShot X se</strong> quer ligações de partilha na nuvem, capturas afixadas a flutuar no ecrã ou fundos decorativos para redes sociais.</p></div>
+      <div class="card"><h3>Toth ou Shottr</h3><p><strong>O que o Toth também faz:</strong> captura rápida por atalho, rolagem, OCR local e anotações. Acrescenta edição que reabre (nada é destrutivo), Reparo, gravação de ecrã e editor de vídeo.</p><p><strong>Fique com o Shottr se</strong> quer a app mais pequena e leve possível, ou se mede píxeis e apanha cores do ecrã todos os dias.</p></div>
+    </div>
+    <p class="sm" style="text-align:center;margin-top:14px">Comparação feita de boa-fé em novembro de 2026; as outras apps evoluem, confirme nos sites delas. Todas as marcas pertencem aos respetivos donos; o Toth não é afiliado nem recomendado por essas empresas.</p>
+  </div>
+</section>
+
+<section id="instalar">
+  <div class="wrap">
+    <h2>Instalar</h2>
+    <p class="lead">macOS 15 ou superior. Apple Silicon e Intel.</p>
+    <div class="steps">
+      <div class="card"><h3>Descarregar</h3><p>Descarregue <a href="https://github.com/LestatPirate/toth/releases/download/v0.6.2/Toth-0.6.2.zip"><code>Toth-0.6.2.zip</code></a>, descomprima e arraste <code>Toth.app</code> para Aplicações.</p></div>
+      <div class="card"><h3>Primeira abertura</h3><p>A app ainda não está notarizada: o macOS mostra «Toth não aberto». Clique OK, vá a Definições do Sistema → Privacidade e Segurança → Segurança → <strong>Abrir mesmo assim</strong>.</p></div>
+      <div class="card"><h3>Permissão guiada</h3><p>O Toth verifica a Gravação de Ecrã e, se faltar, guia-o em 3 passos. É a única permissão obrigatória; o microfone só se o ligar ao gravar, e a Acessibilidade é opcional (sugestão exata de elementos).</p></div>
+    </div>
+    <p class="sm" style="text-align:center;margin-top:18px">As capturas ficam em <code>~/Pictures/TothCapture</code> (pasta alterável nas Preferências). As atualizações são verificadas por SHA-256 e assinatura e podem desligar-se nas Preferências. Desinstalar: arraste a app para o Lixo.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="support">
+      <h2>☕ Gostou do Toth?</h2>
+      <p>O projeto é gratuito e livre, e vai continuar a sê-lo. Se quiser ajudar a mantê-lo, pode apoiar de forma voluntária. Nada na app depende disso.</p>
+      <a class="btn paypal" href="https://paypal.me/lestat013">♥ Apoiar no PayPal</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>© 2026 Alex Felizardo · <a href="https://github.com/LestatPirate/toth/blob/main/LICENSE">MIT</a> · <a href="https://github.com/LestatPirate/toth/blob/main/PRIVACY.md">Privacidade</a> · <a href="https://github.com/LestatPirate/toth/blob/main/SECURITY.md">Segurança</a> · <a href="https://github.com/LestatPirate/toth/blob/main/TRADEMARKS.md">Marcas</a></p>
+    <p>Na mitologia egípcia, Thoth é o deus da escrita e do conhecimento: o escriba que registava e dava forma ao que era dito. O Toth guarda o que vê e dá-lhe sentido.</p>
+  </div>
+</footer>
+
+<script>
+function keep(l){try{localStorage.setItem('toth-lang',l)}catch(e){}}
+
+</script>
+</body>
+</html>
