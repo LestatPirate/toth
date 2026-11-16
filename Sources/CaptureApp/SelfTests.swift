@@ -128,7 +128,7 @@ enum SelfTests {
         let settings = ShortcutSettings.shared
         func snapshot() -> NSBitmapImageRep? {
             let host = NSHostingView(rootView: SettingsView(settings: settings))
-            host.frame = NSRect(x: 0, y: 0, width: 520, height: 600)
+            host.frame = NSRect(x: 0, y: 0, width: 520, height: 960)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .aqua)   // aparência fixa (teste determinístico)
             window.contentView = host
@@ -579,7 +579,7 @@ enum SelfTests {
         check(isGreen(rgb(400, 200)) && isGreen(rgb(301, 101)), "a zona vermelha ficou verde (\(String(describing: rgb(400, 200))))")
         check(isWhite(rgb(250, 50)) && isBlue(rgb(150, 150)), "o resto não mudou")
         check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "pintar não mexe na área (\(m.doc.area))")
-        check(m.tool == .select, "depois de pintar volta a Mover")
+        check(m.tool == .fill, "depois de pintar a ferramenta continua ativa (é \(m.tool))")
         do { var st = m.currentStyle; st.colorHex = "#FF00FF"; m.setStyle(st) }
         check(rgb(400, 200).map { $0.0 > 200 && $0.2 > 200 && $0.1 < 60 } ?? false, "mudar a cor do pintado muda a pintura")
         m.undo(); m.undo()
@@ -740,7 +740,7 @@ enum SelfTests {
         m.tool = .stamp; m.chooseStamp("⭐️"); m.defaultStampSize = 50
         canvas.debugMouse(at: Point(x: 300, y: 200))
         check(m.doc.annotations.count == 1 && m.selected?.shape.stampSymbol == "⭐️" && m.selected?.shape.bounds == Rect(x: 275, y: 175, width: 50, height: 50), "clique devia pôr um carimbo de 50 centrado (\(String(describing: m.selected?.shape)))")
-        check(m.tool == .select, "depois do carimbo volta a Mover")
+        check(m.tool == .stamp, "depois do carimbo a ferramenta continua ativa (é \(m.tool))")
         m.tool = .stamp
         canvas.debugMouse(at: Point(x: 100, y: 100), dragTo: Point(x: 220, y: 160))
         check(m.selected?.shape.bounds == Rect(x: 100, y: 100, width: 120, height: 120), "arrastar devia dar um carimbo quadrado de 120 (\(String(describing: m.selected?.shape.bounds)))")
@@ -857,12 +857,12 @@ enum SelfTests {
         let inA = Point(x: 200, y: 160), inB = Point(x: 550, y: 160), empty = Point(x: 400, y: 400)
         func count() -> Int { m.doc.annotations.count }
 
-        // 1) seta ativa, clique dentro de A -> seleciona A, passa a Mover, não cria nada
+        // 1) seta ativa, clique dentro de A -> seleciona A, a ferramenta continua, não cria nada
         m.tool = .arrow; m.selection = nil
         let n0 = count()
         canvas.debugMouse(at: inA)
         check(m.selection == idA, "clique sobre A com a seta devia selecionar A")
-        check(m.tool == .select, "depois de selecionar um objeto existente a ferramenta devia ser Mover (é \(m.tool))")
+        check(m.tool == .arrow, "selecionar um objeto existente não sai da ferramenta (é \(m.tool))")
         check(count() == n0, "o clique não devia criar objetos (\(count()) vs \(n0))")
         check(m.selected?.shape.kindName == "Retângulo", "as opções atuais devem ser as do retângulo selecionado")
 
@@ -870,8 +870,15 @@ enum SelfTests {
         m.tool = .arrow; m.selection = nil
         canvas.debugMouse(at: Point(x: 150, y: 140), dragTo: Point(x: 380, y: 300))
         check(count() == n0 + 1, "arrastar sobre A devia criar uma seta (\(count()) vs \(n0 + 1))")
-        check(m.tool == .select, "depois de desenhar, a ferramenta volta a Mover (é \(m.tool))")
+        check(m.tool == .arrow, "depois de desenhar, a ferramenta continua ativa (é \(m.tool))")
         if case .arrow? = m.selected?.shape {} else { fails.append("o objeto novo devia ser uma seta") }
+        // a seguir, outra seta sem voltar a escolher a ferramenta; Esc sai para Mover
+        let firstArrow = m.selection
+        canvas.debugMouse(at: Point(x: 620, y: 30), dragTo: Point(x: 700, y: 80))
+        check(count() == n0 + 2 && m.selection != firstArrow && m.tool == .arrow, "arrastar outra vez desenha a segunda seta com a mesma ferramenta (\(count()) vs \(n0 + 2))")
+        m.escape()
+        check(m.tool == .select, "Esc sai da ferramenta para Mover")
+        m.undo()
 
         // 3) recém-inserido; clicar noutro objeto existente (B) com a ferramenta de desenho ainda ativa -> passa para B
         m.tool = .rect
@@ -880,7 +887,7 @@ enum SelfTests {
         let newId = m.selection
         canvas.debugMouse(at: inB)                                                      // clica por cima de B
         check(m.selection == idB && m.selection != newId, "clicar noutro objeto devia passar a seleção para ele")
-        check(m.tool == .select, "a ferramenta devia passar a Mover")
+        check(m.tool != .select, "a ferramenta de desenho continua ativa (é \(m.tool))")
         check(count() == afterNew, "o clique em B não devia criar objetos")
 
         // 4) clique em espaço vazio com a seta: não cria nada, nada fica selecionado
@@ -893,7 +900,7 @@ enum SelfTests {
         m.tool = .step; m.selection = nil
         let n2 = count()
         canvas.debugMouse(at: inA)
-        check(m.selection == idA && count() == n2 && m.tool == .select, "a etapa sobre um objeto devia selecioná-lo")
+        check(m.selection == idA && count() == n2 && m.tool == .step, "a etapa sobre um objeto devia selecioná-lo, sem sair da ferramenta")
         m.tool = .step; m.selection = nil
         canvas.debugMouse(at: inA, option: true)
         check(count() == n2 + 1 && m.selected?.shape.stepNumber != nil, "⌥+clique devia criar a etapa por cima do objeto")
@@ -903,10 +910,6 @@ enum SelfTests {
         m.escape()
         check(m.tool == .select, "Esc termina a sequência e volta a Mover")
         m.undo()
-        // ferramenta presa: continua ativa
-        m.tool = .step; m.toolLocked = true; m.selection = nil
-        canvas.debugMouse(at: Point(x: 700, y: 60))
-        check(m.tool == .step && m.toolLocked, "com a ferramenta presa, continua ativa depois de desenhar")
         m.tool = .select
 
         // 6) balão: clique sobre objeto existente seleciona-o (não abre o editor de texto); no vazio cria o balão
@@ -924,6 +927,28 @@ enum SelfTests {
         m.tool = .select
         canvas.debugMouse(at: Point(x: 60, y: 460))
         check(count() == n3 + 1, "um balão sem texto não devia desaparecer (\(count()) vs \(n3 + 1))")
+
+        // 6b) balões em sequência: com a ferramenta ativa, cada clique no vazio põe outro; Esc num novo e vazio tira-o
+        m.tool = .callout; m.selection = nil
+        let nSeq = count()
+        canvas.debugMouse(at: Point(x: 80, y: 60))
+        let firstBalloon = m.selection
+        canvas.debugMouse(at: Point(x: 520, y: 60))      // termina o primeiro e põe o segundo
+        check(count() == nSeq + 2 && m.selection != firstBalloon && m.tool == .callout, "o segundo clique põe outro balão sem voltar a escolher a ferramenta (\(count() - nSeq), \(m.tool))")
+        canvas.debugCancelEditing()
+        check(count() == nSeq + 1 && m.tool == .callout, "Esc num balão novo e vazio tira-o, sem sair da ferramenta (\(count() - nSeq))")
+        m.undo(); m.tool = .select
+
+        // 6c) o objeto acabado de pôr ajusta-se sem sair da ferramenta: o carimbo arrasta-se pelo corpo
+        m.tool = .stamp; m.defaultStampSize = 40; m.selection = nil
+        canvas.debugMouse(at: Point(x: 520, y: 60))
+        let stampID = m.selection, stampAt = m.selected?.shape.bounds, nAdj = count()
+        canvas.debugMouse(at: Point(x: 520, y: 60), dragTo: Point(x: 580, y: 60), command: true)   // ⌘: sem encaixe nas guias
+        check(m.selection == stampID && count() == nAdj && m.tool == .stamp, "arrastar o carimbo acabado de pôr move-o, sem criar outro (\(count() - nAdj))")
+        check(abs((m.selected?.shape.bounds.x ?? 0) - ((stampAt?.x ?? 0) + 60)) < 1.5, "o carimbo andou 60 px (\(String(describing: m.selected?.shape.bounds.x)) de \(String(describing: stampAt?.x)))")
+        canvas.debugMouse(at: Point(x: 200, y: 440))
+        check(count() == nAdj + 1 && m.tool == .stamp, "um clique noutro sítio põe outro carimbo (\(count() - nAdj))")
+        m.undo(); m.undo(); m.undo(); m.tool = .select
 
         // 7) Tela: clicar fora da área confirma (volta a Mover)
         m.tool = .canvas
@@ -1882,8 +1907,21 @@ enum SelfTests {
         check(AppState.stripLimit == 20 && state.stripItems.count == 20 && state.stripItems.map(\.url) == Array(state.library.prefix(20)).map(\.url), "a faixa mostra as 20 mais recentes (\(state.stripItems.count))")
         if let oldest = state.library.last {
             state.open(oldest.url)
-            check(state.stripItems.count == 21 && state.stripItems.last?.url == oldest.url, "a captura aberta aparece mesmo sendo antiga (\(state.stripItems.count))")
+            check(state.stripItems.count == 21 && state.stripItems.first?.url == oldest.url, "a captura aberta aparece à esquerda mesmo sendo antiga (\(state.stripItems.count))")
         }
+        // escolher na biblioteca: fica na primeira posição da faixa e volta a aparecer se estava oculta
+        let pick = state.library[5].url
+        state.setHiddenFromStrip(pick, true)
+        check(!state.stripItems.contains { $0.url == pick }, "a oculta não aparece na faixa")
+        state.openFromBrowser(pick)
+        check(state.stripItems.first?.url == pick && !state.isHiddenFromStrip(pick), "a escolhida na biblioteca fica à esquerda e deixa de estar oculta")
+        state.open(state.library[1].url)
+        check(state.stripItems.first?.url == pick, "abrir outra pela faixa não tira a escolhida do primeiro lugar")
+        state.open(pick)
+        state.setHiddenFromStrip(pick, true)
+        check(!state.stripItems.contains { $0.url == pick } && state.isCurrent(pick), "ocultar a captura aberta tira-a da faixa (continua aberta)")
+        state.setHiddenFromStrip(pick, false)
+        check(state.stripItems.map(\.url).contains(pick) && state.stripItems.first?.url != pick, "voltar a mostrar devolve-a ao seu lugar")
         // clicar numa miniatura marca-a; Backspace envia-a para o Lixo e abre outra
         let victim = state.stripItems[2].url, total = state.library.count
         state.selectInStrip(victim)
@@ -2036,7 +2074,7 @@ extension SelfTests {
         check(isYellow(rgb(300, 250)) && isGreen(rgb(300, 150)) && isRed(rgb(300, 50)), "o amarelo subiu para o lugar do azul (\(String(describing: rgb(300, 250))))")
         check(m.doc.annotations.count == n0 + 3, "cortar cria apagado + imagem + ziguezague (\(m.doc.annotations.count - n0))")
         check(m.doc.annotations.contains { if case .zigzag = $0.shape { return $0.style.colorHex == "#FF00FF" } else { return false } }, "a linha de corte é um ziguezague com a cor da ferramenta")
-        check(m.tool == .select && m.selected?.shape.imageAsset != nil, "depois de cortar volta a Mover com a parte movida selecionada")
+        check(m.tool == .cutout && m.selected?.shape.imageAsset != nil, "depois de cortar a ferramenta continua ativa, com a parte movida selecionada")
         var seamSeen = false
         for y in 190...210 where !seamSeen { for x in 280...320 where !seamSeen { if let p = rgb(x, y), p.0 > 200, p.2 > 200, p.1 < 80 { seamSeen = true } } }
         check(seamSeen, "a linha de corte vê-se junto ao corte")

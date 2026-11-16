@@ -14,7 +14,7 @@ let package = Package(
     targets: [
         // Modelo do documento e (de)serialização. Só Foundation: manter portável.
         .target(name: "CaptureCore"),
-        .executableTarget(name: "CaptureApp", dependencies: ["CaptureCore"], resources: [.copy("Resources/toth-logo.png")], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "CaptureApp", dependencies: ["CaptureCore"], resources: [.copy("Resources/toth-logo.png"), .copy("Resources/icons")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "CaptureCoreTests", dependencies: ["CaptureCore"]),
     ]
 )

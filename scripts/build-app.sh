@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${VERSION:-0.6.2}"
-BUILD="${BUILD:-60}"
+BUILD="${BUILD:-61}"
 BUNDLE_ID="${BUNDLE_ID:-io.github.lestatpirate.toth}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"   # vazio: escolhe-se mais abaixo (identidade local, senão ad hoc)
 APP="dist/Toth.app"
@@ -37,6 +37,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Toth"
 cp docs/brand/Toth.icns "$APP/Contents/Resources/Toth.icns"
 cp Sources/CaptureApp/Resources/toth-logo.png "$APP/Contents/Resources/toth-logo.png"
+mkdir -p "$APP/Contents/Resources/icons"
+cp Sources/CaptureApp/Resources/icons/AppIcon-*.png "$APP/Contents/Resources/icons/"
 cp LICENSE LICENSE.pt.md TRADEMARKS.md PRIVACY.md THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST

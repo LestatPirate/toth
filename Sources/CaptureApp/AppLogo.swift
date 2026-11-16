@@ -20,10 +20,12 @@ enum AppLogo {
     }
 }
 
+/// O símbolo dentro da app (ecrã sem captura, Preferências, Acerca): acompanha o ícone escolhido nas Preferências.
 struct LogoView: View {
     var size: CGFloat
+    @ObservedObject private var icons: AppIcon = .shared
     var body: some View {
-        if let image = AppLogo.image {
+        if let image = icons.image(for: icons.current) ?? AppLogo.image {
             Image(nsImage: image).resizable().interpolation(.high).scaledToFit().frame(width: size, height: size)
         }
     }

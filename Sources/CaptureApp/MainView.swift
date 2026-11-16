@@ -278,8 +278,7 @@ private struct LibraryStrip: View {
                 LazyHStack(spacing: 8) {
                     // só as mais recentes (o resto está em «Abrir Biblioteca»); clicar abre e marca: Backspace envia para o Lixo
                     ForEach(state.stripItems) { item in
-                        ThumbnailView(item: item, revision: state.revision, selected: state.isCurrent(item.url))
-                            .onTapGesture { state.selectInStrip(item.url) }
+                        StripThumbnail(state: state, item: item)
                             .contextMenu {
                                 Button(L("Ocultar da faixa")) { state.setHiddenFromStrip(item.url, true) }
                                     .help(L("Sai desta faixa, mas fica na biblioteca («Abrir Biblioteca» volta a mostrá-la)"))
@@ -306,6 +305,45 @@ private struct LibraryStrip: View {
         }
         .frame(height: 92)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// Uma miniatura da faixa: clicar abre e marca; ao passar o rato (ou na que está aberta) aparecem em cima dois botões
+/// pequenos: ocultar da faixa (à esquerda) e mover para o Lixo (à direita).
+private struct StripThumbnail: View {
+    @ObservedObject var state: AppState
+    let item: LibraryItem
+    /// (Sem @State: o rato por cima guarda-se num objeto.)
+    @StateObject private var hover = Hover()
+    private final class Hover: ObservableObject { @Published var on = false }
+
+    var body: some View {
+        let current = state.isCurrent(item.url)
+        ThumbnailView(item: item, revision: state.revision, selected: current)
+            .onTapGesture { state.selectInStrip(item.url) }
+            .overlay(alignment: .top) {
+                if hover.on || current {
+                    HStack {
+                        chip("eye.slash", L("Ocultar da faixa (fica na biblioteca)")) { state.setHiddenFromStrip(item.url, true) }
+                        Spacer(minLength: 0)
+                        chip("trash", L("Mover para o Lixo (⌘⌫)")) { state.trash(item.url) }
+                    }
+                    .padding(3)
+                }
+            }
+            .onHover { hover.on = $0 }
+    }
+
+    private func chip(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color.black.opacity(0.62)))
+                .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 0.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 

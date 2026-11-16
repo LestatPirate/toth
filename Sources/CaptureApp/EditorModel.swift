@@ -50,7 +50,6 @@ final class EditorModel: ObservableObject {
     @Published private(set) var doc: CaptureDocument
     @Published var tool: Tool = .arrow {
         didSet {
-            if tool != oldValue { toolLocked = false }
             if tool == .canvas && oldValue != .canvas { canvasEntryDepth = undoStack.count }
             if tool == .ocr && oldValue != .ocr { recognizeText() }
             if tool != .ocr && oldValue == .ocr { selectedBlocks = [] }
@@ -159,8 +158,6 @@ final class EditorModel: ObservableObject {
     func rotateLive(_ start: [Annotation], by deg: Double, around c: Point) {
         mutate { d in for a in start { d.update(a.rotated(by: deg, around: c)) }; _ = d.expandAreaToFit(ids: start.map(\.id)) }
     }
-    /// Ferramenta presa (duplo clique no ícone): continua ativa depois de desenhar. Sem isto, depois de um objeto volta a Mover.
-    @Published var toolLocked = false
     /// Elemento sob o rato (para o destaque ao passar por cima).
     @Published var hover: UUID?
     /// Quantos pontos de undo havia ao entrar na Tela (Esc cancela até aqui).
@@ -707,9 +704,9 @@ final class EditorModel: ObservableObject {
     /// Uma edição da área feita à mão: desliga o ajuste automático (senão era desfeito logo a seguir).
     private func performArea(_ f: (inout CaptureDocument) -> Void) { checkpoint(); doc.autoExpand = false; f(&doc); save() }
 
-    /// Depois de desenhar um objeto: a ferramenta volta a Mover, a não ser que esteja presa. Avisa quem quiser saber do objeto novo.
+    /// Depois de desenhar um objeto: a ferramenta continua ativa, para pôr outro a seguir (só se sai dela com Esc ou
+    /// escolhendo outra ferramenta). Avisa quem quiser saber do objeto novo.
     func finishedDrawing() {
-        if !toolLocked && tool != .select { tool = .select }
         if let id = selection { onCreated?(id) }
     }
 
@@ -1004,7 +1001,7 @@ final class EditorModel: ObservableObject {
         let all = selectedAll
         guard let a = all.first else { return }
         var assetData: [String: Data] = [:]
-        for x in all { if let name = x.shape.imageAsset, let d = assets.data(named: name) { assetData[name] = d } }
+        for x in all { for name in [x.shape.imageAsset, x.shape.maskAsset].compactMap({ $0 }) { if let d = assets.data(named: name) { assetData[name] = d } } }
         let pb = NSPasteboard.general
         pb.clearContents()
         if let data = try? JSONEncoder().encode(ClipPayload(annotation: a, annotations: all, assets: assetData)) {
@@ -1044,7 +1041,7 @@ final class EditorModel: ObservableObject {
 
     private func pasteAnnotation(_ clip: ClipPayload) {
         // Imagens: garante o ficheiro neste documento.
-        for a in clip.all { if let name = a.shape.imageAsset, !assets.has(name), let d = clip.assets[name] { try? assets.write(d, as: name) } }
+        for (name, d) in clip.assets where !assets.has(name) { try? assets.write(d, as: name) }
         // Colar no mesmo documento: desloca para não ficar escondido por baixo do original.
         let sameDoc = doc.annotations.contains { $0.id == clip.annotation.id }
         let off = sameDoc ? 24.0 : 0.0
@@ -1161,6 +1158,16 @@ final class EditorModel: ObservableObject {
         let fileURL = (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])?.first
         check(fileURL?.pathExtension == "png" && (fileURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false), "copiar tudo devia pôr um ficheiro PNG na área de transferência (\(String(describing: fileURL)))")
         check(pb.canReadObject(forClasses: [NSImage.self], options: nil), "copiar tudo também leva a imagem")
+        // 6) dentro do Toth, «Copiar tudo» + «Colar» traz os elementos todos (a base como imagem + cada anotação), não a imagem final
+        check(pb.data(forType: Self.clipType) != nil, "copiar tudo devia levar também os elementos (para colar no Toth)")
+        let before = doc.annotations.count
+        paste()
+        check(doc.annotations.count == 2 * before + 1, "colar depois de copiar tudo traz a base e todas as anotações (\(doc.annotations.count) de \(before))")
+        let pasted = selectedAll
+        check(pasted.count == before + 1, "os elementos colados ficam todos selecionados (\(pasted.count))")
+        check(pasted.contains { $0.editableString == "texto externo" }, "o texto colado continua a ser texto editável")
+        check(pasted.first.flatMap { $0.shape.imageAsset }.map { assets.has($0) } ?? false, "a captura de base vem como objeto de imagem, com o ficheiro")
+        undo()
         undo(); undo(); undo(); undo()   // volta a antes dos testes de colar texto/duplicar
         return fails
     }
@@ -1181,13 +1188,42 @@ final class EditorModel: ObservableObject {
 
     func exportPNG() -> Data? { Renderer.png(doc, base: base, assets: assets) }
 
-    /// Copia a imagem final: como imagem (para apps que colam imagens) e como ficheiro PNG (para o Finder, e-mails, chats…).
+    /// Copia tudo. Para fora do Toth vai a imagem final: como imagem (para apps que colam imagens) e como ficheiro PNG
+    /// (para o Finder, e-mails, chats…). Para dentro do Toth vão os elementos todos, editáveis: a captura de base como um
+    /// objeto de imagem e, por cima, cada anotação. Colar no Toth usa sempre os elementos; a imagem final é só para fora.
     func copyToPasteboard() {
         guard let data = exportPNG(), let image = NSImage(data: data) else { return }
-        NSPasteboard.general.clearContents()
+        let pb = NSPasteboard.general
+        pb.clearContents()
         var objects: [NSPasteboardWriting] = [image]
         if let file = exportedFile() { objects.append(file as NSURL) }
-        NSPasteboard.general.writeObjects(objects)
+        pb.writeObjects(objects)
+        if let payload = allElementsPayload(), let json = try? JSONEncoder().encode(payload) {
+            pb.addTypes([Self.clipType], owner: nil)
+            pb.setData(json, forType: Self.clipType)
+        }
+    }
+
+    /// Todos os elementos da captura, de baixo para cima, com os ficheiros de que precisam (para colar noutra captura).
+    private func allElementsPayload() -> ClipPayload? {
+        var items: [Annotation] = []
+        var files: [String: Data] = [:]
+        // a captura de base vai como objeto de imagem, no sítio, tamanho e rotação com que está na tela
+        if let png = NSBitmapImageRep(cgImage: base).representation(using: .png, properties: [:]) {
+            let name = "\(UUID().uuidString).png"
+            let r = doc.imagePlacement
+            var a = Annotation(id: UUID(), z: (doc.annotations.map(\.z).min() ?? 0) - 1,
+                               shape: .image(origin: Point(x: r.x, y: r.y), width: r.width, height: r.height, asset: name), style: Style(lineVisible: false))
+            a.rotation = doc.imageRotation
+            items.append(a)
+            files[name] = png
+        }
+        for a in doc.ordered {
+            items.append(a)
+            for name in [a.shape.imageAsset, a.shape.maskAsset].compactMap({ $0 }) { if let d = assets.data(named: name) { files[name] = d } }
+        }
+        guard let first = items.first else { return nil }
+        return ClipPayload(annotation: first, annotations: items, assets: files)
     }
 
     /// O PNG final escrito num ficheiro temporário com o nome da captura (para arrastar ou colar como ficheiro).

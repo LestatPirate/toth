@@ -15,7 +15,14 @@ struct SettingsView: View {
 
     private var language: Binding<AppLanguage> { Binding(get: { localizer.language }, set: { localizer.set($0) }) }
 
+    /// (Com rolagem: as preferências já não cabem na altura de um portátil pequeno.)
     var body: some View {
+        ScrollView { content }
+            .frame(width: 520)
+            .frame(minHeight: 400, maxHeight: .infinity)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 LogoView(size: 44)
@@ -98,6 +105,9 @@ struct SettingsView: View {
                 Text(L("O Toth só usa a Acessibilidade para ler o retângulo do elemento sob o rato durante a captura; não lê conteúdos nem controla outras apps."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Divider()
+                Text(L("Ícone da aplicação")).font(.headline)
+                AppIconPicker()
+                Divider()
                 Text(L("Atualizações")).font(.headline)
                 Toggle(L("Procurar atualizações automaticamente"), isOn: $updater.automatic)
                 HStack(spacing: 10) {
@@ -112,7 +122,7 @@ struct SettingsView: View {
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(22)
-        .frame(width: 520, height: 790, alignment: .topLeading)
+        .frame(width: 520, alignment: .topLeading)
     }
 
     /// Escolhe a nova pasta e, depois de confirmar, move tudo para lá.
@@ -149,7 +159,9 @@ enum SettingsWindow {
 
     static func show() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 790), styleMask: [.titled, .closable],
+            // tão alta quanto o conteúdo, mas nunca mais do que o ecrã (o resto vê-se com a rolagem)
+            let height = min(940, (NSScreen.main?.visibleFrame.height ?? 800) - 60)
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height), styleMask: [.titled, .closable],
                              backing: .buffered, defer: false)
             w.title = L("Preferências")
             w.contentView = NSHostingView(rootView: SettingsView(settings: .shared))

@@ -66,9 +66,13 @@ final class AppState: ObservableObject {
 
     func refreshLibrary() {
         let items = (try? FileManager.default.contentsOfDirectory(at: CaptureStore.folder, includingPropertiesForKeys: nil)) ?? []
+        let newest = library.first?.url
         library = items.filter { $0.pathExtension == "capture" || VideoFiles.isVideo($0) }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
             .map(LibraryItem.init)
+        // chegou uma captura nova: é ela que fica à esquerda (a escolhida na biblioteca volta ao seu lugar)
+        if let first = library.first?.url, let newest, first != newest, first.lastPathComponent > newest.lastPathComponent { stripPinned = nil }
+        if let pin = stripPinned, !library.contains(where: { $0.url == pin }) { stripPinned = nil }
         folderCaptureCount = library.filter { CaptureContainer.isFolderCapture($0.url) }.count
         LibraryIndex.shared.openURL = { [weak self] in self?.model?.url }
         if showBrowser { LibraryIndex.shared.sync(library) }
@@ -83,12 +87,21 @@ final class AppState: ObservableObject {
 
     /// Quantas capturas a faixa de baixo mostra (as mais recentes); o resto está em «Abrir Biblioteca».
     static let stripLimit = 20
-    /// As capturas da faixa: as `stripLimit` mais recentes que não foram ocultadas e, se for mais antiga, também a que está aberta.
+    /// As capturas da faixa: as `stripLimit` mais recentes que não foram ocultadas. À esquerda de todas fica a que se
+    /// escolheu na biblioteca (`stripPinned`) e, se for mais antiga do que as da faixa, a que está aberta.
+    /// Uma captura ocultada não aparece, mesmo aberta (senão o botão de ocultar não fazia nada à que se está a ver).
     var stripItems: [LibraryItem] {
-        var items = Array(library.filter { !isHiddenFromStrip($0.url) }.prefix(Self.stripLimit))
-        if let open = library.first(where: { isCurrent($0.url) }), !items.contains(open) { items.append(open) }
+        let visible = library.filter { !isHiddenFromStrip($0.url) }
+        var items = Array(visible.prefix(Self.stripLimit))
+        if let open = visible.first(where: { isCurrent($0.url) }), !items.contains(open) { items.insert(open, at: 0) }
+        if let pin = stripPinned, let item = visible.first(where: { $0.url == pin }) {
+            items.removeAll { $0 == item }
+            items.insert(item, at: 0)
+        }
         return items
     }
+    /// A captura escolhida na biblioteca: fica na primeira posição da faixa até se escolher outra ou chegar uma captura nova.
+    @Published private(set) var stripPinned: URL?
 
     // MARK: Ocultar da faixa (fica na biblioteca)
 
@@ -97,11 +110,11 @@ final class AppState: ObservableObject {
     @Published private(set) var hiddenFromStrip: Set<String> = Set(UserDefaults.standard.stringArray(forKey: AppState.hiddenKey) ?? [])
     func isHiddenFromStrip(_ url: URL) -> Bool { hiddenFromStrip.contains(url.lastPathComponent) }
     func setHiddenFromStrip(_ url: URL, _ hidden: Bool) {
-        if hidden { hiddenFromStrip.insert(url.lastPathComponent) } else { hiddenFromStrip.remove(url.lastPathComponent) }
+        if hidden { hiddenFromStrip.insert(url.lastPathComponent); if stripPinned == url { stripPinned = nil } } else { hiddenFromStrip.remove(url.lastPathComponent) }
         UserDefaults.standard.set(Array(hiddenFromStrip).sorted(), forKey: Self.hiddenKey)
     }
 
-    /// Miniatura da faixa em que se clicou por último: Backspace/Delete envia-a para o Lixo. Limpa-se ao clicar noutro
+    /// Miniatura da faixa em que se clicou por último: Backspace/Delete (ou ⌘⌫) envia-a para o Lixo. Limpa-se ao clicar noutro
     /// sítio ou ao premir outra tecla, para o Backspace nunca apagar uma captura por engano.
     @Published var stripSelection: URL?
     private var stripMonitor: Any?
@@ -130,7 +143,8 @@ final class AppState: ObservableObject {
                 guard state.stripSelection != nil else { return event }
                 // qualquer clique desmarca (clicar numa miniatura volta a marcar, ao soltar)
                 guard event.type == .keyDown else { state.stripSelection = nil; return event }
-                let isDelete = (event.keyCode == 51 || event.keyCode == 117) && event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+                // Backspace/Delete, sozinho ou com ⌘ (como no Finder)
+                let isDelete = (event.keyCode == 51 || event.keyCode == 117) && event.modifierFlags.intersection([.option, .control]).isEmpty
                 let typing = event.window?.firstResponder is NSText
                 guard isDelete, !typing, event.window?.attachedSheet == nil else { state.stripSelection = nil; return event }
                 state.deleteStripSelection()
@@ -221,9 +235,13 @@ final class AppState: ObservableObject {
     }
 
     /// Escolhe uma captura da biblioteca e abre-a no editor.
+    /// Escolheu-se na biblioteca: abre, volta a mostrá-la na faixa (se estava oculta) e põe-na na primeira posição.
     func openFromBrowser(_ url: URL) {
         open(url)
         showBrowser = false
+        guard isCurrent(url) else { return }
+        setHiddenFromStrip(url, false)
+        stripPinned = library.first(where: { isCurrent($0.url) })?.url
     }
 
     /// **Abrir**: escolhe imagens de qualquer sítio do computador (ou capturas `.capture`) e abre-as no editor.

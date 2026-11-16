@@ -15,9 +15,12 @@ struct CanvasRepresentable: NSViewRepresentable {
 /// Editor de texto em linha, posicionado sobre o objeto.
 final class InlineTextView: NSTextView {
     var onFinish: (() -> Void)?
+    /// Esc: termina e, se o objeto era novo e ficou vazio, tira-o (um balão vazio posto por engano não fica na imagem).
+    var onCancel: (() -> Void)?
     override func keyDown(with event: NSEvent) {
         let cmd = event.modifierFlags.contains(.command)
-        if event.keyCode == 53 || (cmd && event.keyCode == 36) { onFinish?(); return }  // Esc ou ⌘↩ terminam
+        if event.keyCode == 53 { (onCancel ?? onFinish)?(); return }      // Esc termina (e tira o novo que ficou vazio)
+        if cmd && event.keyCode == 36 { onFinish?(); return }             // ⌘↩ termina
         super.keyDown(with: event)
     }
     override func resignFirstResponder() -> Bool {
@@ -507,6 +510,7 @@ final class CanvasView: NSView {
         imageDrag = nil; rotating = false; gestureMoved = false
         fitAtGestureStart = false; areaChangedInGesture = false
         let tol = 6 / Double(scale)
+        if adjustSelected(at: p, tol: tol, event: event) { return }
 
         switch model.tool {
         case .select:
@@ -804,9 +808,33 @@ final class CanvasView: NSView {
     }
 
     /// Seleciona um objeto que já existia e passa para a ferramenta Mover: o painel e as opções passam a ser os desse objeto.
+    /// Clique (sem arrastar) sobre um objeto que já existia, com uma ferramenta de desenho: fica selecionado, para o ajustar
+    /// pelas alças. A ferramenta continua ativa (só se sai dela com Esc ou escolhendo outra).
     private func selectExisting(_ id: UUID) {
         model.selection = id
-        model.tool = .select
+    }
+
+    /// Com uma ferramenta de desenho ativa, o objeto selecionado (normalmente o que se acabou de pôr) continua ajustável:
+    /// as alças redimensionam e rodam; o duplo clique edita o texto; e os que nascem de um clique (texto, balão, carimbo,
+    /// etapa, imagem) arrastam-se pelo corpo. ⌥ ignora tudo isto e desenha por cima. Devolve `true` se tratou do clique.
+    private func adjustSelected(at p: Point, tol: Double, event: NSEvent) -> Bool {
+        guard ![.select, .area, .canvas, .ocr, .cutout].contains(model.tool), !event.modifierFlags.contains(.option),
+              let id = model.selection, !model.isMultiSelection,
+              let a = model.doc.annotations.first(where: { $0.id == id }), a.visible, model.isShown(a) else { return false }
+        if near(p, rotationHandlePoint(a)) { model.checkpoint(); rotating = true; return true }
+        if let h = a.handle(at: p, tolerance: 8 / Double(scale)) {
+            model.checkpoint(); resizing = h
+            resizeStart = model.textScalesWithBox ? a.effectiveFontSize.map { (a.shape.bodyBounds, $0) } : nil
+            return true
+        }
+        guard model.topmost(at: p, tolerance: tol)?.id == id else { return false }
+        if event.clickCount == 2, a.editableString != nil { beginEditing(id, isNew: false); return true }
+        var clickMade = a.editableString != nil || a.shape.stampSymbol != nil || a.shape.stepNumber != nil
+        if case .image = a.shape { clickMade = true }
+        guard clickMade else { return false }
+        model.checkpoint(); moving = true
+        moveStart = (p, [id: a.shape])
+        return true
     }
 
     private func update(_ id: UUID, _ f: (inout Annotation) -> Void) {
@@ -888,6 +916,7 @@ final class CanvasView: NSView {
         view.isVerticallyResizable = false
         view.textContainerInset = NSSize.zero
         view.onFinish = { [weak self] in self?.finishEditing() }
+        view.onCancel = { [weak self] in self?.finishEditing(cancelled: true) }
         view.string = a.editableString ?? ""
         addSubview(view)
         editor = view
@@ -952,17 +981,18 @@ final class CanvasView: NSView {
     }
 
     /// Fecha o editor e grava o texto (cada edição é um ponto de undo, que inclui o ajuste da caixa).
-    private func finishEditing() {
+    private func finishEditing(cancelled: Bool = false) {
         guard let view = editor, let id = editingID else { return }
         let text = view.string
         let isNew = editingIsNew, original = originalString
-        view.onFinish = nil
+        view.onFinish = nil; view.onCancel = nil
         if let o = textObserver { NotificationCenter.default.removeObserver(o); textObserver = nil }
         editor = nil; editingID = nil
         view.removeFromSuperview()
 
         if isNew {
-            if text.isEmpty && !(model.doc.annotations.first { $0.id == id }?.shape.isCallout ?? false) {
+            // texto novo vazio não fica; um balão vazio fica (pode querer-se só a forma), a não ser que se saia com Esc
+            if text.isEmpty && (cancelled || !(model.doc.annotations.first { $0.id == id }?.shape.isCallout ?? false)) {
                 model.mutate { $0.remove(id: id) }
                 model.dropLastCheckpoint()
                 model.selection = nil
@@ -986,6 +1016,7 @@ final class CanvasView: NSView {
 
     var debugEditorString: String? { editor?.string }
     func debugFinishEditing() { finishEditing() }
+    func debugCancelEditing() { finishEditing(cancelled: true) }
     func debugHover(at p: Point) { updateHover(at: p) }
 
     /// Abre o editor no elemento selecionado e deixa-o aberto (flag `--edit-hold`, para captura de ecrã).
