@@ -11,8 +11,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.6.4}"
-BUILD="${BUILD:-69}"
+VERSION="${VERSION:-0.6.5}"
+BUILD="${BUILD:-70}"
 BUNDLE_ID="${BUNDLE_ID:-io.github.lestatpirate.toth}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"   # vazio: escolhe-se mais abaixo (identidade local, senão ad hoc)
 APP="dist/Toth.app"

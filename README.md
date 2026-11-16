@@ -12,7 +12,7 @@
 
 <br>
 
-[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.6.4-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
+[![Descarregar](https://img.shields.io/badge/DESCARREGAR-v0.6.5-111111?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
 [![Site](https://img.shields.io/badge/SITE-lestatpirate.github.io%2Ftoth-111111?style=for-the-badge&logo=github&logoColor=white)](https://lestatpirate.github.io/toth/)
 [![Licença](https://img.shields.io/badge/LICEN%C3%87A-MIT-111111?style=for-the-badge)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-15%2B-111111?style=for-the-badge&logo=apple&logoColor=white)](#instalação)
@@ -68,9 +68,24 @@ O **Toth** é uma app nativa para Mac, escrita em Swift puro, que junta num só 
 - **Nitidez de píxel.** Captura e gravação à resolução nativa do ecrã, zoom 1:1 em píxeis do ecrã, H.264 com débito alto. O que vê é o que fica.
 - **Privacidade verificável.** O único pedido de rede é a procura de atualizações (desligável), as versões são verificadas por SHA-256 e assinatura, e o código é aberto.
 
-### Novidades da versão 0.6.4
+### Novidades da versão 0.6.5
 
-Ferramentas que ficam ativas para pôr vários objetos seguidos, miniaturas com botões, ícone da app à escolha e copiar tudo com os elementos editáveis.
+Recortar passa a ser a sério: o que se retira desaparece de vez, e a imagem recortada é a imagem daí em diante.
+
+| | |
+|---|---|
+| **Recorte a sério na Tela** | Ao confirmar uma área mais pequena, o que ficou de fora **desaparece**: os objetos de fora são removidos e a parte da captura que sobra não volta quando a área cresce nem com «Ajustar a tela ao conteúdo». |
+| **A imagem é a recortada** | Depois de recortar, a opção **Imagem** da Tela move, redimensiona, roda e repõe a imagem recortada. Para voltar à original, **Desfazer** (⌘Z). |
+| **Apagar uma faixa junto à borda recorta** | Com Selecionar, marcar uma faixa de lado a lado junto a uma borda e premir Delete tira-a à imagem. Não é preciso acertar na borda ao píxel. Depois de apagar, a tela fica sempre ajustada ao conteúdo. |
+| **Cortar faixa achata** | O resultado do corte fica **numa só imagem**, sem peças soltas. |
+| **Sem vestígios no editor** | Fora da área de trabalho já não aparece a captura escurecida nem retângulos cinzentos no sítio do que foi retirado. |
+
+<p align="center"><img src="docs/images/toth-select-pt.png" alt="Ferramenta Selecionar do Toth: retângulo, elipse e varinha" width="880"></p>
+
+<details>
+<summary><b>Versões anteriores</b> (0.6.4 · 0.6.2 · 0.6.1 · 0.6.0 · 0.5.0 · 0.4.0 · 0.3.0)</summary>
+
+#### 0.6.3 e 0.6.4 — Ferramentas que ficam ativas, miniaturas com botões e ícone à escolha
 
 | | |
 |---|---|
@@ -81,10 +96,6 @@ Ferramentas que ficam ativas para pôr vários objetos seguidos, miniaturas com 
 | **Preferências com rolagem** | A janela cabe em ecrãs pequenos. |
 | **Barra do seletor** (0.6.4) | **Capturar** passa para a esquerda e **Cancelar** para a direita. |
 
-<p align="center"><img src="docs/images/toth-select-pt.png" alt="Ferramenta Selecionar do Toth: retângulo, elipse e varinha" width="880"></p>
-
-<details>
-<summary><b>Versões anteriores</b> (0.6.2 · 0.6.1 · 0.6.0 · 0.5.0 · 0.4.0 · 0.3.0)</summary>
 
 #### 0.6.2 — Seletor com sugestão, texto do ecrã, fundo limpo e vídeos num só ficheiro
 
@@ -188,7 +199,7 @@ O Toth não tem legendas automáticas, efeitos nem transições, e não partilha
 ### Instalação
 **Requisitos:** macOS 15 ou superior (Apple Silicon e Intel; testado em Apple Silicon).
 
-1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.6.4.zip` e descomprima.
+1. Em [**Releases**](../../releases/latest), descarregue `Toth-0.6.5.zip` e descomprima.
 2. Arraste `Toth.app` para **Aplicações**.
 3. **Primeira abertura (uma só vez).** A app ainda não está notarizada pela Apple, por isso o macOS mostra *“Toth” não aberto*. **Não mova para o Lixo:** clique em **OK**, abra **Definições do Sistema → Privacidade e Segurança**, desça até **Segurança**, clique em **Abrir mesmo assim** junto a “Toth” e confirme. (No macOS 14 ou anterior: botão direito → **Abrir**. No Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Permissão guiada.** Ao abrir, o Toth verifica a **Gravação de Ecrã** e, se faltar, mostra um guia de 3 passos: **Conceder permissão** → ativar o Toth na lista → **Reiniciar o Toth**.
@@ -239,9 +250,24 @@ Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` ger
 - **Pixel sharpness.** Capture and recording at the screen's native resolution, 1:1 zoom in screen pixels, high-bitrate H.264. What you see is what you keep.
 - **Verifiable privacy.** The only network request is the update check (which you can turn off), releases are verified by SHA-256 and signature, and the code is open.
 
-### What's new in 0.6.4
+### What's new in 0.6.5
 
-Tools that stay active to place several objects in a row, thumbnails with buttons, an app icon of your choice and copy all with editable elements.
+Cropping is now for real: what you remove is gone for good, and the cropped image is the image from then on.
+
+| | |
+|---|---|
+| **Real crop in Canvas** | When you confirm a smaller area, what was left outside is **gone**: outside objects are removed and the leftover part of the capture does not come back when the area grows or with “Fit canvas to content”. |
+| **The image is the cropped one** | After cropping, the **Image** option in Canvas moves, resizes, rotates and resets the cropped image. To get the original back, **Undo** (⌘Z). |
+| **Erasing a band along an edge crops** | With Select, marking a band from side to side along an edge and pressing Delete removes it from the image. You do not need to hit the edge to the pixel. After erasing, the canvas is always fitted to the content. |
+| **Cut out flattens** | The result of the cut is **a single image**, with no loose pieces. |
+| **No traces in the editor** | Outside the work area there is no dimmed capture and no grey rectangles where content was removed. |
+
+
+
+<details>
+<summary><b>Earlier versions</b> (0.6.4 · 0.6.2 · 0.6.1 · 0.6.0 · 0.5.0 · 0.4.0 · 0.3.0)</summary>
+
+#### 0.6.3 and 0.6.4 — Tools that stay active, thumbnails with buttons and your choice of icon
 
 | | |
 |---|---|
@@ -252,10 +278,6 @@ Tools that stay active to place several objects in a row, thumbnails with button
 | **Scrollable Preferences** | The window fits small screens. |
 | **Selector bar** (0.6.4) | **Capture** moves to the left and **Cancel** to the right. |
 
-
-
-<details>
-<summary><b>Earlier versions</b> (0.6.2 · 0.6.1 · 0.6.0 · 0.5.0 · 0.4.0 · 0.3.0)</summary>
 
 #### 0.6.2 — Selector with suggestion, screen text, clean background and single-file videos
 
@@ -359,7 +381,7 @@ Toth has no automatic captions, effects or transitions, and does not share onlin
 ### Installation
 **Requirements:** macOS 15 or later (Apple Silicon and Intel; tested on Apple Silicon).
 
-1. Under [**Releases**](../../releases/latest), download `Toth-0.6.4.zip` and unzip it.
+1. Under [**Releases**](../../releases/latest), download `Toth-0.6.5.zip` and unzip it.
 2. Drag `Toth.app` to **Applications**.
 3. **First launch (once).** The app is not yet notarized by Apple, so macOS shows *“Toth” Not Opened*. **Don't move it to the Trash:** click **Done**, open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to “Toth” and confirm. (On macOS 14 or earlier: right-click → **Open**. In Terminal: `xattr -dr com.apple.quarantine /Applications/Toth.app`.)
 4. **Guided permission.** On launch, Toth checks **Screen Recording** and, if missing, shows a 3-step guide: **Grant permission** → turn Toth on in the list → **Restart Toth**.
