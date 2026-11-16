@@ -228,6 +228,9 @@ Se quiser ajudar a mantê-lo, pode apoiar de forma voluntária.<br>
 ### Compilar e contribuir
 Só são precisas as *Command Line Tools* do macOS: `./scripts/build-app.sh` gera `dist/Toth.app` e o zip. Guia para programadores em [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Contribuições são bem-vindas (*issue* ou *pull request*). Segurança: [SECURITY.md](SECURITY.md).
 
+### Do mesmo autor
+**[Udjath](https://lestatpirate.github.io/udjath/pt/)**: muda a resolução do ecrã no Mac a partir da barra de menu, com reversão automática. Gratuita e livre (MIT).
+
 ### Licença
 **MIT** (software livre): [LICENSE](LICENSE) ([tradução de cortesia](LICENSE.pt.md)). © 2026 **Alex Felizardo**. O nome e o logótipo não estão abrangidos pela MIT ([TRADEMARKS.md](TRADEMARKS.md)). [Privacidade](PRIVACY.md) · [Segurança](SECURITY.md) · [Avisos de terceiros](THIRD_PARTY_NOTICES.md).
 
@@ -409,6 +412,9 @@ If you would like to help keep it going, you can support it voluntarily.<br>
 
 ### Build and contribute
 Only the macOS *Command Line Tools* are needed: `./scripts/build-app.sh` produces `dist/Toth.app` and the zip. Developer guide: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Contributions are welcome (*issue* or *pull request*). Security: [SECURITY.md](SECURITY.md).
+
+### By the same author
+**[Udjath](https://lestatpirate.github.io/udjath/)**: switch your Mac's display resolution from the menu bar, with automatic revert. Free and open source (MIT).
 
 ### License
 **MIT** (free software): [LICENSE](LICENSE). © 2026 **Alex Felizardo**. The name and the logo are not covered by the MIT License ([TRADEMARKS.md](TRADEMARKS.md)). [Privacy](PRIVACY.md) · [Security](SECURITY.md) · [Third-party notices](THIRD_PARTY_NOTICES.md).
