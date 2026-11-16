@@ -236,6 +236,10 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     public var workArea: WorkArea?
     /// Enquadramento da imagem original (posição, tamanho e rotação). `nil` = na origem, ao tamanho natural, sem rodar.
     public var imageFrame: ImageFrame?
+    /// Parte da imagem original que conta, em píxeis da original (`nil` = toda). É o recorte a sério: depois de recortar,
+    /// «a imagem» passa a ser só esta parte (é ela que se move, redimensiona, roda e repõe na Tela); o resto não existe
+    /// para o documento. Os píxeis do ficheiro original não mudam: desfazer repõe o recorte anterior.
+    public var imageCrop: Rect?
     /// Cor de fundo onde a área vai além da imagem.
     public var backgroundHex: String = "#FFFFFF"
     public var transparentBackground: Bool = false
@@ -253,7 +257,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case formatVersion, canvasWidth, canvasHeight, workArea, crop, imageFrame, backgroundHex, transparentBackground, autoExpand, nextStepNumber, title, annotations
+        case formatVersion, canvasWidth, canvasHeight, workArea, crop, imageFrame, imageCrop, backgroundHex, transparentBackground, autoExpand, nextStepNumber, title, annotations
     }
 
     public init(from decoder: Decoder) throws {
@@ -264,6 +268,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         // "crop" é o nome antigo da área de trabalho.
         workArea = try c.decodeIfPresent(WorkArea.self, forKey: .workArea) ?? c.decodeIfPresent(WorkArea.self, forKey: .crop)
         imageFrame = try c.decodeIfPresent(ImageFrame.self, forKey: .imageFrame)
+        imageCrop = try c.decodeIfPresent(WorkArea.self, forKey: .imageCrop)?.rect   // (mesmo formato da área: origem + tamanho)
         backgroundHex = try c.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#FFFFFF"
         transparentBackground = try c.decodeIfPresent(Bool.self, forKey: .transparentBackground) ?? false
         autoExpand = try c.decodeIfPresent(Bool.self, forKey: .autoExpand) ?? true
@@ -279,6 +284,7 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         try c.encode(canvasHeight, forKey: .canvasHeight)
         try c.encodeIfPresent(workArea, forKey: .workArea)
         try c.encodeIfPresent(imageFrame, forKey: .imageFrame)
+        try c.encodeIfPresent(imageCrop.map { WorkArea($0) }, forKey: .imageCrop)
         try c.encode(backgroundHex, forKey: .backgroundHex)
         try c.encode(transparentBackground, forKey: .transparentBackground)
         try c.encode(autoExpand, forKey: .autoExpand)
@@ -287,8 +293,15 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
         try c.encode(annotations, forKey: .annotations)
     }
 
-    /// Tamanho natural da imagem original (os píxeis).
-    public var naturalImageRect: Rect { Rect(x: 0, y: 0, width: canvasWidth, height: canvasHeight) }
+    /// A imagem ao natural: a parte que conta (`imageCrop`, ou toda), no sítio e com o tamanho que tem na original.
+    public var naturalImageRect: Rect { imageCrop ?? Rect(x: 0, y: 0, width: canvasWidth, height: canvasHeight) }
+    /// Onde a imagem original **inteira** teria de ser desenhada para a parte que conta cair em `imagePlacement`
+    /// (quem desenha recorta a `imagePlacement`).
+    public var fullImagePlacement: Rect {
+        let p = imagePlacement, s = naturalImageRect
+        let kx = p.width / max(1e-9, s.width), ky = p.height / max(1e-9, s.height)
+        return Rect(x: p.x - s.x * kx, y: p.y - s.y * ky, width: canvasWidth * kx, height: canvasHeight * ky)
+    }
     /// Onde a imagem é desenhada (antes de rodar), em coordenadas do documento.
     public var imagePlacement: Rect { imageFrame?.rect ?? naturalImageRect }
     public var imageRotation: Double { imageFrame?.rotation ?? 0 }
@@ -331,15 +344,32 @@ public struct CaptureDocument: Codable, Equatable, Sendable {
     }
 
     /// Recorte a sério: o que fica fora de `keep` desaparece de vez, em vez de ficar escondido à espera de a área voltar
-    /// a crescer. Os objetos todos de fora são removidos; a parte da imagem de base que sobra de cada lado é coberta por
-    /// uma faixa «Apagado» por baixo de tudo (vai de lado a lado junto à borda, por isso `contentBounds` deixa de a contar
-    /// e «ajustar ao conteúdo» já não a traz de volta). Um objeto que atravesse a borda fica inteiro: continua a ser um
-    /// objeto que se vê, se move e se apaga. O original (a imagem de base) não é alterado: desfazer repõe tudo.
+    /// a crescer. Os objetos todos de fora são removidos e a imagem passa a ser só a parte de dentro (`imageCrop`): é essa
+    /// que a Tela move, redimensiona e repõe daí em diante. Com a imagem rodada não se pode recortar a direito: o que
+    /// sobra é tapado por faixas «Apagado» por baixo de tudo. Um objeto que atravesse a borda fica inteiro: continua a ser
+    /// um objeto que se vê, se move e se apaga. O ficheiro original não é alterado: desfazer repõe tudo.
     public mutating func discardOutside(_ keep: Rect) {
         annotations.removeAll { a in
             if case .erase = a.shape { return false }
             return !a.worldBounds.intersects(keep)
         }
+        // a imagem (sem rotação) recorta-se mesmo: passa a contar só a parte que fica dentro de `keep`
+        if imageRotation == 0 {
+            let p = imagePlacement
+            let x0 = max(p.minX, keep.minX), y0 = max(p.minY, keep.minY), x1 = min(p.maxX, keep.maxX), y1 = min(p.maxY, keep.maxY)
+            if x1 - x0 >= 1, y1 - y0 >= 1 {
+                let vis = Rect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+                if vis != p {
+                    let s = naturalImageRect
+                    let kx = s.width / p.width, ky = s.height / p.height
+                    let crop = Rect(x: s.x + (vis.x - p.x) * kx, y: s.y + (vis.y - p.y) * ky, width: vis.width * kx, height: vis.height * ky)
+                    imageCrop = crop
+                    imageFrame = vis == crop ? nil : ImageFrame(vis, rotation: 0)
+                }
+                return
+            }
+        }
+        // imagem rodada (ou toda de fora): não dá para a recortar a direito; tapa-se o que sobra com faixas «Apagado»
         var ext = imageRect.union(keep)
         for a in annotations { ext = ext.union(a.worldBounds) }
         ext = ext.insetBy(dx: -2, dy: -2)

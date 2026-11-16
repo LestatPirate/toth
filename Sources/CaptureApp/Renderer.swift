@@ -41,7 +41,8 @@ enum Renderer {
         // A imagem original, no seu enquadramento (deslocada, redimensionada e/ou rodada; os píxeis nunca mudam).
         ctx.saveGState()
         rotate(ctx, by: doc.imageRotation, around: doc.imagePlacement.cg)
-        drawImage(base, in: doc.imagePlacement.cg, ctx)
+        if doc.imageCrop != nil { ctx.clip(to: doc.imagePlacement.cg) }   // recortada: só a parte que conta
+        drawImage(base, in: doc.fullImagePlacement.cg, ctx)
         ctx.restoreGState()
 
         let previous = NSGraphicsContext.current

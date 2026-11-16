@@ -1132,19 +1132,46 @@ import Foundation
     doc.discardOutside(keep)
     #expect(!doc.annotations.contains { $0.id == outside.id })
     #expect(doc.annotations.contains { $0.id == inside.id } && doc.annotations.contains { $0.id == crossing.id })
-    let erases = doc.annotations.filter { if case .erase = $0.shape { return true } else { return false } }
-    #expect(erases.count == 1 && erases[0].z < inside.z)                 // a faixa fica por baixo de tudo
-    #expect(erases[0].worldBounds.minX == 300 && erases[0].worldBounds.maxX >= 600)
+    // a imagem passa a ser só a parte de dentro, sem «Apagados»
+    #expect(doc.imageCrop == keep && doc.imagePlacement == keep && doc.imageRect == keep)
+    #expect(!doc.annotations.contains { if case .erase = $0.shape { return true } else { return false } })
     // «ajustar ao conteúdo» só cresce até ao objeto que atravessa a borda, nunca até à imagem recortada
-    doc.fitAreaToContent()
     // (a caixa do objeto conta com a espessura do traço, daí a folga)
+    doc.fitAreaToContent()
     #expect(doc.area.minX == 0 && doc.area.maxX >= 340 && doc.area.maxX <= 348 && doc.area.height == 400)
-    // sem nada a atravessar, fica exatamente o que se guardou; repetir não acumula faixas
     _ = doc.remove(id: crossing.id)
-    doc.discardOutside(keep)
     doc.fitAreaToContent()
     #expect(doc.area == keep)
-    #expect(doc.annotations.filter { if case .erase = $0.shape { return true } else { return false } }.count == 1)
+    // grava-se e relê-se
+    let back = try JSONDecoder().decode(CaptureDocument.self, from: JSONEncoder().encode(doc))
+    #expect(back.imageCrop == keep && back == doc)
+}
+
+@Test func croppedImageIsTheImageFromThenOn() throws {
+    var doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+    // imagem a metade do tamanho, deslocada: ocupa 100…400 × 50…250
+    doc.setImageFrame(Rect(x: 100, y: 50, width: 300, height: 200), rotation: 0)
+    doc.discardOutside(Rect(x: 100, y: 50, width: 150, height: 200))           // fica a metade esquerda
+    #expect(doc.imageCrop == Rect(x: 0, y: 0, width: 300, height: 400))        // em píxeis da original
+    #expect(doc.imagePlacement == Rect(x: 100, y: 50, width: 150, height: 200))
+    #expect(doc.naturalImageRect == Rect(x: 0, y: 0, width: 300, height: 400))
+    // a original inteira teria de ser desenhada em 100…400 para a parte que conta cair no sítio
+    #expect(doc.fullImagePlacement == Rect(x: 100, y: 50, width: 300, height: 200))
+    // recortar outra vez parte da já recortada
+    doc.discardOutside(Rect(x: 100, y: 50, width: 150, height: 100))
+    #expect(doc.imageCrop == Rect(x: 0, y: 0, width: 300, height: 200))
+    // «repor» (sem enquadramento) dá a recortada ao tamanho natural, não a original
+    doc.setImageFrame(doc.naturalImageRect, rotation: 0)
+    #expect(doc.imageFrame == nil && doc.imageRect == Rect(x: 0, y: 0, width: 300, height: 200))
+}
+
+@Test func rotatedImageIsCoveredInsteadOfCropped() throws {
+    var doc = CaptureDocument(canvasWidth: 600, canvasHeight: 400)
+    doc.setImageFrame(Rect(x: 0, y: 0, width: 600, height: 400), rotation: 30)
+    let keep = Rect(x: 0, y: 0, width: 300, height: 400)
+    doc.discardOutside(keep)
+    #expect(doc.imageCrop == nil)
+    #expect(doc.annotations.contains { if case .erase = $0.shape { return true } else { return false } })
 }
 
 @Test func flattenLeavesOneImageOverTheHiddenBase() throws {

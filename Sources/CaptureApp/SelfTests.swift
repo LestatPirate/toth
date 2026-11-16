@@ -2125,6 +2125,16 @@ extension SelfTests {
             check(abs(outside.r - backdrop.r) < 6 && abs(outside.g - backdrop.g) < 6 && abs(outside.b - backdrop.b) < 6, "fora da área fica só o fundo da janela, igual ao resto (\(outside) vs \(backdrop))")
         } else { fails.append("não leu os píxeis da vista") }
         check(!m.doc.annotations.contains { $0.id == outsideID } && m.doc.annotations.contains { $0.id == insideID }, "o objeto de fora desaparece; o de dentro fica")
+        // na Tela, «a imagem» passa a ser a recortada: é ela que se redimensiona e que «repor» devolve; a original só com Desfazer
+        let croppedRect = Rect(x: 0, y: 0, width: 300, height: 400)
+        check(m.imagePlacement == croppedRect && m.doc.imageCrop == croppedRect, "a imagem da Tela é a recortada (\(m.imagePlacement), \(String(describing: m.doc.imageCrop)))")
+        check(!m.doc.annotations.contains { if case .erase = $0.shape { return true } else { return false } }, "o recorte não deixa «Apagados» nas camadas")
+        m.setImageScale(0.5)
+        check(m.imagePlacement.width == 150 && m.imagePlacement.height == 200, "50 % é metade da recortada (\(m.imagePlacement))")
+        m.resetImage()
+        check(m.imagePlacement == croppedRect && abs(m.imageScale - 1) < 0.001, "repor a imagem volta à recortada, não à original (\(m.imagePlacement))")
+        check(isGreen(rgb(150, 150)) && m.renderedImage()?.width == 300 && m.renderedImage()?.height == 400, "a imagem exportada é só a parte recortada (\(String(describing: m.renderedImage()?.width)))")
+        m.undo(); m.undo()
         m.fitAreaToContent()
         check(m.doc.area == Rect(x: 0, y: 0, width: 300, height: 400), "ajustar ao conteúdo não traz de volta o que foi recortado (\(m.doc.area))")
         m.setAutoExpand(true)

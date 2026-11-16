@@ -961,7 +961,7 @@ final class EditorModel: ObservableObject {
 
     /// Tamanho da imagem (mantém o canto superior esquerdo do enquadramento). Com `keepAspect`, a outra medida acompanha.
     func setImageSize(width: Double? = nil, height: Double? = nil) {
-        let p = doc.imagePlacement, ratio = doc.canvasWidth / max(1, doc.canvasHeight)
+        let p = doc.imagePlacement, ratio = doc.naturalImageRect.width / max(1, doc.naturalImageRect.height)
         var w = p.width, h = p.height
         if let width { w = max(8, width.rounded()); if keepImageAspect { h = max(8, (w / ratio).rounded()) } }
         if let height { h = max(8, height.rounded()); if keepImageAspect { w = max(8, (h * ratio).rounded()) } }
@@ -969,10 +969,10 @@ final class EditorModel: ObservableObject {
     }
 
     /// Escala da imagem face ao natural (1 = tamanho natural), pela largura.
-    var imageScale: Double { doc.imagePlacement.width / max(1, doc.canvasWidth) }
+    var imageScale: Double { doc.imagePlacement.width / max(1, doc.naturalImageRect.width) }
     func setImageScale(_ k: Double) {
         let p = doc.imagePlacement
-        perform { $0.setImageFrame(Rect(x: p.x, y: p.y, width: $0.canvasWidth * k, height: $0.canvasHeight * k), rotation: $0.imageRotation); _ = $0.expandAreaToFitImage() }
+        perform { $0.setImageFrame(Rect(x: p.x, y: p.y, width: $0.naturalImageRect.width * k, height: $0.naturalImageRect.height * k), rotation: $0.imageRotation); _ = $0.expandAreaToFitImage() }
     }
 
     func setImageRotation(_ d: Double) {

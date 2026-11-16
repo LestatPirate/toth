@@ -78,6 +78,7 @@
 - **Apagar uma faixa junto à borda recorta:** com **Selecionar**, marcar uma faixa que vá (quase) de lado a lado junto a uma borda e premir **Delete** tira essa faixa à imagem: a área encolhe e não fica espaço vazio. Não é preciso acertar na borda ao píxel, e funciona também com a tela automática desligada.
 - **Depois de apagar, a tela fica ajustada:** apagar uma área selecionada (Delete) deixa sempre a tela ajustada ao conteúdo, mesmo com a tela automática desligada: margens vazias à volta desaparecem.
 - **O que se recorta deixa de se ver:** no editor, fora da área de trabalho já não aparece a captura escurecida nem retângulos cinzentos no sítio do que foi retirado; fica só o fundo da janela. Na **Tela** continua a ver-se, escurecido, o conteúdo que ainda pode entrar na área, para a ajustar.
+- **Depois de recortar, a imagem é a recortada:** na **Tela**, com a opção **Imagem**, o que se move, redimensiona, roda e repõe é a imagem já recortada; a parte retirada deixou de existir para a captura. Para voltar à original usa-se **Desfazer** (⌘Z). O recorte já não deixa entradas «Apagado» nas camadas.
 
 ### Usar
 Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*) → escolha a área → **Enter** → anote → **Salvar como** / **Copiar tudo**. As **Preferências** (engrenagem no rodapé, ou ⌘,) têm o atalho e o idioma.
@@ -154,6 +155,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - **Erasing a band along an edge crops:** with **Select**, marking a band that goes (almost) from side to side along an edge and pressing **Delete** removes that band from the image: the area shrinks and no empty space is left. You do not need to hit the edge to the pixel, and it also works with the automatic canvas turned off.
 - **After erasing, the canvas is fitted:** erasing a selected area (Delete) always leaves the canvas fitted to the content, even with the automatic canvas turned off: empty margins around it disappear.
 - **What you crop is no longer shown:** in the editor, outside the work area there is no dimmed capture and no grey rectangles where content was removed; only the window background. In **Canvas** you still see, dimmed, the content that can still enter the area, so you can adjust it.
+- **After cropping, the image is the cropped one:** in **Canvas**, with the **Image** option, what you move, resize, rotate and reset is the already cropped image; the removed part no longer exists for the capture. To get the original back, use **Undo** (⌘Z). Cropping no longer leaves “Erased” entries in the layers.
 
 ### Use
 Press **⌃⇧4** (or use the menu bar icon or the *File* menu) → choose the area → **Enter** → annotate → **Save as** / **Copy all**. **Preferences** (gear icon in the footer, or ⌘,) hold the shortcut and the language.
