@@ -2117,6 +2117,13 @@ extension SelfTests {
         m.checkpoint(); m.setAreaLive(Rect(x: 0, y: 0, width: 300, height: 400)); m.commit()
         m.tool = .select                                       // confirma
         check(m.doc.area == Rect(x: 0, y: 0, width: 300, height: 400), "a área fica como se escolheu (\(m.doc.area))")
+        // no editor, o que foi recortado deixa de se ver: fora da área fica só o fundo da janela (sem a captura nem um retângulo cinzento)
+        m.zoomFit(); canvas.needsDisplay = true; RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        if let inside = canvas.debugViewPixel(at: Point(x: 150, y: 150)), let outside = canvas.debugViewPixel(at: Point(x: 450, y: 150)),
+           let backdrop = canvas.debugViewPixel(at: Point(x: 150, y: 430)) {
+            check(inside.g > 180 && inside.g > inside.r + 60 && inside.g > inside.b + 60, "dentro da área vê-se a captura (\(inside))")
+            check(abs(outside.r - backdrop.r) < 6 && abs(outside.g - backdrop.g) < 6 && abs(outside.b - backdrop.b) < 6, "fora da área fica só o fundo da janela, igual ao resto (\(outside) vs \(backdrop))")
+        } else { fails.append("não leu os píxeis da vista") }
         check(!m.doc.annotations.contains { $0.id == outsideID } && m.doc.annotations.contains { $0.id == insideID }, "o objeto de fora desaparece; o de dentro fica")
         m.fitAreaToContent()
         check(m.doc.area == Rect(x: 0, y: 0, width: 300, height: 400), "ajustar ao conteúdo não traz de volta o que foi recortado (\(m.doc.area))")

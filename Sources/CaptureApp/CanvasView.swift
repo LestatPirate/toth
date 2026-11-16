@@ -158,7 +158,21 @@ final class CanvasView: NSView {
         ctx.scaleBy(x: scale, y: scale)
         ctx.interpolationQuality = .high
         if model.doc.transparentBackground { drawChecker(ctx) }
+        // Fora da área de trabalho não se desenha a captura nem os «Apagados»: o que foi recortado desaparece mesmo, em vez
+        // de ficar lá escurecido (ou como um retângulo cinzento, no caso das faixas apagadas). Ficam visíveis só os objetos
+        // que estejam de fora (para se verem ao arrastar) e, na Tela, o conteúdo que ainda pode entrar na área.
+        ctx.saveGState()
+        var visible = [model.doc.area.cg]
+        if model.tool == .canvas { visible.append(model.doc.contentBounds.cg) }
+        for a in model.doc.annotations where a.visible {
+            switch a.shape {
+            case .erase, .patch, .clone, .blur, .gaussian, .fill, .zigzag: continue
+            default: visible.append(a.worldBounds.cg.insetBy(dx: -10, dy: -10))
+            }
+        }
+        ctx.clip(to: visible)
         Renderer.draw(model.doc, base: model.base, in: ctx, selected: model.selection, editing: editingID, assets: model.assets, only: model.shownIDs)
+        ctx.restoreGState()
         if editingID == nil, model.tool != .canvas, let hid = model.hover, hid != model.selection, let h = model.doc.annotations.first(where: { $0.id == hid }), model.isShown(h) {
             // contorno leve no objeto sob o rato
             ctx.saveGState()
@@ -1015,6 +1029,15 @@ final class CanvasView: NSView {
     }
 
     var debugEditorString: String? { editor?.string }
+    /// Para testes: a cor desenhada na vista no ponto `p` da imagem (0…255).
+    func debugViewPixel(at p: Point) -> (r: Int, g: Int, b: Int)? {
+        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        cacheDisplay(in: bounds, to: rep)
+        let vx = origin.x + CGFloat(p.x) * scale, vy = origin.y + CGFloat(p.y) * scale
+        let px = Int(vx * CGFloat(rep.pixelsWide) / max(1, bounds.width)), py = Int((isFlipped ? vy : bounds.height - vy) * CGFloat(rep.pixelsHigh) / max(1, bounds.height))
+        guard px >= 0, py >= 0, px < rep.pixelsWide, py < rep.pixelsHigh, let c = rep.colorAt(x: px, y: py)?.usingColorSpace(.deviceRGB) else { return nil }
+        return (Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+    }
     func debugFinishEditing() { finishEditing() }
     func debugCancelEditing() { finishEditing(cancelled: true) }
     func debugHover(at p: Point) { updateHover(at: p) }
