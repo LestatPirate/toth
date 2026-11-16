@@ -207,3 +207,4 @@ Não editar os dois ficheiros gerados à mão. A versão e o link direto do zip 
 - **Cortar faixa:** depois do corte (apagado + parte movida + ziguezague), `cutOut` desenha a imagem final e chama `CaptureDocument.flatten(to:in:)`: sobra uma só imagem do tamanho da área, com a base tapada por baixo. Tudo no mesmo ponto de undo.
 - A imagem de base nunca é alterada: ambos são feitos com objetos, por isso desfazer repõe tudo.
 - **Apagar faixa de borda:** `EditorModel.eraseSelection` com uma seleção retangular que vá de lado a lado junto a uma borda (`areaAfterErasing`, folga de 1 % do lado, mínimo 6 px) faz `discardOutside` e, com a tela automática desligada, fixa a área. Antes dependia de a seleção ser exata e de `autoExpand` estar ligado, e deixava a faixa vazia.
+- **Ajuste depois de apagar:** `eraseSelection` chama sempre `fitAreaToContent` (faixa de borda ou zona no meio), sem depender de `autoExpand`.

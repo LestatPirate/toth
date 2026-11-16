@@ -617,11 +617,11 @@ final class EditorModel: ObservableObject {
     func eraseSelection() {
         guard let m = areaSelection, !m.isEmpty else { return }
         if m.isFullRect, let keep = areaAfterErasing(m.rect) {
-            // faixa de borda: recorta a sério (o que fica de fora desaparece de vez) e a área encolhe sempre, mesmo com
-            // a tela automática desligada
+            // faixa de borda: recorta a sério (o que fica de fora desaparece de vez) e a tela fica ajustada ao conteúdo,
+            // mesmo com a tela automática desligada
             perform { d in
                 d.discardOutside(keep)
-                if !d.autoExpand { d.workArea = keep == d.imageRect ? nil : WorkArea(keep) }
+                d.fitAreaToContent()
             }
             areaSelection = nil
             if let s = selection, !doc.annotations.contains(where: { $0.id == s }) { selection = nil }
@@ -629,7 +629,11 @@ final class EditorModel: ObservableObject {
             return
         }
         let maskName = maskAsset(m)
-        perform { $0.add(.erase(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), mask: maskName)) }
+        // depois de apagar, a tela fica sempre ajustada ao conteúdo (mesmo com a tela automática desligada)
+        perform {
+            $0.add(.erase(origin: Point(x: Double(m.x), y: Double(m.y)), width: Double(m.width), height: Double(m.height), mask: maskName))
+            $0.fitAreaToContent()
+        }
         areaSelection = nil
     }
 

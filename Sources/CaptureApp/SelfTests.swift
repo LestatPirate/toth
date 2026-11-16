@@ -2147,6 +2147,18 @@ extension SelfTests {
             m.undo()
             check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe tudo (\(label): \(m.doc.area), \(m.doc.annotations.count))")
         }
+        // 2d) Depois de apagar, a tela fica ajustada ao conteúdo por omissão: com a tela aumentada à mão (margem vazia à
+        //     volta) e a tela automática desligada, apagar uma zona no meio tira a margem
+        m.tool = .canvas
+        m.checkpoint(); m.setAreaLive(Rect(x: -50, y: -40, width: 700, height: 480)); m.commit()
+        m.tool = .area
+        check(m.doc.area == Rect(x: -50, y: -40, width: 700, height: 480) && !m.doc.autoExpand, "a tela foi aumentada à mão (\(m.doc.area))")
+        m.selectArea(AreaMask.rect(Rect(x: 200, y: 150, width: 100, height: 60)))
+        m.eraseSelection()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400), "depois de apagar, a tela fica ajustada ao conteúdo (\(m.doc.area))")
+        check(rgb(250, 180).map { $0.0 > 240 && $0.1 > 240 && $0.2 > 240 } ?? false, "a zona apagada no meio fica com a cor de fundo (\(String(describing: rgb(250, 180))))")
+        m.undo(); m.undo()
+        check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe (\(m.doc.area), \(m.doc.annotations.count))")
         m.tool = .select
 
         // 3) Nome da captura: fica no documento e reabre com ele; vazio volta à data
