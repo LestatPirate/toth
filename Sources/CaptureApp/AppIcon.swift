@@ -8,8 +8,12 @@ import SwiftUI
 /// A escolha fica nas preferências e a imagem personalizada é copiada (já normalizada) para
 /// `~/Library/Application Support/Toth/AppIcon-Custom.png`, por isso mantém-se entre arranques.
 ///
-/// O ícone é aplicado ao Dock, ao ⌘Tab e aos diálogos enquanto a app corre. Com a app fechada, o Finder e o Dock
-/// mostram o ícone original: mudá-lo no pacote `.app` invalidava a assinatura (e, com ela, a permissão de gravação de ecrã).
+/// O ícone é aplicado de duas maneiras: à app a correr (`NSApp.applicationIconImage`: Dock, ⌘Tab, diálogos) e ao pacote
+/// `.app` no disco, como ícone personalizado do Finder (`NSWorkspace.setIcon`, o mesmo que colar uma imagem em «Obter
+/// informações»): é esse que o Dock mostra com a app fechada, e o Stage Manager, o Finder e o Launchpad sempre.
+/// O ícone personalizado fica *ao lado* do conteúdo assinado (ficheiro `Icon\r` + atributo do Finder): o executável e a sua
+/// assinatura não mudam, por isso a permissão de gravação de ecrã mantém-se. Uma atualização substitui o pacote e leva o
+/// ícone personalizado; `apply()` repõe-no no arranque seguinte.
 @MainActor
 final class AppIcon: ObservableObject {
     static let shared = AppIcon()
@@ -48,16 +52,41 @@ final class AppIcon: ObservableObject {
         }
     }
 
-    /// Põe o ícone escolhido no Dock e nos diálogos (se a escolha já não existir, volta ao original).
+    /// Põe o ícone escolhido na app a correr e no pacote (se a escolha já não existir, volta ao original).
+    /// No arranque só toca no pacote se for preciso: falta o ícone personalizado (primeira vez, ou depois de uma
+    /// atualização), ou sobra (voltou-se ao original).
     func apply() {
-        if let image = image(for: current) ?? AppLogo.image { NSApp.applicationIconImage = image }
+        let chosen = image(for: current)
+        if let image = chosen ?? AppLogo.image { NSApp.applicationIconImage = image }
+        let wantsCustom = chosen != nil && current != Self.original
+        if wantsCustom != Self.bundleHasCustomIcon { applyToBundle(wantsCustom ? chosen : nil) }
     }
 
     func select(_ id: String) {
-        guard image(for: id) != nil else { return }
+        guard let image = image(for: id) else { return }
         current = id
         UserDefaults.standard.set(id, forKey: Self.key)
-        apply()
+        NSApp.applicationIconImage = image
+        applyToBundle(id == Self.original ? nil : image)
+    }
+
+    /// O pacote `.app` de onde a app corre (`nil` em desenvolvimento, com o binário solto).
+    private static var bundleURL: URL? {
+        let url = Bundle.main.bundleURL
+        return url.pathExtension == "app" ? url : nil
+    }
+    /// O pacote tem um ícone personalizado do Finder?
+    static var bundleHasCustomIcon: Bool {
+        bundleURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Icon\r").path) } ?? false
+    }
+    /// Põe (ou tira, com `nil`) o ícone personalizado do pacote. Falha em silêncio se o pacote não for gravável
+    /// (app numa pasta só de leitura): fica só o ícone da app a correr.
+    @discardableResult
+    private func applyToBundle(_ image: NSImage?) -> Bool {
+        guard let url = Self.bundleURL else { return false }
+        let ok = NSWorkspace.shared.setIcon(image, forFile: url.path, options: [])
+        if ok { NSWorkspace.shared.noteFileSystemChanged(url.path) }
+        return ok
     }
 
     /// Usa uma imagem do utilizador: normaliza-a (grelha de ícones do macOS, 1024×1024), guarda-a e escolhe-a.
@@ -186,7 +215,7 @@ struct AppIconPicker: View {
                 Button(L("Escolher imagem…")) { choose() }
                 Text(L("Qualquer imagem do computador; é ajustada ao formato dos ícones do macOS.")).font(.caption).foregroundStyle(.secondary)
             }
-            Text(L("Muda o ícone no Dock enquanto o Toth está aberto. Com a app fechada, o macOS mostra o ícone original."))
+            Text(L("O ícone muda no Dock, no Finder e no Stage Manager, com o Toth aberto ou fechado. Depois de uma atualização, é reposto ao abrir o Toth."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

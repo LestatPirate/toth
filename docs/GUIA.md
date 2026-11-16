@@ -72,7 +72,7 @@
 - **Português e inglês**, com mudança imediata em *Preferências*.
 - **Privacidade:** não recolhe dados; só usa a internet para procurar atualizações (desligável).
 - **Botões nas miniaturas:** ao passar o rato numa miniatura da faixa (e na que está aberta) aparecem dois botões pequenos em cima: **ocultar da faixa** (olho riscado, à esquerda; continua na biblioteca) e **mover para o Lixo** (à direita). Com uma miniatura clicada, **⌫** ou **⌘⌫** também a enviam para o Lixo. O que se escolhe em «Abrir Biblioteca» passa a ser a **primeira miniatura à esquerda** (e volta a aparecer, se estava oculta) até se escolher outra ou chegar uma captura nova.
-- **Ícone da aplicação** (Preferências): o original, quatro alternativos, ou **Escolher imagem…** com qualquer imagem do computador, ajustada ao formato dos ícones do macOS. A escolha fica guardada. Muda o ícone no Dock enquanto o Toth está aberto; com a app fechada, o macOS mostra o original.
+- **Ícone da aplicação** (Preferências): o original, quatro alternativos, ou **Escolher imagem…** com qualquer imagem do computador, ajustada ao formato dos ícones do macOS. A escolha fica guardada. Muda no Dock, no Finder e no Stage Manager, com o Toth aberto ou fechado; depois de uma atualização, é reposto ao abrir o Toth.
 - **Copiar tudo e colar no Toth:** «Copiar tudo» (⌘⇧C, ou ⌘C sem nada selecionado) leva duas coisas. Para outras apps vai a **imagem final**. Dentro do Toth, **Colar** traz os **elementos todos, editáveis**: a captura de base como objeto de imagem e, por cima, cada seta, texto, balão, etc. O ícone escolhido nas Preferências aparece também no ecrã sem captura aberta.
 
 ### Usar
@@ -144,7 +144,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - **Portuguese and English**, switchable instantly in *Preferences*.
 - **Privacy:** it collects no data; it only uses the internet to check for updates (can be turned off).
 - **Buttons on thumbnails:** hovering a thumbnail in the strip (and on the open one) shows two small buttons at the top: **hide from strip** (crossed eye, left; it stays in the library) and **move to Trash** (right). With a thumbnail clicked, **⌫** or **⌘⌫** also send it to the Trash. What you pick in “Open Library” becomes the **first thumbnail on the left** (and shows again if it was hidden) until you pick another or a new capture arrives.
-- **App icon** (Preferences): the original, four alternatives, or **Choose image…** with any image on your computer, fitted to the macOS icon shape. The choice is saved. It changes the Dock icon while Toth is open; with the app closed, macOS shows the original.
+- **App icon** (Preferences): the original, four alternatives, or **Choose image…** with any image on your computer, fitted to the macOS icon shape. The choice is saved. It changes in the Dock, the Finder and Stage Manager, with Toth open or closed; after an update, it is restored when you open Toth.
 - **Copy all and paste in Toth:** “Copy all” (⌘⇧C, or ⌘C with nothing selected) carries two things. Other apps get the **final image**. Inside Toth, **Paste** brings **all the elements, editable**: the base capture as an image object and, on top, each arrow, text, callout, etc. The icon chosen in Preferences also shows on the screen with no capture open.
 
 ### Use

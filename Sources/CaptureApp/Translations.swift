@@ -561,7 +561,7 @@ enum Translations {
         "Personalizado": "Custom",
         "Escolher imagem…": "Choose image…",
         "Qualquer imagem do computador; é ajustada ao formato dos ícones do macOS.": "Any image on your computer; it is fitted to the macOS icon shape.",
-        "Muda o ícone no Dock enquanto o Toth está aberto. Com a app fechada, o macOS mostra o ícone original.": "Changes the Dock icon while Toth is open. With the app closed, macOS shows the original icon.",
+        "O ícone muda no Dock, no Finder e no Stage Manager, com o Toth aberto ou fechado. Depois de uma atualização, é reposto ao abrir o Toth.": "The icon changes in the Dock, the Finder and Stage Manager, with Toth open or closed. After an update, it is restored when you open Toth.",
         "Escolha a imagem a usar como ícone do Toth": "Choose the image to use as the Toth icon",
         "Ícone da aplicação": "App icon",
         "%@ (fica ativa: Esc volta a Mover)": "%@ (stays active: Esc returns to Move)",

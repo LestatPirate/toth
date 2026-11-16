@@ -13,6 +13,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--normalize-icon"), CommandLine
     print(ok ? "NORMALIZE-ICON: OK" : "NORMALIZE-ICON: FALHOU"); exit(ok ? 0 : 1)
 }
 
+// `--permission-check <ficheiro>`: escreve se a app tem a permissão de gravação de ecrã e se o pacote tem ícone
+// personalizado (diagnóstico: correr com `open -n Toth.app --args …`, para a permissão ser avaliada à própria app).
+if let i = CommandLine.arguments.firstIndex(of: "--permission-check"), CommandLine.arguments.count > i + 1 {
+    let line = "screen=\(CGPreflightScreenCaptureAccess()) customIcon=\(MainActor.assumeIsolated { AppIcon.bundleHasCustomIcon })\n"
+    try? line.write(toFile: CommandLine.arguments[i + 1], atomically: true, encoding: .utf8)
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--icon-selftest") {
     let fails = MainActor.assumeIsolated { AppIcon.selfTest() }
     print(fails.isEmpty ? "ICON-SELFTEST: OK" : "ICON-SELFTEST: FALHOU — " + fails.joined(separator: "; ")); exit(fails.isEmpty ? 0 : 1)
