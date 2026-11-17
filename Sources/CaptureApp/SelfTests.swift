@@ -128,7 +128,7 @@ enum SelfTests {
         let settings = ShortcutSettings.shared
         func snapshot() -> NSBitmapImageRep? {
             let host = NSHostingView(rootView: SettingsView(settings: settings))
-            host.frame = NSRect(x: 0, y: 0, width: 520, height: 960)
+            host.frame = NSRect(x: 0, y: 0, width: 520, height: 1060)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .aqua)   // aparência fixa (teste determinístico)
             window.contentView = host

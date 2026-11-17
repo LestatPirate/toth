@@ -21,6 +21,26 @@ if let i = CommandLine.arguments.firstIndex(of: "--permission-check"), CommandLi
     exit(0)
 }
 
+// `--uninstall-selftest <pasta>` e `--crash-selftest <pasta>`: em pastas de faz de conta (nunca tocam no sistema).
+if let i = CommandLine.arguments.firstIndex(of: "--uninstall-selftest"), CommandLine.arguments.count > i + 1 {
+    let fails = Uninstaller.selfTest(dir: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+    print(fails.isEmpty ? "UNINSTALL-SELFTEST: OK" : "UNINSTALL-SELFTEST: FALHOU — " + fails.joined(separator: "; ")); exit(fails.isEmpty ? 0 : 1)
+}
+if let i = CommandLine.arguments.firstIndex(of: "--crash-selftest"), CommandLine.arguments.count > i + 1 {
+    let fails = CrashReports.selfTest(dir: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+    print(fails.isEmpty ? "CRASH-SELFTEST: OK" : "CRASH-SELFTEST: FALHOU — " + fails.joined(separator: "; ")); exit(fails.isEmpty ? 0 : 1)
+}
+
+// Diagnóstico das falhas: `--crash-test` falha de propósito (para o macOS escrever um relatório verdadeiro);
+// `--crash-list` mostra o que o Toth lê dos relatórios que o macOS tem desta app.
+if CommandLine.arguments.contains("--crash-test") { fatalError("Falha de teste pedida com --crash-test") }
+if CommandLine.arguments.contains("--crash-list") {
+    let all = CrashReports.reports(in: CrashReports.folder, bundleID: Uninstaller.bundleID)
+    print("CRASH-LIST: \(all.count) relatório(s)")
+    for r in all.prefix(3) { print("  \(r.url.lastPathComponent) · \(r.version) (\(r.build)) · \(r.exception) · \(r.frames.prefix(4))") }
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--icon-selftest") {
     let fails = MainActor.assumeIsolated { AppIcon.selfTest() }
     print(fails.isEmpty ? "ICON-SELFTEST: OK" : "ICON-SELFTEST: FALHOU — " + fails.joined(separator: "; ")); exit(fails.isEmpty ? 0 : 1)

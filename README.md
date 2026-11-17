@@ -208,10 +208,13 @@ O Toth não tem legendas automáticas, efeitos nem transições, e não partilha
 |---|---|---|
 | **Gravação de Ecrã e Áudio do Sistema** | **Sim** | Ler o ecrã para capturar e gravar (e o som do sistema). Só quando o utilizador o pede. |
 | **Microfone** | Opcional | Só se ligar o microfone ao gravar vídeo; o macOS pede-a nessa altura. |
-| Acessibilidade, câmara, contactos, localização | Não | Não são usadas. O Toth não envia teclas nem rolagens a outras apps. |
+| **Acessibilidade** | Opcional | Só para sugerir o elemento exato sob o rato ao capturar; autoriza-se em *Preferências*. O Toth não envia teclas nem rolagens a outras apps. |
+| Câmara, contactos, localização | Não | Não são usadas. |
 | Rede | Só atualizações | Um pedido à API pública do GitHub, sem dados pessoais. Desligável em *Preferências*. |
 
 As capturas, vídeos e carimbos importados ficam em `~/Pictures/TothCapture` (pasta alterável em *Preferências*, com tudo movido para o novo sítio). **Atualizações:** o Toth procura uma versão nova ao abrir (no máximo uma vez por dia), pergunta se quer atualizar, verifica a soma SHA-256 e a assinatura e instala sem tocar nas suas capturas. As versões são assinadas sempre com a mesma identidade, por isso a permissão mantém-se. **Desinstalar:** arraste `Toth.app` para o Lixo.
+
+**Falhas:** se o Toth falhar, avisa ao abrir e mostra o relatório que o macOS guardou no seu Mac; pode vê-lo, copiá-lo ou abrir um pedido no GitHub já preenchido com um resumo. Nada é enviado automaticamente. **Desinstalar:** *Preferências* → **Desinstalar o Toth…** remove a app, as preferências, os dados de suporte, as caches e as permissões do macOS, sem deixar restos; as capturas só vão para o Lixo se o pedir.
 
 <table align="center">
 <tr><td align="center">
@@ -393,10 +396,13 @@ Toth has no automatic captions, effects or transitions, and does not share onlin
 |---|---|---|
 | **Screen & System Audio Recording** | **Yes** | Reading the screen to capture and record (and system sound). Only when you ask. |
 | **Microphone** | Optional | Only if you turn the microphone on while recording video; macOS asks then. |
-| Accessibility, camera, contacts, location | No | Not used. Toth never sends keys or scrolling to other apps. |
+| **Accessibility** | Optional | Only to suggest the exact element under the pointer when capturing; you authorize it in *Preferences*. Toth never sends keys or scrolling to other apps. |
+| Camera, contacts, location | No | Not used. |
 | Network | Updates only | One request to GitHub's public API, no personal data. Can be turned off in *Preferences*. |
 
 Captures, videos and imported stamps are saved in `~/Pictures/TothCapture` (the folder can be changed in *Preferences*, with everything moved to the new place). **Updates:** Toth checks for a new version on launch (at most once a day), asks whether to update, verifies the SHA-256 checksum and signature, and installs without touching your captures. Releases are always signed with the same identity, so the permission is kept. **Uninstall:** drag `Toth.app` to the Trash.
+
+**Crashes:** if Toth crashes, it tells you on the next launch and shows the report macOS saved on your Mac; you can view it, copy it or open a GitHub issue already filled in with a summary. Nothing is sent automatically. **Uninstall:** *Preferences* → **Uninstall Toth…** removes the app, preferences, support data, caches and macOS permissions, leaving nothing behind; captures only go to the Trash if you ask.
 
 <table align="center">
 <tr><td align="center">

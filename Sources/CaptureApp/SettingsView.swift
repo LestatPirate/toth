@@ -117,6 +117,16 @@ struct SettingsView: View {
                 Text(L("Pergunta ao GitHub, no máximo uma vez por dia, se há uma versão nova (sem enviar dados pessoais). Só atualiza se você confirmar."))
                     .font(.caption).foregroundStyle(.secondary)
             }
+            VStack(alignment: .leading, spacing: 8) {
+                Divider()
+                Text(L("Falhas e desinstalação")).font(.headline)
+                HStack(spacing: 10) {
+                    Button(L("Ver o último relatório de falha…")) { CrashReports.showLatest() }
+                    Button(L("Desinstalar o Toth…")) { Uninstaller.confirmAndRun() }
+                }
+                Text(L("Se o Toth falhar, avisa ao abrir e mostra o relatório que o macOS guardou; nada é enviado automaticamente. Desinstalar remove a app, as preferências, as caches e as permissões; as capturas só saem se o pedir."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 0)
             Text(L("© 2026 Alex Felizardo. Software livre, licença MIT."))
                 .font(.caption2).foregroundStyle(.secondary)
@@ -160,7 +170,7 @@ enum SettingsWindow {
     static func show() {
         if window == nil {
             // tão alta quanto o conteúdo, mas nunca mais do que o ecrã (o resto vê-se com a rolagem)
-            let height = min(940, (NSScreen.main?.visibleFrame.height ?? 800) - 60)
+            let height = min(1040, (NSScreen.main?.visibleFrame.height ?? 800) - 60)
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height), styleMask: [.titled, .closable],
                              backing: .buffered, defer: false)
             w.title = L("Preferências")

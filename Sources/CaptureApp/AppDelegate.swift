@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        // Uso normal (sem argumentos de teste): avisa se a sessão anterior falhou (relatório novo do macOS).
+        if !args.dropFirst().contains(where: { $0.hasPrefix("--") }) { CrashReports.checkAtLaunch() }
         // Argumentos de teste (ver README): `--library <pasta>` usa outra pasta de capturas.
         if let i = args.firstIndex(of: "--library"), args.count > i + 1 { CaptureStore.overrideFolder = URL(fileURLWithPath: args[i + 1]) }
         if let i = args.firstIndex(of: "--make-demo-library"), args.count > i + 1 {
