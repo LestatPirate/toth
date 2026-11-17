@@ -2178,6 +2178,24 @@ extension SelfTests {
         check(m.doc.area == Rect(x: 0, y: 0, width: 600, height: 400) && m.doc.annotations.count == n0, "desfazer repõe (\(m.doc.area), \(m.doc.annotations.count))")
         m.tool = .select
 
+        // 2e) A captura seguinte abre com a última ferramenta usada (a Tela e o Texto da imagem não contam)
+        EditorModel.restoresLastTool = true
+        m.tool = .rect
+        check(EditorModel.lastTool == .rect, "a última ferramenta fica lembrada (\(EditorModel.lastTool))")
+        m.tool = .canvas; m.tool = .select; m.tool = .callout; m.tool = .canvas
+        check(EditorModel.lastTool == .callout, "a Tela não substitui a ferramenta lembrada (\(EditorModel.lastTool))")
+        m.tool = .select
+        if let again = try? EditorModel(url: m.url) { check(again.tool == .select, "uma captura aberta a seguir começa com a última ferramenta (\(again.tool))") } else { fails.append("não reabriu a captura") }
+        m.tool = .step
+        if let again = try? EditorModel(url: m.url) {
+            check(again.tool == .step, "…incluindo ferramentas de desenho (\(again.tool))")
+            again.isVideoOverlay = true; again.tool = .fill
+            check(EditorModel.lastTool == .step, "o modo Anotar do vídeo não mexe na ferramenta lembrada das imagens")
+        }
+        EditorModel.restoresLastTool = false
+        if let again = try? EditorModel(url: m.url) { check(again.tool == .arrow, "nos testes, começa sempre na Seta") }
+        m.tool = .select
+
         // 3) Nome da captura: fica no documento e reabre com ele; vazio volta à data
         let dateTitle = m.displayTitle
         m.setTitle("  Fatura de outubro ")

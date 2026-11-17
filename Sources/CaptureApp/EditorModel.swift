@@ -54,7 +54,25 @@ final class EditorModel: ObservableObject {
             if oldValue == .canvas && tool != .canvas { confirmCanvas() }
             if tool == .ocr && oldValue != .ocr { recognizeText() }
             if tool != .ocr && oldValue == .ocr { selectedBlocks = [] }
+            Self.rememberLastTool(tool, videoOverlay: isVideoOverlay)
         }
+    }
+
+    // MARK: Última ferramenta (a captura seguinte abre com ela)
+
+    private static let lastToolKey = "lastTool"
+    /// Uma captura nova (ou outra que se abra) começa com a última ferramenta usada, em vez de voltar sempre à Seta.
+    /// Desligado nos testes por linha de comando, para partirem sempre do mesmo estado.
+    static var restoresLastTool = !CommandLine.arguments.dropFirst().contains { $0.hasPrefix("--") }
+    /// A Tela e o Texto da imagem não se lembram: são modos de uma captura (abrir outra já em modo de recorte, ou a
+    /// reconhecer texto sozinha, seria uma surpresa). O modo Anotar do vídeo também não mexe na escolha das imagens.
+    private static func rememberLastTool(_ tool: Tool, videoOverlay: Bool) {
+        guard !videoOverlay, tool != .canvas, tool != .ocr else { return }
+        UserDefaults.standard.set(tool.rawValue, forKey: lastToolKey)
+    }
+    static var lastTool: Tool {
+        guard restoresLastTool, let raw = UserDefaults.standard.string(forKey: lastToolKey), let t = Tool(rawValue: raw), t != .canvas, t != .ocr else { return .arrow }
+        return t
     }
     @Published var selection: UUID? { didSet { if selection == nil { extraSelection = [] } else { extraSelection.remove(selection!) } } }
     /// Os outros elementos selecionados (⇧+clique, laço): `selection` é o principal (o do painel e das alças).
@@ -705,7 +723,8 @@ final class EditorModel: ObservableObject {
     /// A imagem de fundo. No editor de imagem é o original (nunca muda); nas anotações de um vídeo é o fotograma atual.
     var base: CGImage { didSet { objectWillChange.send() } }
     /// Anotações de um vídeo: sem Tela nem área própria, e só se mostram as ativas no instante (`shownIDs`).
-    var isVideoOverlay = false
+    /// (Ao passar a modo Anotar do vídeo, uma ferramenta só de imagens herdada da última captura volta à Seta.)
+    var isVideoOverlay = false { didSet { if isVideoOverlay, tool.imagesOnly { tool = .arrow } } }
     var shownIDs: Set<UUID>? { didSet { if shownIDs != oldValue { objectWillChange.send(); if let s = selection, !isShown(s) { selection = nil } } } }
     func isShown(_ id: UUID) -> Bool { shownIDs?.contains(id) ?? true }
     func isShown(_ a: Annotation) -> Bool { isShown(a.id) }
@@ -726,6 +745,7 @@ final class EditorModel: ObservableObject {
               let src = CGImageSourceCreateWithData(original as CFData, nil),
               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { throw CocoaError(.fileReadCorruptFile) }
         self.base = img
+        self.tool = Self.lastTool   // (no init o `didSet` não corre: fica só escolhida)
     }
 
     var canUndo: Bool { !undoStack.isEmpty }
