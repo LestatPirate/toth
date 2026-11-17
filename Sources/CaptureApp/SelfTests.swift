@@ -2196,6 +2196,25 @@ extension SelfTests {
         if let again = try? EditorModel(url: m.url) { check(again.tool == .arrow, "nos testes, começa sempre na Seta") }
         m.tool = .select
 
+        // 2f) Imagem colada: a opacidade vai até 0 % e não passa a ser o estilo da ferramenta ativa
+        do {
+            let img = NSImage(size: NSSize(width: 40, height: 30), flipped: false) { r in NSColor.black.setFill(); r.fill(); return true }
+            if let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                m.tool = .arrow
+                let arrowBefore = m.style.opacity
+                m.pasteImage(png)
+                let pasted = m.selection
+                m.tool = .arrow; m.selection = pasted                      // ferramenta de desenho ativa, imagem selecionada
+                var st = m.currentStyle; st.opacity = 0; m.setStyle(st)
+                check(m.selected?.style.opacity == 0, "a imagem colada fica a 0 % (\(String(describing: m.selected?.style.opacity)))")
+                m.selection = nil
+                check(m.style.opacity == arrowBefore, "a opacidade da imagem não passa para a Seta (\(m.style.opacity) de \(arrowBefore))")
+                m.undo(); m.undo()
+                check(m.doc.annotations.count == n0, "desfazer tira a imagem colada (\(m.doc.annotations.count) de \(n0))")
+            } else { fails.append("sem PNG de teste") }
+            m.tool = .select
+        }
+
         // 3) Nome da captura: fica no documento e reabre com ele; vazio volta à data
         let dateTitle = m.displayTitle
         m.setTitle("  Fatura de outubro ")

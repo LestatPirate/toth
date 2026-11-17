@@ -82,6 +82,7 @@
 - **Falhas:** se o Toth fechar inesperadamente, ao abrir de novo avisa e mostra o relatório que o macOS guardou: **Ver relatório**, **Copiar relatório** ou **Abrir pedido no GitHub** (já preenchido com um resumo; o relatório completo fica na área de transferência para colar se quiser). Nada é enviado automaticamente. Em Preferências, **Ver o último relatório de falha…** mostra-o outra vez.
 - **Desinstalar:** Preferências → **Desinstalar o Toth…** envia a app para o Lixo e remove preferências, dados de suporte, caches, ficheiros temporários e as permissões do macOS (Gravação de Ecrã, Acessibilidade, Microfone). As capturas ficam onde estão; só vão para o Lixo se marcar essa opção, e só o que é do Toth dentro da pasta.
 - **A última ferramenta fica lembrada:** uma captura nova (ou outra que abra) começa com a última ferramenta que usou, mesmo depois de fechar e reabrir o Toth. A Tela e o Texto da imagem não contam: são modos de uma captura.
+- **Opacidade da imagem colada:** vai de 0 % a 100 % (a 0 % fica invisível, mas continua nas camadas). Nas outras ferramentas o mínimo é 10 %. Mudar a opacidade de uma imagem colada não altera o estilo de nenhuma ferramenta.
 
 ### Usar
 Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*) → escolha a área → **Enter** → anote → **Salvar como** / **Copiar tudo**. As **Preferências** (engrenagem no rodapé, ou ⌘,) têm o atalho e o idioma.
@@ -162,6 +163,7 @@ Carregue em **⌃⇧4** (ou use o ícone na barra de menus ou o menu *Ficheiro*)
 - **Crashes:** if Toth closes unexpectedly, on the next launch it tells you and shows the report macOS saved: **View report**, **Copy report** or **Open GitHub issue** (already filled in with a summary; the full report is on the clipboard to paste if you wish). Nothing is sent automatically. In Preferences, **View the latest crash report…** shows it again.
 - **Uninstall:** Preferences → **Uninstall Toth…** sends the app to the Trash and removes preferences, support data, caches, temporary files and macOS permissions (Screen Recording, Accessibility, Microphone). Captures stay where they are; they only go to the Trash if you tick that option, and only what belongs to Toth inside the folder.
 - **The last tool is remembered:** a new capture (or another one you open) starts with the last tool you used, even after quitting and reopening Toth. Canvas and Image text do not count: they are modes of one capture.
+- **Pasted image opacity:** goes from 0% to 100% (at 0% it is invisible but stays in the layers). For the other tools the minimum is 10%. Changing a pasted image's opacity does not alter any tool's style.
 
 ### Use
 Press **⌃⇧4** (or use the menu bar icon or the *File* menu) → choose the area → **Enter** → annotate → **Save as** / **Copy all**. **Preferences** (gear icon in the footer, or ⌘,) hold the shortcut and the language.

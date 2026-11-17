@@ -683,7 +683,7 @@ final class EditorModel: ObservableObject {
     var currentCurved: Bool { if let s = selected?.shape, s.isLineLike { return s.isCurved }; return curvedDefault(for: tool) }
     /// Liga/desliga a curva: nos objetos selecionados (linhas e setas) e como padrão da ferramenta.
     func setCurved(_ on: Bool) {
-        let target = selected.flatMap { Tool.forShape($0.shape) } ?? tool
+        let target = defaultsTarget
         if target == .line || target == .arrow { ToolDefaults.shared.setValue(on ? 1 : 0, "curved", for: target) }
         objectWillChange.send()
         let lines = selectedAll.filter { $0.shape.isLineLike && $0.shape.isCurved != on }
@@ -872,7 +872,7 @@ final class EditorModel: ObservableObject {
 
     func setFontSize(_ f: Double) {
         // Guarda como padrão da ferramenta que cria este tipo de elemento (a do elemento selecionado, ou a atual).
-        let target = selected.flatMap { Tool.forShape($0.shape) } ?? tool
+        let target = defaultsTarget
         if target == .rect || target == .ellipse {
             var st = ToolDefaults.shared.style(for: target); st.text.size = f
             ToolDefaults.shared.setStyle(st, for: target)
@@ -1041,9 +1041,17 @@ final class EditorModel: ObservableObject {
         selection = nil
     }
 
+    /// A ferramenta cujo padrão se altera ao mudar uma propriedade: a do elemento selecionado, ou a atual se não há
+    /// seleção. Um elemento selecionado que não é de nenhuma ferramenta (uma imagem colada) não muda padrão nenhum:
+    /// senão a opacidade da imagem passava a ser a da ferramenta que estivesse ativa.
+    private var defaultsTarget: Tool {
+        guard let sel = selected else { return tool }
+        return Tool.forShape(sel.shape) ?? .select
+    }
+
     func setStyle(_ s: Style) {
         // O estilo vira o padrão da ferramenta que cria este tipo de elemento (a do elemento selecionado, ou a atual).
-        let target = selected.flatMap { Tool.forShape($0.shape) } ?? tool
+        let target = defaultsTarget
         if target != .select { ToolDefaults.shared.setStyle(s, for: target) }
         objectWillChange.send()
         let all = selectedAll

@@ -490,7 +490,9 @@ struct PropertiesPanel: View {
                 }
                 if supportsText { textSection }
                 if !((model.tool == .canvas || model.tool == .area || model.tool == .ocr) && model.selected == nil) { section(L("Geral")) {
-                    slider(L("Opacidade"), value: opacity, range: 0.1...1, format: "%.0f%%", scale: 100)
+                    // uma imagem colada pode ir até 0 % (invisível, mas continua nas camadas); as outras ferramentas param nos
+                    // 10 %, para o estilo de uma ferramenta nunca ficar a desenhar objetos que não se veem
+                    slider(L("Opacidade"), value: opacity, range: (model.selected?.shape.imageAsset != nil ? 0 : 0.1)...1, format: "%.0f%%", scale: 100)
                     row(L("Sombra")) { Toggle("", isOn: shadow).labelsHidden() }
                     if let sel = model.selected {
                         rotationRow(rotation, rotate: { model.rotateSelection(by: $0) })
