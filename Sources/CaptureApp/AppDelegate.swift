@@ -844,7 +844,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 4) o evento de atalho chega ao tratador e dispara a captura
         let n0 = captureRequests
         var ref: EventRef?
-        var hkID = EventHotKeyID(signature: OSType(0x43415054), id: 1)
+        var hkID = EventHotKeyID(signature: OSType(0x43415054), id: hotKey?.number ?? 0)   // (o número do atalho da captura)
         CreateEvent(nil, OSType(kEventClassKeyboard), UInt32(kEventHotKeyPressed), 0, EventAttributes(kEventAttributeNone), &ref)
         if let ref {
             SetEventParameter(ref, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), MemoryLayout<EventHotKeyID>.size, &hkID)

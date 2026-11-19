@@ -47,12 +47,34 @@ final class RegionSelector {
             // Só pode haver uma seleção de cada vez (em qualquer ecrã).
             view.onBeginSelecting = { [weak self, weak view] in self?.views.forEach { if $0 !== view { $0.clearSelection() } } }
             window.contentView = view
-            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
             window.makeFirstResponder(view)
             windows.append(window); views.append(view)
         }
-        NSApp.activate(ignoringOtherApps: true)
+        takeFocus()
         NSCursor.crosshair.push()
+        // Esc cancela sempre, mesmo que o teclado esteja preso por outra app (uma máquina virtual em ecrã completo, um
+        // jogo): é um atalho global enquanto o seletor estiver aberto. Sem isto, o ecrã congelado não tinha saída.
+        escapeKey = HotKey(keyCode: 53, modifiers: []) { [weak self] in DispatchQueue.main.async { self?.end(nil) } }   // (fora do tratamento do atalho: `end` desfaz o próprio atalho)
+        // A app da frente pode não largar a vez à primeira: insiste-se durante um instante.
+        for delay in [0.15, 0.4, 0.9] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.isActive, !NSApp.isActive else { return }
+                self.takeFocus()
+            }
+        }
+    }
+
+    private var escapeKey: HotKey?
+
+    /// Põe o teclado no seletor (na janela do ecrã onde está o rato) e pede a vez ao sistema. As janelas são painéis que
+    /// não precisam de a app estar ativa: se a app da frente não ceder (o Parallels em ecrã completo não cede), o
+    /// seletor continua a receber o rato e o teclado.
+    private func takeFocus() {
+        let mouse = NSEvent.mouseLocation
+        (windows.first { $0.frame.contains(mouse) } ?? windows.first)?.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+        if !NSApp.isActive { NSRunningApplication.current.activate(options: [.activateAllWindows]) }
     }
 
     private func endScroll(screen: NSScreen, rect: CGRect, first: CGImage) {
@@ -88,6 +110,7 @@ final class RegionSelector {
     private func end(_ image: CGImage?) {
         guard completion != nil else { return }
         NSCursor.pop()
+        escapeKey = nil
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll(); views.removeAll()
         let done = completion
@@ -113,6 +136,13 @@ final class RegionSelector {
 
     /// Para testes: cancela a seleção em curso.
     func cancelForTests() { end(nil) }
+    /// Para testes: o Esc global (o que cancela mesmo com o teclado preso por outra app).
+    func debugGlobalEscape() { escapeKey?.debugFire() }
+    /// Para testes: as janelas do seletor não dependem de a app estar ativa (painéis que não ativam) e uma delas tem o teclado.
+    var debugWorksWithoutActivation: Bool {
+        !windows.isEmpty && windows.allSatisfy { $0.styleMask.contains(.nonactivatingPanel) && $0.canBecomeKey && !(($0 as? NSPanel)?.hidesOnDeactivate ?? true) }
+            && windows.contains { $0.isKeyWindow }
+    }
     /// Para testes: pré-seleciona uma área (coordenadas da vista do 1.º ecrã, origem no canto superior esquerdo).
     func debugPreselect(_ rect: CGRect) { views.first?.debugSelect(rect) }
     /// Para testes: escolhe «Vídeo» como se se clicasse no botão.
@@ -227,9 +257,16 @@ final class RegionSelector {
     }
 }
 
-private final class SelectionWindow: NSWindow {
+/// Um painel que não ativa a app: recebe o rato e o teclado mesmo quando a app da frente não cede a vez (uma máquina
+/// virtual ou um jogo em ecrã completo). Com uma janela normal, nesses casos via-se o ecrã congelado sem se poder mexer.
+private final class SelectionWindow: NSPanel {
     init(screen: NSScreen) {
-        super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isFloatingPanel = true
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = false
+        worksWhenModal = true
+        acceptsMouseMovedEvents = true
         level = .screenSaver
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]   // aparece sobre o ecrã atual sem mudar de Espaço
         isOpaque = true
@@ -238,6 +275,7 @@ private final class SelectionWindow: NSWindow {
         isReleasedWhenClosed = false
     }
     override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
 
 private final class SelectionView: NSView {
@@ -288,6 +326,8 @@ private final class SelectionView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    /// O primeiro clique já conta (não serve só para ativar a app).
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     init(frame: CGRect, image: CGImage, cleanImage: CGImage? = nil) {
         self.image = image
@@ -411,6 +451,7 @@ private final class SelectionView: NSView {
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         cursor = p
+        if !NSApp.isActive { needsDisplay = true }   // (a mira desenhada segue o rato)
         // o cursor diz o que um arrasto faria: alça, borda, mover, ou desenhar
         if let sel = selection, case .idle = mode {
             if let h = handle(at: p, in: sel) { ([0, 4].contains(h) ? NSCursor.crosshair : [2, 6].contains(h) ? NSCursor.crosshair : [1, 5].contains(h) ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).set() }
@@ -604,7 +645,7 @@ private final class SelectionView: NSView {
         if let hole { ctx.addRect(hole) }
         ctx.fillPath(using: .evenOdd)
 
-        guard let sel = selection else { drawHoverFrame(ctx); drawHint(ctx); return }
+        guard let sel = selection else { drawHoverFrame(ctx); drawHint(ctx); drawOwnCrosshair(ctx); return }
         ctx.setStrokeColor(NSColor.white.cgColor); ctx.setLineWidth(1)
         ctx.stroke(sel.insetBy(dx: 0.5, dy: 0.5))
         if case .idle = mode {
@@ -625,6 +666,19 @@ private final class SelectionView: NSView {
         label.draw(at: CGPoint(x: pill.minX + 6, y: pill.minY + 2), withAttributes: attrs)
         drawLoupe(ctx)
         drawHint(ctx)
+    }
+
+    /// Sem a app ativa, o cursor é o da app da frente (e uma máquina virtual em ecrã completo pode escondê-lo):
+    /// desenha-se uma mira no sítio do rato, para se ver onde começa a área.
+    private func drawOwnCrosshair(_ ctx: CGContext) {
+        guard !NSApp.isActive, let c = cursor else { return }
+        let p = CGPoint(x: c.x.rounded() + 0.5, y: c.y.rounded() + 0.5)
+        for (color, width) in [(NSColor.black.withAlphaComponent(0.6), CGFloat(3)), (NSColor.white, CGFloat(1))] {
+            ctx.setStrokeColor(color.cgColor); ctx.setLineWidth(width)
+            ctx.move(to: CGPoint(x: p.x - 10, y: p.y)); ctx.addLine(to: CGPoint(x: p.x + 10, y: p.y))
+            ctx.move(to: CGPoint(x: p.x, y: p.y - 10)); ctx.addLine(to: CGPoint(x: p.x, y: p.y + 10))
+            ctx.strokePath()
+        }
     }
 
     /// A sugestão: contorno da cor de destaque (tracejado num elemento, cheio numa janela), com o nome da app, o tamanho e «Enter».

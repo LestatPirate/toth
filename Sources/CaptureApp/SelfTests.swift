@@ -1967,6 +1967,24 @@ extension SelfTests {
         try? await Task.sleep(nanoseconds: 600_000_000)
         check(gotScroll, "«Rolagem» devia chamar o tratador")
         check(MainWindow.onScreenNormalWindowCount() == 0, "depois de «Rolagem» ficaram \(MainWindow.onScreenNormalWindowCount()) janelas do Toth no ecrã (cobririam a app a capturar)")
+
+        // Com outra app presa à frente (máquina virtual em ecrã completo): o seletor não depende de o Toth ficar ativo,
+        // e o Esc global cancela sempre.
+        let stuck = RegionSelector()
+        var cancelled = false
+        stuck.begin(snapshots: [(screen, img)]) { cancelled = $0 == nil }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        check(stuck.debugWorksWithoutActivation, "as janelas do seletor deviam receber rato e teclado sem a app estar ativa")
+        stuck.debugGlobalEscape()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        check(!stuck.isActive && cancelled, "o Esc global devia cancelar o seletor")
+        // um segundo atalho registado não rouba o da captura (cada um responde só ao seu)
+        let other = RegionSelector()
+        other.begin(snapshots: [(screen, img)]) { _ in }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        other.debugGlobalEscape()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        check(!other.isActive, "o Esc global devia voltar a funcionar numa segunda captura")
         return fails
     }
 }
