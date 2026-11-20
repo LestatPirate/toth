@@ -31,6 +31,7 @@ enum ScreenCapturer {
     /// As janelas da própria Capture ficam de fora.
     static func snapshot(of screen: NSScreen) async throws -> CGImage {
         let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        if let displayID, let img = await shadowedSnapshot(of: screen, displayID: displayID) { return img }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw Failure.displayNotFound }
 
@@ -44,6 +45,19 @@ enum ScreenCapturer {
         let own = content.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier }
         let filter = SCContentFilter(display: display, excludingWindows: own)
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+    }
+
+    /// O ecrã tal como se vê, com as SOMBRAS das janelas. A captura por filtro (`SCContentFilter(display:…)`) compõe as
+    /// janelas sem sombra nenhuma (medido: logo abaixo de uma janela o fundo sai intacto, e com o `screencapture` do
+    /// sistema sai escurecido); a captura por retângulo dá o ecrã como o sistema o desenha. Em troca não deixa janelas
+    /// de fora: só se usa quando o Toth não tem janelas normais no ecrã (escondem-se antes: `hideForCaptureAndWait`).
+    /// `nil` = não dá (sistema antigo, janelas do Toth à vista, ou imagem com outro tamanho): usa-se o método por filtro.
+    private static func shadowedSnapshot(of screen: NSScreen, displayID: CGDirectDisplayID) async -> CGImage? {
+        guard #available(macOS 15.2, *), !CommandLine.arguments.contains("--no-shadow-snapshot") else { return nil }
+        guard await MainActor.run(body: { MainWindow.onScreenNormalWindowCount() }) == 0 else { return nil }
+        let w = Int((screen.frame.width * screen.backingScaleFactor).rounded()), h = Int((screen.frame.height * screen.backingScaleFactor).rounded())
+        guard let img = try? await SCScreenshotManager.captureImage(in: CGDisplayBounds(displayID)), img.width == w, img.height == h else { return nil }
+        return img
     }
 
     /// O mesmo instantâneo sem o ambiente de trabalho (papel de parede e ícones): essas janelas ficam de fora e o que

@@ -2544,3 +2544,39 @@ extension SelfTests {
         return fails
     }
 }
+
+extension SelfTests {
+    /// O instantâneo do ecrã tem de trazer as sombras das janelas, como o ecrã se vê. Cena própria, por cima de tudo: um
+    /// fundo branco sem sombra e uma janela com sombra em cima; logo abaixo da janela o branco tem de sair escurecido.
+    /// (As janelas de teste são flutuantes: não contam como janelas normais do Toth, que obrigariam ao método sem sombras.)
+    @MainActor static func shadowSelfTest() async -> [String] {
+        var fails: [String] = []
+        func check(_ ok: Bool, _ what: String) { if !ok { fails.append(what) } }
+        guard let screen = NSScreen.main else { return ["sem ecrã"] }
+        await MainWindow.hideForCaptureAndWait()
+        check(MainWindow.onScreenNormalWindowCount() == 0, "antes do instantâneo não podem ficar janelas normais do Toth no ecrã")
+        let o = screen.frame.origin
+        let back = NSWindow(contentRect: NSRect(x: o.x + 200, y: o.y + 200, width: 420, height: 320), styleMask: .borderless, backing: .buffered, defer: false)
+        back.backgroundColor = .white; back.hasShadow = false; back.level = .floating; back.isReleasedWhenClosed = false; back.orderFrontRegardless()
+        let top = NSWindow(contentRect: NSRect(x: o.x + 300, y: o.y + 320, width: 220, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+        top.backgroundColor = .lightGray; top.hasShadow = true; top.level = .floating; top.isReleasedWhenClosed = false; top.orderFrontRegardless()
+        defer { top.orderOut(nil); back.orderOut(nil) }
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        guard let img = try? await ScreenCapturer.snapshot(of: screen) else { return ["sem instantâneo (falta a permissão de gravação de ecrã?)"] }
+        let k = screen.backingScaleFactor
+        check(img.width == Int((screen.frame.width * k).rounded()) && img.height == Int((screen.frame.height * k).rounded()), "o instantâneo tem de sair em píxeis nativos (\(img.width)×\(img.height))")
+        func lum(x: CGFloat, yFromTop: CGFloat) -> Int {
+            var px = [UInt8](repeating: 0, count: 4)
+            guard let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return -1 }
+            let ix = Int(x * k), iy = Int(yFromTop * k)
+            ctx.draw(img, in: CGRect(x: -ix, y: -(img.height - 1 - iy), width: img.width, height: img.height))
+            return (Int(px[0]) + Int(px[1]) + Int(px[2])) / 3
+        }
+        let f = top.frame, b = back.frame, h = screen.frame.height
+        let below = lum(x: f.midX - o.x, yFromTop: h - (f.minY - o.y) + 6)
+        let far = lum(x: b.minX - o.x + 12, yFromTop: h - (b.minY - o.y) - 12)
+        check(far >= 250, "o fundo de teste devia sair branco (\(far))")
+        check(below >= 0 && below <= far - 25, "logo abaixo da janela devia haver sombra (fundo \(far), abaixo da janela \(below))")
+        return fails
+    }
+}

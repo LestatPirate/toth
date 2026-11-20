@@ -67,8 +67,19 @@ enum MainWindow {
     /// suas janelas para a frente (e muda de Espaço se alguma estiver noutro): o editor passava por cima da aplicação
     /// que se queria capturar. Escondidas, a ativação não tem nada para trazer. O editor volta a abrir-se quando a
     /// captura termina (`show()`).
-    static func hideForCapture() {
-        for w in NSApp.windows where w.isVisible && w.styleMask.contains(.titled) && !(w is NSPanel) { w.orderOut(nil) }
+    @discardableResult
+    static func hideForCapture() -> Bool {
+        var hid = false
+        for w in NSApp.windows where w.isVisible && w.styleMask.contains(.titled) && !(w is NSPanel) { w.orderOut(nil); hid = true }
+        return hid
+    }
+
+    /// O mesmo, antes de tirar o instantâneo: espera que as janelas saiam mesmo do ecrã (segundo o sistema), para o
+    /// instantâneo com sombras (que não consegue deixar janelas de fora) não apanhar o próprio Toth.
+    @MainActor static func hideForCaptureAndWait() async {
+        guard hideForCapture() else { return }
+        for _ in 0..<20 where onScreenNormalWindowCount() > 0 { try? await Task.sleep(nanoseconds: 20_000_000) }
+        try? await Task.sleep(nanoseconds: 50_000_000)   // (mais um par de imagens, para o ecrã já estar redesenhado)
     }
 
     /// Para testes: janelas do Toth visíveis no ecrã (nível normal), segundo o sistema.

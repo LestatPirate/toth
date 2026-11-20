@@ -315,6 +315,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?.captureRegion() }
         }
 
+        // `--shadow-selftest`: o instantâneo do ecrã traz as sombras das janelas (cena própria: fundo branco + janela).
+        if CommandLine.arguments.contains("--shadow-selftest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                Task { @MainActor in
+                    let fails = await SelfTests.shadowSelfTest()
+                    print(fails.isEmpty ? "SHADOW-SELFTEST: OK" : "SHADOW-SELFTEST: FALHOU — " + fails.joined(separator: "; "))
+                    exit(fails.isEmpty ? 0 : 1)
+                }
+            }
+        }
+
         // `Capture --capture-selftest`: congela o ecrã, "confirma" uma área pré-escolhida e grava o recorte (sem rato).
         if let i = CommandLine.arguments.firstIndex(of: "--capture-selftest"), CommandLine.arguments.count > i + 1 {
             let out = CommandLine.arguments[i + 1]
@@ -729,6 +740,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 var windows: [[WindowInfo]] = []
                 var clean: [CGImage?] = []
                 let synthetic = CommandLine.arguments.contains("--capture-hold")
+                if !synthetic { await MainWindow.hideForCaptureAndWait() }   // o instantâneo com sombras não deixa janelas de fora
                 for screen in NSScreen.screens {
                     // `--capture-hold` usa uma imagem sintética em vez do ecrã real (testes visuais sem expor o ecrã).
                     // O instantâneo normal e o «limpo» (sem ambiente de trabalho) tiram-se ao mesmo tempo, para serem do mesmo instante.
@@ -801,6 +813,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             guard await Permissions.ensure() else { if thenQuit { exit(2) }; return }
             let screen = NSScreen.main ?? NSScreen.screens[0]
+            await MainWindow.hideForCaptureAndWait()   // o instantâneo com sombras não deixa janelas de fora
             finish(thenQuit: thenQuit) { try await ScreenCapturer.snapshot(of: screen) }
         }
     }
