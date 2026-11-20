@@ -13,6 +13,9 @@ final class ShortcutSettings: ObservableObject {
     @Published private(set) var shortcut: Shortcut
     @Published private(set) var recording = false
     @Published var message: String?
+    /// Capturar uma janela (a sugerida no seletor) com a sombra à volta, como a captura de janela do macOS. Ligado por omissão.
+    @Published var windowShadow: Bool = ShortcutSettings.windowShadowPref { didSet { UserDefaults.standard.set(windowShadow, forKey: "captureWindowShadow") } }
+    static var windowShadowPref: Bool { (UserDefaults.standard.object(forKey: "captureWindowShadow") as? Bool) ?? true }
 
     /// Regista o atalho no sistema; devolve `false` se não foi possível (ex.: já em uso por outra app).
     var register: ((Shortcut) -> Bool)?

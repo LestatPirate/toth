@@ -104,6 +104,9 @@ struct SettingsView: View {
                 }
                 Text(L("O Toth só usa a Acessibilidade para ler o retângulo do elemento sob o rato durante a captura; não lê conteúdos nem controla outras apps."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle(L("Incluir a sombra ao capturar uma janela"), isOn: $settings.windowShadow)
+                Text(L("A janela sugerida no seletor (Enter, ou clique e capturar) sai com a sombra à volta, em fundo transparente. Desligado, sai ao tamanho exato da janela."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Divider()
                 Text(L("Ícone da aplicação")).font(.headline)
                 AppIconPicker()

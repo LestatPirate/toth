@@ -532,6 +532,8 @@ enum Translations {
         "Últimos 7 dias": "Last 7 days",
         "Ziguezague": "Zigzag",
         "Elementos na captura": "Elements in the capture",
+        "Incluir a sombra ao capturar uma janela": "Include the shadow when capturing a window",
+        "A janela sugerida no seletor (Enter, ou clique e capturar) sai com a sombra à volta, em fundo transparente. Desligado, sai ao tamanho exato da janela.": "The window suggested in the selector (Enter, or click and capture) comes out with its shadow around it, on a transparent background. When off, it comes out at the exact size of the window.",
         "Acessibilidade autorizada: o seletor sugere o elemento exato sob o rato (botões, campos, painéis).": "Accessibility authorized: the selector suggests the exact element under the pointer (buttons, fields, panels).",
         "Autorizar a Acessibilidade…": "Authorize Accessibility…",
         "Sem esta permissão, a sugestão é só pelos píxeis (menos exata). Depois de autorizar, reabra o Toth.": "Without this permission the suggestion relies on pixels only (less exact). After authorizing, reopen Toth.",

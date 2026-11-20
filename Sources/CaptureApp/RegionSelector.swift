@@ -195,6 +195,37 @@ final class RegionSelector {
         check(view.debugSuggestionIsWindow && view.debugFrameShown == CGRect(x: 600, y: 80, width: 300, height: 200), "sobre a janela sem elemento, a sugestão é a janela (\(String(describing: view.debugFrameShown)))")
         view.debugEnter()
         check(picked?.id == 7, "Enter na janela sugerida captura só essa janela")
+        // a sombra: por omissão a janela sai com sombra; com a preferência desligada, ao tamanho exato
+        let shadowKey = "captureWindowShadow", shadowBefore = UserDefaults.standard.object(forKey: shadowKey)
+        defer { if let shadowBefore { UserDefaults.standard.set(shadowBefore, forKey: shadowKey) } else { UserDefaults.standard.removeObject(forKey: shadowKey) } }
+        var withShadow: Bool?
+        view.onWindow = { w, sh in picked = w; withShadow = sh }
+        UserDefaults.standard.removeObject(forKey: shadowKey)
+        view.debugHover(CGPoint(x: 650, y: 120)); view.debugEnter()
+        check(withShadow == true, "por omissão, a janela sugerida captura-se com a sombra")
+        UserDefaults.standard.set(false, forKey: shadowKey)
+        view.debugHover(CGPoint(x: 650, y: 120)); view.debugEnter()
+        check(withShadow == false, "com a preferência desligada, a janela sai sem sombra")
+        UserDefaults.standard.removeObject(forKey: shadowKey)
+        // clicar na janela sugerida (sem arrastar) e capturar: é a janela, com a sombra, como com Enter
+        picked = nil; withShadow = nil
+        view.clearSelection(); view.debugHover(CGPoint(x: 650, y: 120))
+        view.debugBeginDrag(at: CGPoint(x: 650, y: 120)); view.debugEndDrag()
+        check(view.debugPickedWindow?.id == 7, "um clique na janela sugerida escolhe essa janela")
+        view.confirm()
+        check(picked?.id == 7 && withShadow == true, "capturar depois do clique na janela captura a janela com a sombra")
+        // mexer na área: passa a ser uma área normal (recorta-se do instantâneo)
+        picked = nil
+        view.clearSelection(); view.debugHover(CGPoint(x: 650, y: 120))
+        view.debugBeginDrag(at: CGPoint(x: 650, y: 120)); view.debugEndDrag()
+        view.debugDrag(from: CGPoint(x: 700, y: 150), to: CGPoint(x: 720, y: 170))
+        var cropped = false
+        let confirmBefore = view.onConfirm
+        view.onConfirm = { _ in cropped = true }
+        view.confirm()
+        check(view.debugPickedWindow == nil && picked == nil && cropped, "depois de mover a área, captura-se a área e não a janela")
+        view.onConfirm = confirmBefore
+        view.clearSelection()
         view.debugHover(CGPoint(x: 40, y: 40))
         check(view.debugFrameShown == nil && !view.debugSuggestionIsWindow, "fora de janelas e elementos não há sugestão")
         view.windows = []
@@ -492,17 +523,17 @@ private final class SelectionView: NSView {
     var debugFrameShown: CGRect? { hoverFrame }
     private func acceptSuggestion() {
         guard let f = hoverFrame else { return }
-        if hoverIsWindow, let w = hoverWindow { onWindow?(w, false); return }
+        if hoverIsWindow, let w = hoverWindow { onWindow?(w, ShortcutSettings.windowShadowPref); return }
         selection = f; hoverFrame = nil; hoverIsWindow = false
         confirm()
     }
 
     // MARK: Seleção
 
-    func clearSelection() { selection = nil; mode = .idle; layoutButtons(); needsDisplay = true }
+    func clearSelection() { selection = nil; pickedWindow = nil; mode = .idle; layoutButtons(); needsDisplay = true }
     func debugScrollClick() { scrollClicked() }
     func debugVideoClick() { videoClicked() }
-    func debugSelect(_ r: CGRect) { selection = r; layoutButtons(); needsDisplay = true }
+    func debugSelect(_ r: CGRect) { selection = r; pickedWindow = nil; layoutButtons(); needsDisplay = true }
 
     @objc private func confirmClicked() { confirm() }
     @objc private func cancelClicked() { onCancel?() }
@@ -519,6 +550,7 @@ private final class SelectionView: NSView {
 
     /// Recorta o instantâneo (não o ecrã atual) à área escolhida.
     func confirm() {
+        if let w = pickedWindow { onWindow?(w, ShortcutSettings.windowShadowPref); return }
         guard let c = crop() else { return }
         onConfirm?(c.image)
     }
@@ -558,6 +590,11 @@ private final class SelectionView: NSView {
         pressed(at: convert(event.locationInWindow, from: nil))
     }
 
+    /// A área escolhida é uma janela inteira (clicou-se na sugestão e não se mexeu na área): ao capturar, sai só essa
+    /// janela, com a sombra, como com Enter.
+    private var pickedWindow: WindowInfo?
+    var debugPickedWindow: WindowInfo? { pickedWindow }
+
     private func pressed(at p: CGPoint) {
         cursor = p
         if let sel = selection {
@@ -570,6 +607,7 @@ private final class SelectionView: NSView {
         }
         onBeginSelecting?()
         selection = nil
+        pickedWindow = nil
         mode = .drawing(anchor: p)
         layoutButtons(); needsDisplay = true
     }
@@ -578,6 +616,7 @@ private final class SelectionView: NSView {
 
     private func dragTo(_ p: CGPoint) {
         cursor = p
+        pickedWindow = nil   // a área foi mexida: já não é «a janela»
         switch mode {
         case let .drawing(a):
             selection = CGRect(x: min(a.x, p.x), y: min(a.y, p.y), width: abs(a.x - p.x), height: abs(a.y - p.y)).intersection(bounds)
@@ -597,9 +636,12 @@ private final class SelectionView: NSView {
     override func mouseUp(with event: NSEvent) { released() }
 
     private func released() {
-        if let s = selection, s.width < 4 || s.height < 4 {
+        var click = false   // clique sem arrastar (com ou sem um tremor do rato)
+        if case .drawing = mode { click = selection.map { $0.width < 4 || $0.height < 4 } ?? true }
+        if click {
             // clique sem arrastar: a sugestão passa a ser a área escolhida (com a barra para capturar, gravar, texto…); senão, sem seleção
             selection = hoverFrame
+            pickedWindow = hoverIsWindow ? hoverWindow : nil
         }
         if selection != nil { hoverFrame = nil; hoverIsWindow = false }
         mode = .idle
