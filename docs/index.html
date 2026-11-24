@@ -17,7 +17,7 @@
 <meta property="og:image" content="https://lestatpirate.github.io/toth/images/toth-editor-en.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Toth","operatingSystem":"macOS 15+","applicationCategory":"MultimediaApplication","softwareVersion":"0.6.7","url":"https://lestatpirate.github.io/toth/","downloadUrl":"https://github.com/LestatPirate/toth/releases/download/v0.6.7/Toth-0.6.7.zip","license":"https://opensource.org/license/mit","author":{"@type":"Person","name":"Alex Felizardo"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Toth","operatingSystem":"macOS 15+","applicationCategory":"MultimediaApplication","softwareVersion":"0.6.8","url":"https://lestatpirate.github.io/toth/","downloadUrl":"https://github.com/LestatPirate/toth/releases/download/v0.6.8/Toth-0.6.8.zip","license":"https://opensource.org/license/mit","author":{"@type":"Person","name":"Alex Felizardo"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
 </script>
 <style>
 :root{
@@ -130,11 +130,11 @@ footer a{color:var(--muted);text-decoration:underline}
     One Mac app that does the work of four, entirely on your computer. No account, no cloud, no telemetry. Free software (MIT).
   </p>
   <div class="cta">
-    <a class="btn primary" href="https://github.com/LestatPirate/toth/releases/download/v0.6.7/Toth-0.6.7.zip">⬇︎ Download for macOS</a>
+    <a class="btn primary" href="https://github.com/LestatPirate/toth/releases/download/v0.6.8/Toth-0.6.8.zip">⬇︎ Download for macOS</a>
     <a class="btn" href="https://github.com/LestatPirate/toth">Source on GitHub</a>
     <a class="btn paypal" href="https://paypal.me/lestat013">♥ Support on PayPal</a>
   </div>
-  <p class="note">macOS 15 or later · Apple Silicon and Intel · version 0.6.7 · <a href="https://github.com/LestatPirate/toth/releases">all releases</a></p>
+  <p class="note">macOS 15 or later · Apple Silicon and Intel · version 0.6.8 · <a href="https://github.com/LestatPirate/toth/releases">all releases</a></p>
   <img class="shot" src="images/toth-editor-en.png" alt="Toth image editor">
 </div>
 
@@ -182,7 +182,7 @@ footer a{color:var(--muted);text-decoration:underline}
     </div>
 
     <div class="grid" style="margin-top:40px">
-      <div class="card"><div class="ic">📸</div><h3>Capture</h3><p>Region with a frozen screen and automatic suggestion of the element or window (at its exact size, even when covered), whole page by scrolling, full screen, screen text (OCR) and clean background. Global shortcut ⌃⇧4.</p></div>
+      <div class="card"><div class="ic">📸</div><h3>Capture</h3><p>Region with a frozen screen and automatic suggestion of the element or window (just that window, even when covered), with window shadows, whole page by scrolling, full screen, screen text (OCR) and clean background. Global shortcut ⌃⇧4.</p></div>
       <div class="card"><div class="ic">✏️</div><h3>Annotate</h3><p>Arrows and lines (straight or curved), text, callouts, shapes, numbered steps, stamps, highlighter, pixelate, blur, repair, Paint, Cut out and image text. Quick styles per tool, select area, rotate, align, group, layers.</p></div>
       <div class="card"><div class="ic">🎥</div><h3>Record</h3><p>Area or window to MP4 (H.264 + AAC), system audio and your choice of microphone on separate tracks, pause and resume.</p></div>
       <div class="card"><div class="ic">✂️</div><h3>Edit video</h3><p>Frame-exact cuts, draggable blocks, annotations with a start and an end, music, narration, volume and fade, speed per span. MP4, GIF or audio only.</p></div>
@@ -206,15 +206,15 @@ footer a{color:var(--muted);text-decoration:underline}
 
 <section class="one new" id="novo">
   <div class="wrap">
-    <h2>What's new in 0.6.7</h2>
-    <p class="lead">Uninstall leaving nothing behind, crash notices that send nothing on their own, and the last tool remembered from capture to capture.</p>
+    <h2>What's new in 0.6.8</h2>
+    <p class="lead">Captures bring the window shadows, just as you see them on screen, and the area selector works on top of apps that will not give way.</p>
     <div class="grid">
-        <div class="card"><h3>Uninstall with nothing left</h3><p>Preferences → “Uninstall Toth…” removes the app, preferences, caches and macOS permissions. Your captures stay unless you ask otherwise.</p></div>
-        <div class="card"><h3>Crashes, nothing sent</h3><p>If Toth crashes, it tells you on the next launch and shows the report macOS saved. You decide whether to open a GitHub issue, already filled in with a summary.</p></div>
-        <div class="card"><h3>Last tool remembered</h3><p>A new capture opens with the last tool you used, even after reopening Toth.</p></div>
-        <div class="card"><h3>Real crop</h3><p>From 0.6.5: in Canvas, what is left outside is gone for good, and the cropped image is the image from then on. The original comes back with Undo.</p></div>
-        <div class="card"><h3>The tool stays active</h3><p>From 0.6.3: after drawing, the tool remains selected. Another arrow, another callout, another stamp, without going back to the bar.</p></div>
-        <div class="card"><h3>Your choice of icon</h3><p>From 0.6.3: the original, four alternatives or any image of yours, in the Dock, the Finder and Stage Manager.</p></div>
+        <div class="card"><h3>Shadows as on screen</h3><p>Captures bring the window shadows, just as you see them: a dialog over another window comes out with its shadow.</p></div>
+        <div class="card"><h3>Window with its shadow</h3><p>The window suggested in the selector comes out with its shadow around it, on a transparent background. Turn it off in Preferences for the exact size.</p></div>
+        <div class="card"><h3>Selector on top of everything</h3><p>The selector receives the mouse and keyboard even over a virtual machine or a full-screen game, and Esc always cancels.</p></div>
+        <div class="card"><h3>Uninstall with nothing left</h3><p>From 0.6.6: Preferences → “Uninstall Toth…” removes the app, preferences, caches and macOS permissions. Your captures stay unless you ask otherwise.</p></div>
+        <div class="card"><h3>Crashes, nothing sent</h3><p>From 0.6.6: If Toth crashes, it tells you on the next launch and shows the report macOS saved. You decide whether to open a GitHub issue, already filled in with a summary.</p></div>
+        <div class="card"><h3>Last tool remembered</h3><p>From 0.6.6: A new capture opens with the last tool you used, even after reopening Toth.</p></div>
     </div>
     <p class="sm" style="text-align:center;margin-top:18px"><a href="https://github.com/LestatPirate/toth/releases">All releases and notes</a> · <a href="https://github.com/LestatPirate/toth/blob/main/docs/GUIA.md">Full guide</a></p>
   </div>
@@ -238,7 +238,7 @@ footer a{color:var(--muted);text-decoration:underline}
     <h2>Install</h2>
     <p class="lead">macOS 15 or later. Apple Silicon and Intel.</p>
     <div class="steps">
-      <div class="card"><h3>Download</h3><p>Download <a href="https://github.com/LestatPirate/toth/releases/download/v0.6.7/Toth-0.6.7.zip"><code>Toth-0.6.7.zip</code></a>, unzip and drag <code>Toth.app</code> to Applications.</p></div>
+      <div class="card"><h3>Download</h3><p>Download <a href="https://github.com/LestatPirate/toth/releases/download/v0.6.8/Toth-0.6.8.zip"><code>Toth-0.6.8.zip</code></a>, unzip and drag <code>Toth.app</code> to Applications.</p></div>
       <div class="card"><h3>First launch</h3><p>The app is not yet notarized: macOS shows “Toth Not Opened”. Click Done, go to System Settings → Privacy &amp; Security → Security → <strong>Open Anyway</strong>.</p></div>
       <div class="card"><h3>Guided permission</h3><p>Toth checks Screen Recording and, if missing, guides you in 3 steps. It is the only required permission; the microphone only if you turn it on while recording, and Accessibility is optional (exact element suggestion).</p></div>
     </div>
