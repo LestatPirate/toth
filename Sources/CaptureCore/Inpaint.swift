@@ -201,7 +201,8 @@ public enum Inpaint {
         // semente: aleatória, ou herdada do nível grosso (coordenadas a dobrar)
         for t in targets {
             var s = -1
-            if let (coarse, cw, ch) = seedNNF {
+            // (um nível grosso sem pedaços de origem não devolve correspondências: a lista vem vazia e não serve de semente)
+            if let (coarse, cw, ch) = seedNNF, cw > 0, ch > 0, coarse.count == cw * ch {
                 let cx = min(cw - 1, (t % w) / 2), cy = min(ch - 1, (t / w) / 2)
                 let cs = Int(coarse[cy * cw + cx])
                 if cs >= 0 { let sx = min(w - half - 1, max(half, (cs % cw) * 2)), sy = min(h - half - 1, max(half, (cs / cw) * 2)); if validSrc[sy * w + sx] { s = sy * w + sx } }

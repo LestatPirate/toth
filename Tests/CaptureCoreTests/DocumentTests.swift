@@ -1006,6 +1006,18 @@ import Foundation
         #expect(Inpaint.surroundingTexture(grad, width: w, height: h, hole: (36, 20, 24, 24)) < 4)
     }
 
+    /// Zona apagada grande: num nível reduzido da imagem não sobra nenhum pedaço de origem inteiro fora do buraco (o
+    /// PatchMatch desse nível não devolve correspondências), mas no nível seguinte já sobra. Antes, o nível seguinte lia
+    /// essa lista vazia como semente e a app fechava («Index out of range», relatório de 2026-11-24).
+    @Test func exemplarFillSurvivesLevelWithoutSources() {
+        for (w, h, hole) in [(100, 100, (15, 15, 70, 70)), (120, 90, (8, 8, 104, 74)), (64, 64, (0, 0, 64, 64)), (200, 60, (10, 6, 180, 48))] {
+            var px = [UInt8](repeating: 255, count: w * h * 4)
+            for y in 0..<h { for x in 0..<w { let v: UInt8 = ((x / 3) + (y / 5)) % 2 == 0 ? 40 : 220; for c in 0..<3 { px[(y * w + x) * 4 + c] = v } } }
+            Inpaint.fillExemplar(&px, width: w, height: h, hole: hole)
+            #expect(px.count == w * h * 4)
+        }
+    }
+
     @Test func largeHoleIsSolvedByLevels() {
         let w = 160, h = 120
         var px = halves(w, h, left: [10, 200, 10, 255], right: [10, 200, 10, 255])
